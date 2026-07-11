@@ -1,9 +1,7 @@
 /* ============================================================
    TechSteal — Season 5 Website
-   App logic: login, routing, server status, posts, blog
-   All data in localStorage/sessionStorage (browser cache)
-   Server status via api.mcsrvstat.us (free, public, CORS)
-   Discord via official widget iframe (always works on static sites)
+   Full app: login, routing, server status, Discord, seasons with
+   launchers, community posts, blog, admin controls, Supabase sync
    ============================================================ */
 
 const MEMBER_CODE = "123456";
@@ -29,7 +27,7 @@ const SUPABASE_HEADERS = {
   "Content-Type": "application/json"
 };
 
-// ---- Supabase API helpers ----
+// ---- Supabase helpers ----
 async function supabaseSelect(table, orderBy = "created_at", ascending = false) {
   const orderParam = ascending ? "asc" : "desc";
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?order=${orderBy}.${orderParam}`, {
@@ -49,26 +47,51 @@ async function supabaseInsert(table, data) {
   return await res.json();
 }
 
+async function supabaseUpdate(table, id, data) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { ...SUPABASE_HEADERS, "Prefer": "return=representation" },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) throw new Error(`Supabase ${table} update failed: ${res.status}`);
+  return await res.json();
+}
+
+async function supabaseDelete(table, id) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
+    method: "DELETE",
+    headers: SUPABASE_HEADERS
+  });
+  if (!res.ok) throw new Error(`Supabase ${table} delete failed: ${res.status}`);
+}
+
+function isAdmin() {
+  return localStorage.getItem(STORAGE_KEYS.role) === "admin";
+}
+
 const $  = (sel, ctx = document) => ctx.querySelector(sel);
 const $$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)];
 
+function escapeHtml(str) {
+  const tmp = document.createElement("div");
+  tmp.textContent = str;
+  return tmp.innerHTML;
+}
+
 /* ============================================================
-   TOAST — properly hidden, never stuck
+   TOAST
    ============================================================ */
 let toastTimer = null;
 function toast(msg) {
   const t = $("#toast");
   if (!t) return;
-  // Make it visible first
   t.style.display = "block";
   t.textContent = msg;
-  // Force reflow so transition works
   void t.offsetHeight;
   t.classList.add("show");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => {
     t.classList.remove("show");
-    // Hide completely after transition
     setTimeout(() => { t.style.display = "none"; }, 350);
   }, 2600);
 }
@@ -80,18 +103,15 @@ function initLogin() {
   const splash = $("#splash");
   const app = $("#app");
   if (!splash || !app) return;
-
   if (sessionStorage.getItem(STORAGE_KEYS.auth) === "1") {
     splash.style.display = "none";
     app.classList.add("show");
     promptForUsername();
     return;
   }
-
   const form = $("#loginForm");
   const input = $("#keyInput");
   const error = $("#loginError");
-
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const val = input.value.trim();
@@ -120,7 +140,7 @@ function initLogin() {
 }
 
 /* ============================================================
-   USERNAME MODAL — properly closes
+   USERNAME MODAL
    ============================================================ */
 function openUsernameModal() {
   const overlay = $("#usernameModal");
@@ -128,18 +148,14 @@ function openUsernameModal() {
   const saveBtn = $("#usernameModalSave");
   const skipBtn = $("#usernameModalSkip");
   if (!overlay || !input || !saveBtn || !skipBtn) return;
-
   overlay.classList.add("open");
   overlay.setAttribute("aria-hidden", "false");
   input.value = localStorage.getItem(STORAGE_KEYS.user) || "";
   input.focus();
-
-  // Clean up any previous listeners by cloning
   const newSave = saveBtn.cloneNode(true);
   const newSkip = skipBtn.cloneNode(true);
   saveBtn.parentNode.replaceChild(newSave, saveBtn);
   skipBtn.parentNode.replaceChild(newSkip, skipBtn);
-
   const finish = () => {
     const value = input.value.trim();
     const clean = value || "Guest";
@@ -149,7 +165,6 @@ function openUsernameModal() {
     overlay.setAttribute("aria-hidden", "true");
     toast(value ? `Profile saved for ${clean}` : "Using guest profile.");
   };
-
   newSave.addEventListener("click", finish);
   newSkip.addEventListener("click", () => {
     localStorage.setItem(STORAGE_KEYS.user, "Guest");
@@ -158,7 +173,6 @@ function openUsernameModal() {
     overlay.setAttribute("aria-hidden", "true");
     toast("Using guest profile.");
   });
-
   input.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); finish(); } };
 }
 
@@ -175,6 +189,9 @@ function updateProfileLabel() {
   const roleDisplay = $("#settingsRoleDisplay");
   if (roleDisplay) roleDisplay.textContent = `Role: ${role === "admin" ? "Admin" : "Member"}`;
   renderAvatar();
+  // Show/hide admin features
+  $("#blogComposerCard")?.style.setProperty("display", isAdmin() ? "block" : "none");
+  $("#seasonEditor")?.style.setProperty("display", isAdmin() ? "block" : "none");
 }
 
 function renderAvatar() {
@@ -221,7 +238,7 @@ function initNav() {
 }
 
 /* ============================================================
-   SERVER STATUS (mcsrvstat.us)
+   SERVER STATUS
    ============================================================ */
 let serverRefreshTimer = null;
 
@@ -259,7 +276,6 @@ async function refreshServerStatus() {
 
   if (dotEl) dotEl.classList.toggle("offline", !online);
   if (statusEl) statusEl.textContent = online ? "Online" : "Offline";
-
   if (playersEl) {
     if (online && data.players) {
       const on = data.players.online ?? 0;
@@ -271,7 +287,6 @@ async function refreshServerStatus() {
   if (versionEl) versionEl.textContent = online ? (data.version || "—") : "—";
   $$("[data-server-ip]").forEach((el) => { el.textContent = SERVER_ADDRESS; });
 
-  // Player list
   const wrapper = $("#playerListWrapper");
   const list = $("#playerList");
   if (wrapper && list) {
@@ -289,7 +304,6 @@ async function refreshServerStatus() {
     } else { wrapper.style.display = "none"; }
   }
 
-  // MOTD
   const motdCard = $("#motdCard");
   const motdBody = $("#motdBody");
   if (motdCard && motdBody) {
@@ -310,15 +324,13 @@ function initServerStatus() {
 }
 
 /* ============================================================
-   DISCORD WIDGET — invite API for counts + widget API for members
+   DISCORD WIDGET
    ============================================================ */
 async function loadDiscordWidget() {
-  // 1) Fetch invite data for guild name, icon, total counts
   let guildName = "Techsteal - Season V";
   let guildIcon = null;
   let onlineCount = "—";
   let memberCount = "—";
-
   try {
     const res = await fetch(DISCORD_INVITE_API);
     if (res.ok) {
@@ -329,35 +341,27 @@ async function loadDiscordWidget() {
       onlineCount = data.approximate_presence_count ?? "—";
       memberCount = data.approximate_member_count ?? "—";
     }
-  } catch { /* invite API failed, use defaults */ }
-
-  // Update header
+  } catch {}
   const nameEl = $("#discordName");
   const onlineEl = $("#discordOnline");
   const membersEl = $("#discordMembers");
   const iconEl = $("#discordIcon");
   const placeholderEl = $("#discordIconPlaceholder");
-
   if (nameEl) nameEl.textContent = guildName;
   if (onlineEl) onlineEl.textContent = onlineCount;
   if (membersEl) membersEl.textContent = memberCount;
-
   if (guildIcon && iconEl && placeholderEl) {
     iconEl.src = `https://cdn.discordapp.com/icons/${DISCORD_GUILD_ID}/${guildIcon}.png?size=128`;
     iconEl.style.display = "block";
     placeholderEl.style.display = "none";
   }
-
-  // 2) Fetch widget data for online member list
   const listBody = $("#discordOnlineListBody");
   if (!listBody) return;
-
   try {
     const wRes = await fetch(DISCORD_WIDGET_API);
     if (!wRes.ok) throw new Error(`HTTP ${wRes.status}`);
     const wData = await wRes.json();
     const members = wData.members || [];
-
     if (!members.length) {
       listBody.innerHTML = '<div class="discord-empty">No members online right now.</div>';
     } else {
@@ -374,12 +378,6 @@ async function loadDiscordWidget() {
   } catch {
     listBody.innerHTML = `<div class="discord-empty">Enable "Server Widget" in Discord settings to see online members.<br><a href="https://discord.gg/bEZ5M5jBvz" target="_blank" rel="noopener">Join Discord here</a></div>`;
   }
-}
-
-function escapeHtml(str) {
-  const tmp = document.createElement("div");
-  tmp.textContent = str;
-  return tmp.innerHTML;
 }
 
 /* ============================================================
@@ -409,23 +407,51 @@ function initCopyIP() {
 }
 
 /* ============================================================
-   SEASONS
+   SEASONS (Supabase) + LAUNCHER TABS
    ============================================================ */
 let seasonData = [];
 let activeSeasonId = CURRENT_SEASON_ID;
+let activeLauncher = "prism";
+
+const LAUNCHER_LABELS = {
+  prism: "Prism",
+  sklauncher: "SK Launcher",
+  modrinth: "Modrinth",
+  curseforge: "CurseForge"
+};
 
 async function loadSeasons() {
   try {
-    const res = await fetch("data/seasons.json");
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    seasonData = data.seasons || [];
-    if (!seasonData.length) return;
-    activeSeasonId = CURRENT_SEASON_ID;
+    const data = await supabaseSelect("seasons", "id", false);
+    seasonData = data || [];
+    if (!seasonData.length) {
+      // Fallback to local JSON
+      const res = await fetch("data/seasons.json");
+      if (res.ok) {
+        const local = await res.json();
+        seasonData = local.seasons || [];
+      }
+    }
+    // Find current season
+    const current = seasonData.find((s) => s.is_current);
+    if (current) activeSeasonId = current.id;
+    else if (seasonData.length) activeSeasonId = seasonData[0].id;
     renderSeasonPicker();
+    renderLauncherContent();
+    renderSeasonEditor();
   } catch {
-    seasonData = [];
-    renderSeasonPicker();
+    // Fallback to local JSON
+    try {
+      const res = await fetch("data/seasons.json");
+      if (res.ok) {
+        const local = await res.json();
+        seasonData = local.seasons || [];
+        activeSeasonId = CURRENT_SEASON_ID;
+        renderSeasonPicker();
+        renderLauncherContent();
+        renderSeasonEditor();
+      }
+    } catch {}
   }
 }
 
@@ -436,29 +462,134 @@ function renderSeasonPicker() {
     picker.innerHTML = '<button class="season-btn active current">Season 5 ★</button>';
   } else {
     picker.innerHTML = seasonData.map((s) =>
-      `<button class="season-btn ${s.id === activeSeasonId ? "active" : ""} ${s.id === CURRENT_SEASON_ID ? "current" : ""}" data-season="${s.id}">${s.title}</button>`
+      `<button class="season-btn ${s.id === activeSeasonId ? "active" : ""} ${s.is_current ? "current" : ""}" data-season="${s.id}">${s.title || "Season " + s.id}</button>`
     ).join("");
   }
   $$(".season-btn", picker).forEach((btn) => {
     btn.addEventListener("click", () => {
       activeSeasonId = Number(btn.dataset.season);
       renderSeasonPicker();
+      renderLauncherContent();
+      renderSeasonEditor();
     });
   });
-  renderActiveSeason();
 }
 
-function renderActiveSeason() {
+function initLauncherTabs() {
+  $$(".launcher-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      activeLauncher = tab.dataset.launcher;
+      $$(".launcher-tab").forEach((t) => t.classList.toggle("active", t === tab));
+      renderLauncherContent();
+    });
+  });
+}
+
+function renderLauncherContent() {
+  const content = $("#launcherContent");
+  if (!content) return;
   const season = seasonData.find((s) => s.id === activeSeasonId) || seasonData[0];
-  if (!season) return;
-  const titleEl = $("#seasonTitle");
-  const bodyEl = $("#seasonBody");
-  if (titleEl) titleEl.textContent = season.title || "Season";
-  if (bodyEl) bodyEl.innerHTML = season.body || "";
+  if (!season) {
+    content.innerHTML = '<p style="color:var(--text-dim);">No season data available.</p>';
+    return;
+  }
+  const instructions = season[activeLauncher] || `<p>No ${LAUNCHER_LABELS[activeLauncher]} instructions for this season yet.</p>`;
+  content.innerHTML = instructions;
 }
 
 /* ============================================================
-   COMMUNITY POSTS
+   SEASON EDITOR (Admin)
+   ============================================================ */
+function renderSeasonEditor() {
+  if (!isAdmin()) return;
+  const editor = $("#seasonEditor");
+  if (!editor) return;
+  editor.style.display = "block";
+
+  const season = seasonData.find((s) => s.id === activeSeasonId) || seasonData[0];
+  if (!season) return;
+
+  const titleInput = $("#seasonEditTitle");
+  const currentCheckbox = $("#seasonEditCurrent");
+  if (titleInput) titleInput.value = season.title || "";
+  if (currentCheckbox) currentCheckbox.checked = season.is_current || false;
+
+  const launchersDiv = $("#seasonEditLaunchers");
+  if (!launchersDiv) return;
+
+  const launchers = ["prism", "sklauncher", "modrinth", "curseforge"];
+  launchersDiv.innerHTML = launchers.map((l) => `
+    <div class="season-launcher-edit">
+      <label>${LAUNCHER_LABELS[l]} Instructions (HTML)</label>
+      <textarea id="seasonEdit_${l}" placeholder="Enter ${LAUNCHER_LABELS[l]} instructions...">${escapeHtml(season[l] || "")}</textarea>
+    </div>
+  `).join("");
+}
+
+function initSeasonEditor() {
+  $("#seasonSaveBtn")?.addEventListener("click", async () => {
+    const season = seasonData.find((s) => s.id === activeSeasonId);
+    if (!season) { toast("No season selected."); return; }
+    const title = $("#seasonEditTitle")?.value?.trim() || season.title;
+    const is_current = $("#seasonEditCurrent")?.checked || false;
+    const data = { title, is_current };
+    ["prism", "sklauncher", "modrinth", "curseforge"].forEach((l) => {
+      data[l] = $(`#seasonEdit_${l}`)?.value || "";
+    });
+    try {
+      await supabaseUpdate("seasons", season.id, data);
+      // If setting as current, unset others
+      if (is_current) {
+        for (const s of seasonData) {
+          if (s.id !== season.id && s.is_current) {
+            await supabaseUpdate("seasons", s.id, { is_current: false });
+          }
+        }
+      }
+      toast("Season updated!");
+      await loadSeasons();
+    } catch (e) {
+      toast("Failed to save season.");
+    }
+  });
+
+  $("#seasonNewBtn")?.addEventListener("click", async () => {
+    const nextId = Math.max(0, ...seasonData.map((s) => s.id)) + 1;
+    try {
+      await supabaseInsert("seasons", {
+        id: nextId,
+        title: `Season ${nextId}`,
+        is_current: false,
+        prism: "<p>New season instructions.</p>",
+        sklauncher: "<p>New season instructions.</p>",
+        modrinth: "<p>New season instructions.</p>",
+        curseforge: "<p>New season instructions.</p>"
+      });
+      activeSeasonId = nextId;
+      toast("New season created!");
+      await loadSeasons();
+    } catch {
+      toast("Failed to create season.");
+    }
+  });
+
+  $("#seasonDeleteBtn")?.addEventListener("click", async () => {
+    const season = seasonData.find((s) => s.id === activeSeasonId);
+    if (!season) return;
+    if (!confirm(`Delete "${season.title}"? This cannot be undone.`)) return;
+    try {
+      await supabaseDelete("seasons", season.id);
+      toast("Season deleted!");
+      activeSeasonId = CURRENT_SEASON_ID;
+      await loadSeasons();
+    } catch {
+      toast("Failed to delete season.");
+    }
+  });
+}
+
+/* ============================================================
+   COMMUNITY POSTS (Supabase)
    ============================================================ */
 function stripHtml(html) {
   const tmp = document.createElement("div");
@@ -505,12 +636,11 @@ function initCommunityPosts() {
       await loadPosts();
       toast("Post published!");
     } catch {
-      // Fallback to localStorage if Supabase fails
       const posts = JSON.parse(localStorage.getItem(STORAGE_KEYS.posts) || "[]");
       posts.unshift({ id: `local_${Date.now()}`, author, body, pfp, created_at: new Date().toISOString() });
       localStorage.setItem(STORAGE_KEYS.posts, JSON.stringify(posts));
       editor.innerHTML = "";
-      renderPosts();
+      renderPostsFromData(posts);
       toast("Post saved locally (will sync later).");
     }
   });
@@ -521,8 +651,7 @@ async function loadPosts() {
     const posts = await supabaseSelect("posts");
     renderPostsFromData(posts);
   } catch {
-    // Fallback to localStorage
-    renderPosts();
+    renderPostsFromData(JSON.parse(localStorage.getItem(STORAGE_KEYS.posts) || "[]"));
   }
 }
 
@@ -533,7 +662,13 @@ function renderPostsFromData(posts) {
     list.innerHTML = '<div class="empty-state">No posts yet. Be the first to share something!</div>';
     return;
   }
-  list.innerHTML = posts.map((post) => `
+  list.innerHTML = posts.map((post) => {
+    const postId = post.id;
+    const adminControls = isAdmin() ? `
+      <div class="admin-actions">
+        <button class="admin-btn danger" onclick="deletePost(${postId})">Delete</button>
+      </div>` : "";
+    return `
     <div class="post">
       <div class="post__head">
         <div class="avatar">${post.pfp ? `<img src="${post.pfp}" alt="avatar" />` : (post.author || "A").charAt(0).toUpperCase()}</div>
@@ -543,34 +678,26 @@ function renderPostsFromData(posts) {
         </div>
       </div>
       <div class="post__body">${post.body}</div>
-    </div>
-  `).join("");
+      ${adminControls}
+    </div>`;
+  }).join("");
 }
 
-function renderPosts() {
-  const list = $("#postList");
-  if (!list) return;
-  const posts = JSON.parse(localStorage.getItem(STORAGE_KEYS.posts) || "[]");
-  if (!posts.length) {
-    list.innerHTML = '<div class="empty-state">No posts yet. Be the first to share something!</div>';
-    return;
+async function deletePost(id) {
+  if (!isAdmin()) return;
+  if (!confirm("Delete this post?")) return;
+  try {
+    await supabaseDelete("posts", id);
+    toast("Post deleted!");
+    await loadPosts();
+  } catch {
+    toast("Failed to delete post.");
   }
-  list.innerHTML = posts.map((post) => `
-    <div class="post">
-      <div class="post__head">
-        <div class="avatar">${post.pfp ? `<img src="${post.pfp}" alt="avatar" />` : (post.author || "A").charAt(0).toUpperCase()}</div>
-        <div>
-          <div class="post__author">${post.author || "Guest"}</div>
-          <div class="post__time">${new Date(post.created_at).toLocaleString()}</div>
-        </div>
-      </div>
-      <div class="post__body">${post.body}</div>
-    </div>
-  `).join("");
 }
+window.deletePost = deletePost;
 
 /* ============================================================
-   BLOG
+   BLOG (Supabase)
    ============================================================ */
 function initBlogPosts() {
   const form = $("#newBlogPostForm");
@@ -578,9 +705,8 @@ function initBlogPosts() {
   const editor = $("#blogEditor");
   const composerCard = $("#blogComposerCard");
   initEditorToolbar(editor);
-  if (composerCard && localStorage.getItem(STORAGE_KEYS.role) === "admin") {
-    composerCard.style.display = "block";
-  }
+  if (composerCard && isAdmin()) composerCard.style.display = "block";
+
   form?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const title = titleInput?.value.trim() || "Untitled";
@@ -594,7 +720,6 @@ function initBlogPosts() {
       await loadBlogPosts();
       toast("Blog post published!");
     } catch {
-      // Fallback to localStorage
       const posts = JSON.parse(localStorage.getItem(STORAGE_KEYS.blog) || "[]");
       posts.unshift({ title, body, author, created_at: new Date().toISOString() });
       localStorage.setItem(STORAGE_KEYS.blog, JSON.stringify(posts));
@@ -612,7 +737,6 @@ async function loadBlogPosts() {
     const posts = await supabaseSelect("blog_posts");
     renderBlogPosts(posts);
   } catch {
-    // Fallback to localStorage
     renderBlogPosts(JSON.parse(localStorage.getItem(STORAGE_KEYS.blog) || "[]"));
   }
 }
@@ -624,8 +748,15 @@ function renderBlogPosts(posts) {
     grid.innerHTML = '<div class="empty-state">No blog posts yet. Check back soon!</div>';
     return;
   }
-  grid.innerHTML = posts.map((post, i) => `
-    <article class="blog-card" data-index="${i}">
+  grid.innerHTML = posts.map((post, i) => {
+    const postId = post.id;
+    const adminControls = isAdmin() ? `
+      <div class="admin-actions" style="position:absolute;top:8px;right:8px;">
+        <button class="admin-btn" onclick="editBlogPost(${postId})">Edit</button>
+        <button class="admin-btn danger" onclick="deleteBlogPost(${postId})">Delete</button>
+      </div>` : "";
+    return `
+    <article class="blog-card" data-index="${i}" style="position:relative;">
       <div class="blog-card__banner"><span style="font-size:2rem;">📰</span></div>
       <div class="blog-card__body">
         <span class="blog-card__tag">News</span>
@@ -633,13 +764,92 @@ function renderBlogPosts(posts) {
         <p class="blog-card__excerpt">${stripHtml(post.body || "").slice(0, 120)}${stripHtml(post.body || "").length >= 120 ? "…" : ""}</p>
         <div class="blog-card__meta">by ${post.author || "Admin"} · ${new Date(post.created_at).toLocaleDateString()}</div>
       </div>
-    </article>
-  `).join("");
+      ${adminControls}
+    </article>`;
+  }).join("");
+
   $$(".blog-card").forEach((card) => {
-    card.addEventListener("click", () => {
+    card.addEventListener("click", (e) => {
+      // Don't open viewer if clicking admin buttons
+      if (e.target.closest(".admin-btn")) return;
       const idx = Number(card.dataset.index);
       openBlogViewer(posts[idx]);
     });
+  });
+}
+
+async function deleteBlogPost(id) {
+  if (!isAdmin()) return;
+  if (!confirm("Delete this blog post?")) return;
+  try {
+    await supabaseDelete("blog_posts", id);
+    toast("Blog post deleted!");
+    await loadBlogPosts();
+  } catch {
+    toast("Failed to delete blog post.");
+  }
+}
+window.deleteBlogPost = deleteBlogPost;
+
+async function editBlogPost(id) {
+  if (!isAdmin()) return;
+  try {
+    const posts = await supabaseSelect("blog_posts");
+    const post = posts.find((p) => p.id === id);
+    if (!post) return;
+    // Load into composer
+    const composer = $("#blogComposerCard");
+    if (composer) composer.style.display = "block";
+    const titleInput = $("#blogTitleInput");
+    const editor = $("#blogEditor");
+    if (titleInput) titleInput.value = post.title || "";
+    if (editor) editor.innerHTML = post.body || "";
+    // Store the editing ID
+    editingBlogId = id;
+    toast("Editing post — make changes and click Publish to update.");
+    // Scroll to composer
+    composer?.scrollIntoView({ behavior: "smooth", block: "center" });
+  } catch {
+    toast("Failed to load post for editing.");
+  }
+}
+window.editBlogPost = editBlogPost;
+
+let editingBlogId = null;
+
+// Override the blog form submit to handle editing
+function initBlogEditHandler() {
+  const form = $("#newBlogPostForm");
+  if (!form) return;
+  // Remove old listener by cloning
+  const newForm = form.cloneNode(true);
+  form.parentNode.replaceChild(newForm, form);
+  initEditorToolbar($("#blogEditor"));
+  newForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const titleInput = $("#blogTitleInput");
+    const editor = $("#blogEditor");
+    const title = titleInput?.value.trim() || "Untitled";
+    const body = editor?.innerHTML.trim() || "";
+    if (!stripHtml(body)) { toast("Please write something before publishing."); return; }
+    const author = localStorage.getItem(STORAGE_KEYS.user) || "Admin";
+    try {
+      if (editingBlogId) {
+        // Update existing
+        await supabaseUpdate("blog_posts", editingBlogId, { title, body, author });
+        editingBlogId = null;
+        toast("Blog post updated!");
+      } else {
+        // Insert new
+        await supabaseInsert("blog_posts", { title, body, author });
+        toast("Blog post published!");
+      }
+      if (titleInput) titleInput.value = "";
+      if (editor) editor.innerHTML = "";
+      await loadBlogPosts();
+    } catch {
+      toast("Failed to save blog post.");
+    }
   });
 }
 
@@ -669,7 +879,7 @@ function initViewer() {
 }
 
 /* ============================================================
-   SETTINGS — drag & drop profile picture
+   SETTINGS — drag & drop
    ============================================================ */
 function initSettings() {
   const form = $("#settingsForm");
@@ -679,7 +889,6 @@ function initSettings() {
   const preview = $("#settingsPfpPreview");
   const clearBtn = $("#clearPfpBtn");
   if (!form || !usernameInput || !dropzone) return;
-
   usernameInput.value = localStorage.getItem(STORAGE_KEYS.user) || "";
   updateDropzonePreview();
 
@@ -690,8 +899,7 @@ function initSettings() {
     } else {
       preview.innerHTML = `
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:28px;height:28px;color:var(--text-dim);"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-        <span>Drag &amp; drop or click to upload</span>
-      `;
+        <span>Drag &amp; drop or click to upload</span>`;
     }
   }
 
@@ -709,27 +917,18 @@ function initSettings() {
   }
 
   dropzone.addEventListener("click", () => pfpInput?.click());
-  pfpInput?.addEventListener("change", (e) => {
-    const file = e.target.files?.[0];
-    if (file) handleFile(file);
-  });
-
+  pfpInput?.addEventListener("change", (e) => { const f = e.target.files?.[0]; if (f) handleFile(f); });
   dropzone.addEventListener("dragover", (e) => { e.preventDefault(); dropzone.classList.add("dragover"); });
   dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
   dropzone.addEventListener("drop", (e) => {
-    e.preventDefault();
-    dropzone.classList.remove("dragover");
-    const file = e.dataTransfer?.files?.[0];
-    if (file) handleFile(file);
+    e.preventDefault(); dropzone.classList.remove("dragover");
+    const f = e.dataTransfer?.files?.[0]; if (f) handleFile(f);
   });
-
   clearBtn?.addEventListener("click", () => {
     localStorage.removeItem(STORAGE_KEYS.pfp);
-    updateDropzonePreview();
-    renderAvatar();
+    updateDropzonePreview(); renderAvatar();
     toast("Profile picture removed.");
   });
-
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const value = usernameInput.value.trim();
@@ -751,7 +950,10 @@ document.addEventListener("DOMContentLoaded", () => {
   initCopyIP();
   initCommunityPosts();
   initBlogPosts();
+  initBlogEditHandler();
   initSettings();
+  initLauncherTabs();
+  initSeasonEditor();
   loadSeasons();
   initViewer();
   loadPosts();

@@ -12,9 +12,7 @@
 </head>
 <body>
 
-  <!-- ============================================================
-       SPLASH / LOGIN PAGE
-       ============================================================ -->
+  <!-- SPLASH / LOGIN -->
   <div id="splash" class="splash">
     <div class="splash__inner">
       <img src="assets/img/logo.png" alt="TechSteal Logo" class="splash__logo" />
@@ -26,12 +24,8 @@
     </div>
   </div>
 
-  <!-- ============================================================
-       APP SHELL
-       ============================================================ -->
+  <!-- APP SHELL -->
   <div id="app" class="app">
-
-    <!-- Sidebar -->
     <aside class="sidebar">
       <div class="sidebar__brand">
         <img src="assets/img/logo.png" alt="Logo" class="sidebar__logo" />
@@ -65,7 +59,6 @@
       </div>
     </aside>
 
-    <!-- Main -->
     <main class="main">
       <header class="topbar">
         <div style="display:flex;align-items:center;gap:14px;">
@@ -80,14 +73,12 @@
 
       <div class="content">
 
-        <!-- ============ HOME ============ -->
+        <!-- HOME -->
         <section id="page-home" class="page active">
           <div class="page-header">
             <h1 class="page-header__title">TechSteal <span class="badge-season">Season 5</span></h1>
             <p class="page-header__sub">Server Status</p>
           </div>
-
-          <!-- Side by side: Server Status (left) + Discord (right) -->
           <div class="home-grid">
             <div class="card">
               <div class="card__title"><span class="dot"></span> Server Status</div>
@@ -130,8 +121,6 @@
                 <span style="color:var(--text-dim);font-size:.85rem;margin-left:10px;">Checking server…</span>
               </div>
             </div>
-
-            <!-- Discord Widget (custom embed with online members) -->
             <div class="card discord-card">
               <div class="card__title"><span class="dot"></span> Discord Community</div>
               <div class="discord-widget" id="discordWidget">
@@ -163,11 +152,11 @@
           </div>
         </section>
 
-        <!-- ============ HOW TO JOIN ============ -->
+        <!-- HOW TO JOIN — seasons + launcher tabs -->
         <section id="page-join" class="page">
           <div class="page-header">
             <h1 class="page-header__title">How to Join</h1>
-            <p class="page-header__sub">Connect to TechSteal Season 5</p>
+            <p class="page-header__sub">Pick your season and launcher</p>
           </div>
           <div class="card">
             <div class="card__title"><span class="dot"></span> Server Address</div>
@@ -178,42 +167,40 @@
             </div>
           </div>
           <div class="card">
-            <div class="card__title"><span class="dot"></span> Quick Start Guide</div>
-            <div class="steps">
-              <div class="step">
-                <div class="step__num"></div>
-                <div class="step__body">
-                  <h4>Open Minecraft Java Edition</h4>
-                  <p>Check the Home page for the current server version to make sure you're compatible.</p>
-                </div>
-              </div>
-              <div class="step">
-                <div class="step__num"></div>
-                <div class="step__body">
-                  <h4>Add a New Server</h4>
-                  <p>Go to <strong>Multiplayer</strong> → click <strong>Add Server</strong>. Enter <code>play.techsteal.space</code> as the server address.</p>
-                </div>
-              </div>
-              <div class="step">
-                <div class="step__num"></div>
-                <div class="step__body">
-                  <h4>Join &amp; Play</h4>
-                  <p>Click <strong>Join Server</strong>. If it's offline, it may be starting up — check back in a few minutes or ping us in Discord.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card__title"><span class="dot"></span> Current Season</div>
+            <div class="card__title"><span class="dot"></span> Seasons</div>
             <div class="season-picker" id="seasonPicker"></div>
-            <div class="season-panel">
-              <div class="season-panel__title" id="seasonTitle">—</div>
-              <div class="season-panel__body" id="seasonBody"></div>
+
+            <!-- Launcher tabs -->
+            <div class="launcher-tabs" id="launcherTabs">
+              <button class="launcher-tab active" data-launcher="prism">Prism</button>
+              <button class="launcher-tab" data-launcher="sklauncher">SK Launcher</button>
+              <button class="launcher-tab" data-launcher="modrinth">Modrinth</button>
+              <button class="launcher-tab" data-launcher="curseforge">CurseForge</button>
+            </div>
+            <div class="launcher-content" id="launcherContent">
+              <div class="launcher-spinner"><div class="status-spinner"></div></div>
+            </div>
+
+            <!-- Admin season editor -->
+            <div id="seasonEditor" style="display:none;margin-top:20px;border-top:1px solid var(--border);padding-top:20px;">
+              <div class="card__title" style="font-size:1rem;"><span class="dot"></span> Edit Season (Admin)</div>
+              <div style="display:flex;flex-direction:column;gap:12px;">
+                <input id="seasonEditTitle" type="text" placeholder="Season title" class="settings-input" />
+                <label style="display:flex;align-items:center;gap:8px;font-size:.9rem;">
+                  <input id="seasonEditCurrent" type="checkbox" /> Set as current season
+                </label>
+                <div id="seasonEditLaunchers" style="display:flex;flex-direction:column;gap:12px;"></div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                  <button class="btn btn--start" id="seasonSaveBtn">Save Season</button>
+                  <button class="btn btn--ghost" id="seasonNewBtn">New Season</button>
+                  <button class="btn btn--ghost" id="seasonDeleteBtn" style="color:var(--danger);border-color:rgba(239,68,68,0.2);">Delete Season</button>
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        <!-- ============ COMMUNITY ============ -->
+        <!-- COMMUNITY -->
         <section id="page-community" class="page">
           <div class="page-header">
             <h1 class="page-header__title">Community</h1>
@@ -243,7 +230,7 @@
           </div>
         </section>
 
-        <!-- ============ BLOG ============ -->
+        <!-- BLOG -->
         <section id="page-blog" class="page">
           <div class="page-header">
             <h1 class="page-header__title">Blog &amp; Announcements</h1>
@@ -271,12 +258,12 @@
           <div class="card">
             <div class="card__title"><span class="dot"></span> Latest News</div>
             <div class="blog-grid" id="blogGrid">
-              <div class="empty-state">No blog posts yet. Check back soon!</div>
+              <div class="empty-state">Loading blog posts…</div>
             </div>
           </div>
         </section>
 
-        <!-- ============ SETTINGS ============ -->
+        <!-- SETTINGS -->
         <section id="page-settings" class="page">
           <div class="page-header">
             <h1 class="page-header__title">Settings</h1>
@@ -338,7 +325,7 @@
     </div>
   </div>
 
-  <!-- Toast — hidden by default, only shows briefly -->
+  <!-- Toast -->
   <div class="toast" id="toast" style="display:none;"></div>
 
   <script src="assets/js/app.js"></script>

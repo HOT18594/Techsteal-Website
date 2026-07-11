@@ -487,6 +487,83 @@ code { font-family: var(--mono); }
 .step__body code { background: rgba(74,222,128,0.12); color: var(--accent); padding: 2px 6px; border-radius: 4px; }
 
 /* ============================================================
+   LAUNCHER TABS
+   ============================================================ */
+.launcher-tabs {
+  display: flex; gap: 8px; margin: 16px 0 14px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.launcher-tab {
+  padding: 10px 16px; border-radius: 8px 8px 0 0;
+  background: transparent; color: var(--text-dim);
+  font-weight: 600; font-size: .88rem; font-family: var(--font-display);
+  transition: all .2s ease; border: 1px solid transparent;
+  border-bottom: none; cursor: pointer;
+}
+.launcher-tab:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+.launcher-tab.active {
+  color: var(--accent); background: rgba(74,222,128,0.08);
+  border-color: var(--border);
+  border-bottom: 2px solid var(--accent);
+}
+.launcher-content {
+  background: rgba(0,0,0,0.22); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px;
+  min-height: 120px; animation: fadeIn .3s ease;
+}
+.launcher-content p { margin: 8px 0; color: var(--text); }
+.launcher-content a { color: var(--accent); }
+.launcher-content code {
+  background: rgba(74,222,128,0.12); color: var(--accent);
+  padding: 2px 6px; border-radius: 4px;
+}
+.launcher-content ul { list-style: disc; padding-left: 24px; margin: 8px 0; }
+.launcher-content ol { list-style: decimal; padding-left: 24px; margin: 8px 0; }
+.launcher-content li { margin: 4px 0; }
+.launcher-spinner {
+  display: flex; align-items: center; justify-content: center;
+  padding: 30px;
+}
+
+/* ============================================================
+   ADMIN CONTROLS
+   ============================================================ */
+.admin-actions {
+  display: flex; gap: 8px; margin-top: 10px;
+  padding-top: 10px; border-top: 1px solid var(--border);
+}
+.admin-btn {
+  font-size: .78rem; padding: 6px 12px; border-radius: 6px;
+  border: 1px solid var(--border); background: rgba(0,0,0,0.3);
+  color: var(--text-dim); cursor: pointer; transition: all .15s;
+  font-family: var(--font-display); font-weight: 600;
+}
+.admin-btn:hover { border-color: var(--accent); color: var(--accent); }
+.admin-btn.danger { color: var(--danger); border-color: rgba(239,68,68,0.2); }
+.admin-btn.danger:hover { border-color: var(--danger); background: rgba(239,68,68,0.1); }
+
+/* Season editor launcher inputs */
+.season-launcher-edit {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.season-launcher-edit label {
+  font-size: .82rem; font-weight: 600; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: .5px;
+}
+.season-launcher-edit textarea {
+  width: 100%; min-height: 80px; resize: vertical;
+  background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 12px; color: var(--text);
+  font-family: var(--font); font-size: .9rem;
+  transition: border-color .25s;
+}
+.season-launcher-edit textarea:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+/* ============================================================
    SEASON PICKER
    ============================================================ */
 .season-picker { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 18px; }
