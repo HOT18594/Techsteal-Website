@@ -1,0 +1,29 @@
+{
+  "seasons": [
+    {
+      "id": 5,
+      "title": "Season 5",
+      "body": "<p>Season 5 is the newest chapter. Expect fresh events, new rewards, and updated community goals.</p><ul><li>New seasonal quests</li><li>Fresh community events</li><li>Updated server rules</li></ul>"
+    },
+    {
+      "id": 4,
+      "title": "Season 4",
+      "body": "<p>Season 4 content will be added soon.</p>"
+    },
+    {
+      "id": 3,
+      "title": "Season 3",
+      "body": "<p>Season 3 content will be added soon.</p>"
+    },
+    {
+      "id": 2,
+      "title": "Season 2",
+      "body": "<p>Season 2 content will be added soon.</p>"
+    },
+    {
+      "id": 1,
+      "title": "Season 1",
+      "body": "<p>Season 1 content will be added soon.</p>"
+    }
+  ]
+}

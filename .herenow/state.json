@@ -1,0 +1,16 @@
+{
+  "publishes": {
+    "flowing-sandal-9gc6": {
+      "siteUrl": "https://flowing-sandal-9gc6.here.now/",
+      "claimToken": "61117f17463e52dba9ccb59c31251222779d2b58454233824f10c8fe767f242d",
+      "claimUrl": "https://here.now/claim?slug=flowing-sandal-9gc6&token=61117f17463e52dba9ccb59c31251222779d2b58454233824f10c8fe767f242d",
+      "expiresAt": "2026-07-12T01:23:41.194Z"
+    },
+    "serene-canopy-f4d3": {
+      "siteUrl": "https://serene-canopy-f4d3.here.now/",
+      "claimToken": "5ceb0738508124980f0112a8f627cef10720a3b8699aaf8feefca2e33fbf4e54",
+      "claimUrl": "https://here.now/claim?slug=serene-canopy-f4d3&token=5ceb0738508124980f0112a8f627cef10720a3b8699aaf8feefca2e33fbf4e54",
+      "expiresAt": "2026-07-12T01:42:58.547Z"
+    }
+  }
+}
