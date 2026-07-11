@@ -16,6 +16,9 @@ const SERVER_ADDRESS = "play.techsteal.space";
 const STATUS_API = `https://api.mcsrvstat.us/3/${SERVER_ADDRESS}`;
 const STATUS_API_FALLBACK = `https://api.mcsrvstat.us/2/${SERVER_ADDRESS}`;
 const CURRENT_SEASON_ID = 5;
+const DISCORD_INVITE_API = `https://discord.com/api/v9/invites/bEZ5M5jBvz?with_counts=true`;
+const DISCORD_GUILD_ID = "1349848075371413515";
+const DISCORD_WIDGET_API = `https://discord.com/api/guilds/${DISCORD_GUILD_ID}/widget.json`;
 
 const $  = (sel, ctx = document) => ctx.querySelector(sel);
 const $$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)];
