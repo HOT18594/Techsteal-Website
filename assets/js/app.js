@@ -1,276 +1,296 @@
-﻿/* ============================================================
+/* ============================================================
    TechSteal — Minecraft Server Website
-   App logic: login, routing, server controls, posts, blog
+   Static app logic (no backend, no Node.js)
+   Uses api.mcsrvstat.us (free, public, CORS-enabled)
    ============================================================ */
 
-const MEMBER_CODE = "TechStealMemberCode2026!";
-const ADMIN_CODE = "TechStealAdminCode2026!";
-const STORAGE_KEYS = {
-  auth: "ts_auth",
-  user: "ts_user",
-  role: "ts_role",
-  posts: "ts_posts",
-  pfp: "ts_pfp"
-};
+/* ---- CONFIG ---- */
+const SERVER_ADDRESS = "play.techsteal.net";
+const STATUS_API = `https://api.mcsrvstat.us/3/${SERVER_ADDRESS}`;
+const STATUS_API_FALLBACK = `https://api.mcsrvstat.us/2/${SERVER_ADDRESS}`;
 
-const $ = (sel, ctx = document) => ctx.querySelector(sel);
-const $$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)];
+/* ---- HELPERS ---- */
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => [...document.querySelectorAll(sel)];
 
 function toast(msg) {
-  let t = $(".toast");
-  if (!t) {
-    t = document.createElement("div");
-    t.className = "toast";
-    document.body.appendChild(t);
-  }
+  const t = $("#toast");
+  if (!t) return;
   t.textContent = msg;
   t.classList.add("show");
   clearTimeout(t._timer);
   t._timer = setTimeout(() => t.classList.remove("show"), 2600);
 }
 
-function initLogin() {
-  const splash = $("#splash");
-  const app = $("#app");
-  if (!splash || !app) return;
+/* ---- NAVBAR ---- */
+function initNav() {
+  const toggle = $("#navToggle");
+  const links = $("#navLinks");
+  toggle?.addEventListener("click", () => links?.classList.toggle("open"));
 
-  if (sessionStorage.getItem(STORAGE_KEYS.auth) === "1") {
-    splash.style.display = "none";
-    app.classList.add("show");
-    promptForUsername();
+  $$(".nav-link").forEach((link) => {
+    link.addEventListener("click", () => {
+      links?.classList.remove("open");
+      $$(".nav-link").forEach((l) => l.classList.remove("active"));
+      if (link.getAttribute("href")?.startsWith("#")) link.classList.add("active");
+    });
+  });
+
+  // Highlight nav on scroll
+  const sections = ["home", "blog", "join"];
+  window.addEventListener("scroll", () => {
+    let current = "home";
+    for (const id of sections) {
+      const el = document.getElementById(id);
+      if (el && el.getBoundingClientRect().top <= 120) current = id;
+    }
+    $$(".nav-link").forEach((l) => {
+      const href = l.getAttribute("href");
+      l.classList.toggle("active", href === `#${current}`);
+    });
+  });
+}
+
+/* ---- COPY IP ---- */
+function initCopyIP() {
+  const copyIPs = [
+    { btn: "#heroCopyIP", target: "#heroIP" },
+    { btn: "#copyIP", target: "#serverAddress" },
+    { btn: "#joinCopyIP", target: null },
+  ];
+
+  copyIPs.forEach(({ btn, target }) => {
+    $(btn)?.addEventListener("click", async () => {
+      const ip = target ? $(target)?.textContent?.trim() : SERVER_ADDRESS;
+      if (!ip) return;
+      try {
+        await navigator.clipboard.writeText(ip);
+        toast("IP copied to clipboard!");
+      } catch {
+        const ta = document.createElement("textarea");
+        ta.value = ip;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        toast("IP copied to clipboard!");
+      }
+    });
+  });
+}
+
+/* ---- SERVER STATUS ---- */
+let statusRefreshTimer = null;
+let lastStatusData = null;
+
+async function fetchServerStatus() {
+  try {
+    const res = await fetch(STATUS_API);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    lastStatusData = data;
+    return data;
+  } catch {
+    try {
+      const res2 = await fetch(STATUS_API_FALLBACK);
+      if (!res2.ok) throw new Error(`HTTP ${res2.status}`);
+      const data2 = await res2.json();
+      lastStatusData = data2;
+      return data2;
+    } catch {
+      return null;
+    }
+  }
+}
+
+function renderServerStatus(data) {
+  const online = Boolean(data?.online);
+
+  // Hero status
+  const heroDot = $("#heroStatusDot");
+  const heroText = $("#heroStatusText");
+  if (heroDot) heroDot.classList.toggle("off", !online);
+  if (heroText) heroText.textContent = online ? "Server Online" : "Server Offline";
+
+  // Status grid
+  const statusDot = $("#serverStatusDot");
+  const statusText = $("#serverStatusText");
+  const playersEl = $("#serverPlayers");
+  const addressEl = $("#serverAddress");
+  const versionEl = $("#serverVersion");
+
+  if (statusDot) statusDot.classList.toggle("offline", !online);
+  if (statusText) statusText.textContent = online ? "Online" : "Offline";
+
+  if (playersEl) {
+    if (online && data.players) {
+      const online_count = data.players.online ?? 0;
+      const max_count = data.players.max ?? 0;
+      playersEl.textContent = max_count > 0 ? `${online_count} / ${max_count}` : `${online_count}`;
+    } else {
+      playersEl.textContent = "—";
+    }
+  }
+
+  if (addressEl) addressEl.textContent = data?.hostname || SERVER_ADDRESS;
+  if (versionEl) versionEl.textContent = online ? (data.version || "—") : "—";
+
+  // Player list
+  renderPlayerList(online ? data : null);
+
+  // MOTD
+  renderMOTD(online ? data : null);
+}
+
+function renderPlayerList(data) {
+  const wrapper = $("#playerListWrapper");
+  const list = $("#playerList");
+  if (!wrapper || !list) return;
+
+  const players = data?.players?.list;
+  if (!players || !players.length) {
+    wrapper.style.display = "none";
     return;
   }
 
-  const form = $("#loginForm");
-  const input = $("#keyInput");
-  const error = $("#loginError");
+  wrapper.style.display = "block";
+  list.innerHTML = players.map((p) => {
+    const name = typeof p === "string" ? p : (p.name || p.uuid || "Player");
+    const uuid = typeof p === "object" ? p.uuid : null;
+    const headUrl = uuid
+      ? `https://crafatar.com/avatars/${uuid}?size=32&overlay`
+      : `https://mc-heads.net/avatar/${name}/32`;
+    return `<div class="player-chip"><img class="player-chip__head" src="${headUrl}" alt="${name}" loading="lazy" onerror="this.style.display='none'" /><span>${name}</span></div>`;
+  }).join("");
+}
 
-  form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const val = input.value.trim();
-    let role = null;
+function renderMOTD(data) {
+  const card = $("#motdCard");
+  const body = $("#motdBody");
+  if (!card || !body) return;
 
-    if (val === MEMBER_CODE) role = "member";
-    else if (val === ADMIN_CODE) role = "admin";
+  const motd = data?.motd;
+  if (!motd) {
+    card.style.display = "none";
+    return;
+  }
 
-    if (!role) {
-      error.textContent = "Invalid key. Try again.";
-      error.classList.add("show");
-      input.value = "";
-      input.focus();
+  const text = Array.isArray(motd.clean) ? motd.clean.join("\n") : (motd.clean || motd.raw || "");
+  if (!text.trim()) {
+    card.style.display = "none";
+    return;
+  }
+
+  card.style.display = "block";
+  body.textContent = text;
+}
+
+async function refreshServerStatus() {
+  const data = await fetchServerStatus();
+  renderServerStatus(data);
+}
+
+function initServerStatus() {
+  refreshServerStatus();
+  if (statusRefreshTimer) clearInterval(statusRefreshTimer);
+  // Refresh every 60 seconds (mcsrvstat.us caches for ~60s)
+  statusRefreshTimer = setInterval(refreshServerStatus, 60000);
+}
+
+/* ---- BLOG / ANNOUNCEMENTS ---- */
+async function loadBlogPosts() {
+  const grid = $("#blogGrid");
+  if (!grid) return;
+
+  try {
+    const res = await fetch("data/blog.json");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const posts = data.posts || [];
+
+    if (!posts.length) {
+      grid.innerHTML = '<div class="empty-state">No posts yet. Check back soon!</div>';
       return;
     }
 
-    sessionStorage.setItem(STORAGE_KEYS.auth, "1");
-    localStorage.setItem(STORAGE_KEYS.role, role);
-    error.classList.remove("show");
-    splash.style.transition = "opacity .5s ease";
-    splash.style.opacity = "0";
-    setTimeout(() => {
-      splash.style.display = "none";
-      app.classList.add("show");
-      promptForUsername();
-      toast(role === "admin" ? "Welcome Admin" : "Welcome Member");
-    }, 500);
-  });
-}
+    grid.innerHTML = posts.map((post, i) => {
+      const excerpt = stripHtml(post.body || "").slice(0, 120);
+      const truncated = stripHtml(post.body || "").length >= 120 ? "…" : "";
+      const emoji = post.emoji || "📰";
+      const tag = post.tag || "News";
+      const date = post.date ? formatDate(post.date) : "";
+      return `
+        <article class="blog-card" data-index="${i}">
+          <div class="blog-card__banner"><span style="font-size:2rem;">${emoji}</span></div>
+          <div class="blog-card__body">
+            <span class="blog-card__tag">${tag}</span>
+            <h3 class="blog-card__title">${escapeHtml(post.title || "Untitled")}</h3>
+            <p class="blog-card__excerpt">${escapeHtml(excerpt)}${truncated}</p>
+            <div class="blog-card__meta">${date ? `${date} · ` : ""}by ${escapeHtml(post.author || "TechSteal")}</div>
+          </div>
+        </article>`;
+    }).join("");
 
-function openUsernameModal() {
-  const overlay = $("#usernameModal");
-  const input = $("#usernameModalInput");
-  const saveBtn = $("#usernameModalSave");
-  const skipBtn = $("#usernameModalSkip");
-  if (!overlay || !input || !saveBtn || !skipBtn) return;
+    // Store for modal
+    blogPosts = posts;
 
-  overlay.classList.add("open");
-  overlay.setAttribute("aria-hidden", "false");
-  input.value = localStorage.getItem(STORAGE_KEYS.user) || "";
-  input.focus();
-
-  const finish = () => {
-    const value = input.value.trim();
-    const clean = value || "Guest";
-    localStorage.setItem(STORAGE_KEYS.user, clean);
-    updateProfileLabel();
-    overlay.classList.remove("open");
-    overlay.setAttribute("aria-hidden", "true");
-    toast(value ? `Profile saved for ${clean}` : "Using guest profile.");
-  };
-
-  saveBtn.onclick = finish;
-  skipBtn.onclick = () => {
-    localStorage.setItem(STORAGE_KEYS.user, "Guest");
-    updateProfileLabel();
-    overlay.classList.remove("open");
-    overlay.setAttribute("aria-hidden", "true");
-    toast("Using guest profile.");
-  };
-
-  input.onkeydown = (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      finish();
-    }
-  };
-}
-
-function promptForUsername() {
-  if (localStorage.getItem(STORAGE_KEYS.user)) {
-    updateProfileLabel();
-    return;
-  }
-  openUsernameModal();
-}
-
-function updateProfileLabel() {
-  const label = $("#profileLabel");
-  const role = localStorage.getItem(STORAGE_KEYS.role) || "member";
-  const user = localStorage.getItem(STORAGE_KEYS.user) || "Guest";
-  if (label) label.textContent = `${user} • ${role === "admin" ? "Admin" : "Member"}`;
-  renderAvatar();
-}
-
-function renderAvatar() {
-  const avatarContainer = $("#sidebarAvatar");
-  const pfp = localStorage.getItem(STORAGE_KEYS.pfp);
-  if (!avatarContainer) return;
-  avatarContainer.innerHTML = "";
-  if (pfp) {
-    const img = document.createElement("img");
-    img.src = pfp;
-    img.alt = "Profile";
-    avatarContainer.appendChild(img);
-    avatarContainer.classList.add("show");
-  } else {
-    avatarContainer.classList.remove("show");
-  }
-}
-
-function logout() {
-  sessionStorage.removeItem(STORAGE_KEYS.auth);
-  location.reload();
-}
-
-const PAGES = ["home", "join", "community", "blog", "settings"];
-const TITLES = { home: "Dashboard", join: "How to Join", community: "Community", blog: "Blog", settings: "Settings" };
-
-function navigate(page) {
-  if (!PAGES.includes(page)) page = "home";
-  $$(".nav-item").forEach((n) => n.classList.toggle("active", n.dataset.page === page));
-  $$(".page").forEach((p) => p.classList.toggle("active", p.id === `page-${page}`));
-  const title = $("#topbarTitle");
-  if (title) title.textContent = TITLES[page];
-  $(".sidebar").classList.remove("open");
-  window.scrollTo({ top: 0, behavior: "smooth" });
-}
-
-function initNav() {
-  $$(".nav-item").forEach((n) => n.addEventListener("click", () => navigate(n.dataset.page)));
-  $("#logoutBtn")?.addEventListener("click", logout);
-  $(".menu-toggle")?.addEventListener("click", () => $(".sidebar").classList.toggle("open"));
-}
-
-let serverRefreshTimer = null;
-
-async function refreshServerStatus() {
-  const statusEl = $("#serverStatusText");
-  const dotEl = $("#serverStatusDot");
-  const playersEl = $("#serverPlayers");
-  const addressEl = $("#serverAddress");
-  const ramEl = $("#serverRam");
-  const stateEl = $("#serverState");
-
-  try {
-    const res = await fetch("/api/exaroton/server");
-    const data = await res.json();
-    const server = data?.server || data;
-    const online = Boolean(server?.online || server?.status === "online");
-    const players = server?.players?.online ?? server?.player_count ?? server?.players ?? "—";
-    const address = server?.address || server?.server_address || "play.techsteal.net";
-    const ram = server?.ram || server?.memory || server?.ram_usage || "—";
-
-    if (statusEl) statusEl.textContent = online ? "Online" : "Offline";
-    if (dotEl) dotEl.classList.toggle("offline", !online);
-    if (playersEl) playersEl.textContent = `${players}`;
-    if (addressEl) addressEl.textContent = address;
-    if (ramEl) ramEl.textContent = ram;
-    if (stateEl) {
-      stateEl.textContent = online ? "Running" : "Stopped";
-      stateEl.className = online ? "stat__value ok" : "stat__value bad";
-    }
+    // Click handlers
+    $$(".blog-card").forEach((card) => {
+      card.addEventListener("click", () => {
+        const idx = Number(card.dataset.index);
+        openBlogModal(posts[idx]);
+      });
+    });
   } catch {
-    if (statusEl) statusEl.textContent = "Unavailable";
-    if (dotEl) dotEl.classList.add("offline");
-    if (playersEl) playersEl.textContent = "—";
-    if (addressEl) addressEl.textContent = "play.techsteal.net";
-    if (ramEl) ramEl.textContent = "—";
-    if (stateEl) {
-      stateEl.textContent = "Unavailable";
-      stateEl.className = "stat__value bad";
-    }
+    grid.innerHTML = '<div class="empty-state">Unable to load blog posts. Check back later.</div>';
   }
 }
 
-async function callServerAction(action) {
-  const actions = {
-    start: "/api/exaroton/server/start",
-    stop: "/api/exaroton/server/stop",
-    restart: "/api/exaroton/server/restart"
-  };
+let blogPosts = [];
 
-  const res = await fetch(actions[action], { method: "POST" });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Action failed");
-  toast(`${action[0].toUpperCase()}${action.slice(1)} request sent.`);
-  await refreshServerStatus();
+function openBlogModal(post) {
+  const modal = $("#blogModal");
+  if (!modal) return;
+
+  $("#blogModalTag").textContent = post.tag || "News";
+  $("#blogModalTitle").textContent = post.title || "Untitled";
+  $("#blogModalMeta").textContent = post.date ? `${formatDate(post.date)} · by ${post.author || "TechSteal"}` : `by ${post.author || "TechSteal"}`;
+  $("#blogModalBody").innerHTML = post.body || "";
+
+  modal.classList.add("open");
 }
 
-function initServerControls() {
-  $("#btnStart")?.addEventListener("click", async () => {
-    try { await callServerAction("start"); } catch (error) { toast(error.message || "Failed to start server."); }
+function initBlogModal() {
+  const modal = $("#blogModal");
+  const close = $("#blogModalClose");
+  close?.addEventListener("click", () => modal?.classList.remove("open"));
+  modal?.addEventListener("click", (e) => {
+    if (e.target === modal) modal.classList.remove("open");
   });
-  $("#btnStop")?.addEventListener("click", async () => {
-    try { await callServerAction("stop"); } catch (error) { toast(error.message || "Failed to stop server."); }
-  });
-  $("#btnRestart")?.addEventListener("click", async () => {
-    try { await callServerAction("restart"); } catch (error) { toast(error.message || "Failed to restart server."); }
-  });
-  $("#btnRefresh")?.addEventListener("click", refreshServerStatus);
-  refreshServerStatus();
-  if (serverRefreshTimer) clearInterval(serverRefreshTimer);
-  serverRefreshTimer = setInterval(refreshServerStatus, 20000);
-}
-
-function initCopyIP() {
-  $("#copyIP")?.addEventListener("click", async () => {
-    const ip = $("#serverAddress").textContent.trim();
-    try {
-      await navigator.clipboard.writeText(ip);
-      toast("IP copied to clipboard!");
-    } catch {
-      const ta = document.createElement("textarea");
-      ta.value = ip;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-      toast("IP copied to clipboard!");
-    }
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") modal?.classList.remove("open");
   });
 }
 
+/* ---- SEASONS ---- */
 let seasonData = [];
-let activeSeasonId = 5;
+let activeSeasonId = null;
 
 async function loadSeasons() {
   try {
-    const res = await fetch("/api/admin/seasons");
+    const res = await fetch("data/seasons.json");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     seasonData = data.seasons || [];
+    if (!seasonData.length) return;
+
+    activeSeasonId = seasonData[0].id;
+    const wrapper = $("#seasonsWrapper");
+    if (wrapper) wrapper.style.display = "block";
+
     renderSeasonPicker();
   } catch {
-    seasonData = [];
-    renderSeasonPicker();
+    // Seasons are optional — just hide
   }
 }
 
@@ -278,11 +298,9 @@ function renderSeasonPicker() {
   const picker = $("#seasonPicker");
   if (!picker) return;
 
-  if (!seasonData.length) {
-    picker.innerHTML = '<button class="season-btn active" data-season="5">Season 5</button>';
-  } else {
-    picker.innerHTML = seasonData.map((season) => `<button class="season-btn ${season.id === activeSeasonId ? "active" : ""}" data-season="${season.id}">${season.title}</button>`).join("");
-  }
+  picker.innerHTML = seasonData.map((s) =>
+    `<button class="season-btn ${s.id === activeSeasonId ? "active" : ""}" data-season="${s.id}">${escapeHtml(s.title)}</button>`
+  ).join("");
 
   $$(".season-btn", picker).forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -290,246 +308,47 @@ function renderSeasonPicker() {
       renderSeasonPicker();
     });
   });
+
   renderActiveSeason();
 }
 
 function renderActiveSeason() {
-  const season = seasonData.find((item) => item.id === activeSeasonId) || seasonData[0];
+  const season = seasonData.find((s) => s.id === activeSeasonId) || seasonData[0];
+  if (!season) return;
   const titleEl = $("#seasonTitle");
   const bodyEl = $("#seasonBody");
-  const titleInput = $("#seasonTitleInput");
-  const bodyInput = $("#seasonBodyInput");
-  const panel = $("#seasonEditorPanel");
-
-  if (!season) return;
   if (titleEl) titleEl.textContent = season.title || "Season";
   if (bodyEl) bodyEl.innerHTML = season.body || "";
-  if (titleInput) titleInput.value = season.title || "";
-  if (bodyInput) bodyInput.value = season.body || "";
-  if (panel) panel.style.display = localStorage.getItem(STORAGE_KEYS.role) === "admin" ? "grid" : "none";
 }
 
-async function saveSeasons() {
-  const titleInput = $("#seasonTitleInput");
-  const bodyInput = $("#seasonBodyInput");
-  if (!titleInput || !bodyInput) return;
-
-  const updated = seasonData.map((item) => item.id === activeSeasonId ? { ...item, title: titleInput.value.trim(), body: bodyInput.value.trim() } : item);
-  seasonData = updated;
-  const res = await fetch("/api/admin/seasons", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ seasons: seasonData })
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Unable to save seasons");
-  renderSeasonPicker();
-  toast("Seasons updated.");
-}
-
-function initSeasonEditor() {
-  const saveBtn = $("#saveSeasonBtn");
-  const newSeasonBtn = $("#newSeasonBtn");
-  saveBtn?.addEventListener("click", async () => {
-    try { await saveSeasons(); } catch (error) { toast(error.message || "Failed to save season"); }
-  });
-  newSeasonBtn?.addEventListener("click", () => {
-    const nextId = Math.max(0, ...seasonData.map((item) => item.id)) + 1;
-    seasonData = [...seasonData, { id: nextId, title: `Season ${nextId}`, body: "<p>New season content</p>" }];
-    activeSeasonId = nextId;
-    renderSeasonPicker();
-    toast("New season created.");
-  });
-  loadSeasons();
-}
-
-function initSettings() {
-  const form = $("#settingsForm");
-  const usernameInput = $("#settingsUsername");
-  const pfpInput = $("#settingsPfpInput");
-  const preview = $("#settingsPfpPreview");
-  if (!form || !usernameInput || !pfpInput || !preview) return;
-
-  usernameInput.value = localStorage.getItem(STORAGE_KEYS.user) || "";
-  const currentPfp = localStorage.getItem(STORAGE_KEYS.pfp);
-  if (currentPfp) preview.innerHTML = `<img src="${currentPfp}" alt="profile preview" />`;
-  else preview.textContent = "No image";
-
-  pfpInput.addEventListener("change", async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result;
-      localStorage.setItem(STORAGE_KEYS.pfp, dataUrl);
-      preview.innerHTML = `<img src="${dataUrl}" alt="profile preview" />`;
-      renderAvatar();
-      toast("Profile picture updated.");
-    };
-    reader.readAsDataURL(file);
-  });
-
-  form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const value = usernameInput.value.trim();
-    if (!value) {
-      toast("Please enter a username.");
-      return;
-    }
-    localStorage.setItem(STORAGE_KEYS.user, value);
-    updateProfileLabel();
-    toast("Profile saved.");
-  });
-}
-
+/* ---- UTILITIES ---- */
 function stripHtml(html) {
   const tmp = document.createElement("div");
   tmp.innerHTML = html;
   return tmp.textContent || tmp.innerText || "";
 }
 
-function initEditorToolbar(editor) {
-  if (!editor) return;
-  const toolbar = editor.closest(".editor");
-  if (!toolbar) return;
-
-  toolbar.querySelectorAll(".editor__btn").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      const command = button.getAttribute("data-cmd");
-      const value = button.getAttribute("data-value") || null;
-      if (!command) return;
-
-      editor.focus();
-      document.execCommand(command, false, value);
-      if (command === "insertUnorderedList" || command === "insertOrderedList") {
-        setTimeout(() => editor.focus(), 0);
-      }
-      const stateCommands = ["bold", "italic", "underline"];
-      if (stateCommands.includes(command)) {
-        button.classList.toggle("active", document.queryCommandState(command));
-      }
-    });
-  });
+function escapeHtml(str) {
+  const tmp = document.createElement("div");
+  tmp.textContent = str;
+  return tmp.innerHTML;
 }
 
-function initCommunityPosts() {
-  const form = $("#newPostForm");
-  const editor = $("#communityEditor");
-  if (!form || !editor) return;
-  initEditorToolbar(editor);
-  form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const body = editor.innerHTML.trim();
-    if (!stripHtml(body)) {
-      toast("Please write something before posting.");
-      return;
-    }
-    const posts = JSON.parse(localStorage.getItem(STORAGE_KEYS.posts) || "null") || [];
-    posts.unshift({
-      id: `local_${Date.now()}`,
-      author: localStorage.getItem(STORAGE_KEYS.user) || "Guest",
-      body,
-      images: JSON.stringify([]),
-      pfp: localStorage.getItem(STORAGE_KEYS.pfp) || "",
-      created_at: new Date().toISOString(),
-      likes: 0
-    });
-    localStorage.setItem(STORAGE_KEYS.posts, JSON.stringify(posts));
-    editor.innerHTML = "";
-    renderPosts();
-    toast("Post published!");
-  });
-}
-
-function renderPosts() {
-  const list = $("#postList");
-  if (!list) return;
-  const posts = JSON.parse(localStorage.getItem(STORAGE_KEYS.posts) || "null") || [];
-  if (!posts.length) {
-    list.innerHTML = '<div class="empty-state">No posts yet. Be the first to share something!</div>';
-    return;
+function formatDate(dateStr) {
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+  } catch {
+    return dateStr;
   }
-
-  list.innerHTML = posts.map((post) => `
-    <div class="post">
-      <div class="post__head">
-        <div class="avatar">${post.pfp ? `<img src="${post.pfp}" alt="avatar" />` : (post.author || "A").charAt(0).toUpperCase()}</div>
-        <div>
-          <div class="post__author">${post.author || "Guest"}</div>
-          <div class="post__time">${new Date(post.created_at).toLocaleString()}</div>
-        </div>
-      </div>
-      <div class="post__body">${post.body}</div>
-    </div>
-  `).join("");
 }
 
-function initBlogPosts() {
-  const form = $("#newBlogPostForm");
-  const titleInput = $("#blogTitleInput");
-  const editor = $("#blogEditor");
-  const composerCard = $("#blogComposerCard");
-  initEditorToolbar(editor);
-  if (composerCard && localStorage.getItem(STORAGE_KEYS.role) === "admin") composerCard.style.display = "block";
-
-  form?.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const title = titleInput?.value.trim() || "Untitled";
-    const body = editor?.innerHTML.trim() || "";
-    if (!stripHtml(body)) { toast("Please write something before publishing."); return; }
-    const posts = JSON.parse(localStorage.getItem("ts_blog_posts") || "null") || [];
-    posts.unshift({ title, body, author: localStorage.getItem(STORAGE_KEYS.user) || "Admin", created_at: new Date().toISOString() });
-    localStorage.setItem("ts_blog_posts", JSON.stringify(posts));
-    renderBlogPosts(posts);
-    if (titleInput) titleInput.value = "";
-    if (editor) editor.innerHTML = "";
-    toast("Blog post published locally.");
-  });
-
-  renderBlogPosts(JSON.parse(localStorage.getItem("ts_blog_posts") || "null") || []);
-}
-
-function renderBlogPosts(posts) {
-  const grid = $("#blogGrid");
-  if (!grid) return;
-  if (!posts.length) {
-    grid.innerHTML = '<div class="empty-state">No blog posts yet. Check back soon!</div>';
-    return;
-  }
-  grid.innerHTML = posts.map((post) => `
-    <article class="blog-card">
-      <div class="blog-card__banner" style="background: linear-gradient(135deg, #1e293b, #0f766e);">
-        <span style="font-size:2rem;">📰</span>
-      </div>
-      <div class="blog-card__body">
-        <span class="blog-card__tag">News</span>
-        <h3 class="blog-card__title">${post.title || "Untitled"}</h3>
-        <p class="blog-card__excerpt">${stripHtml(post.body || "").slice(0, 120)}${stripHtml(post.body || "").length >= 120 ? "..." : ""}</p>
-        <div class="blog-card__meta">by ${post.author || "Admin"}</div>
-      </div>
-    </article>
-  `).join("");
-}
-
-function initViewer() {
-  $("#viewerClose")?.addEventListener("click", () => $("#viewerOverlay")?.classList.remove("open"));
-  $("#viewerOverlay")?.addEventListener("click", (e) => { if (e.target.id === "viewerOverlay") e.target.classList.remove("open"); });
-  $("#lightboxClose")?.addEventListener("click", () => $("#lightbox")?.classList.remove("open"));
-  $("#lightbox")?.addEventListener("click", (e) => { if (e.target.id === "lightbox") e.target.classList.remove("open"); });
-}
-
+/* ---- INIT ---- */
 document.addEventListener("DOMContentLoaded", () => {
-  initLogin();
   initNav();
-  initServerControls();
   initCopyIP();
-  initCommunityPosts();
-  initBlogPosts();
-  initSettings();
-  initSeasonEditor();
-  initViewer();
-  renderPosts();
-  updateProfileLabel();
-  renderAvatar();
+  initServerStatus();
+  loadBlogPosts();
+  initBlogModal();
+  loadSeasons();
 });

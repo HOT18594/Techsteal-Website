@@ -1,0 +1,20 @@
+{
+  "posts": [
+    {
+      "title": "Welcome to TechSteal Season 5!",
+      "tag": "Announcement",
+      "emoji": "🎉",
+      "author": "TechSteal",
+      "date": "2026-01-15",
+      "body": "<p>Season 5 is officially live! Expect fresh events, new rewards, and updated community goals.</p><h3>What's new this season:</h3><ul><li>New seasonal quests</li><li>Fresh community events</li><li>Updated server rules</li></ul><p>Jump in at <code>play.techsteal.net</code> and join the fun!</p>"
+    },
+    {
+      "title": "Server Rules Updated",
+      "tag": "News",
+      "emoji": "📋",
+      "author": "TechSteal",
+      "date": "2026-01-10",
+      "body": "<p>We've updated our server rules for Season 5. Please review them in our Discord before playing.</p><p>Key changes include updated PvP guidelines and new building restrictions near spawn.</p>"
+    }
+  ]
+}
