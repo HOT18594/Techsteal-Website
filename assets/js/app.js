@@ -5,8 +5,8 @@
    blog with admin edit/delete, Supabase sync, lightbox viewer
    ============================================================ */
 
-const MEMBER_CODE = "123456";
-const ADMIN_CODE  = "654321";
+const MEMBER_CODE = "om{u{WAMrDn/g4243.>B_4X%3UmV^|";
+const ADMIN_CODE  = "Qvo6;.@1L\\tnz2Gyc.CL$WbP8>VVm9";
 const STORAGE_KEYS = {
   auth: "ts_auth", user: "ts_user", role: "ts_role",
   posts: "ts_posts", pfp: "ts_pfp", blog: "ts_blog_posts",
