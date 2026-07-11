@@ -372,20 +372,54 @@ code { font-family: var(--mono); }
    ============================================================ */
 .community-toolbar {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  margin-bottom: 20px; flex-wrap: wrap;
+  margin-bottom: 22px; flex-wrap: wrap;
 }
 .search-bar {
-  display: flex; align-items: center; gap: 10px; flex: 1; min-width: 200px;
-  background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 12px; padding: 10px 16px;
-  transition: border-color .25s;
+  display: flex; align-items: center; gap: 12px; flex: 1; min-width: 220px;
+  background: rgba(0,0,0,0.35); border: 1px solid var(--border); border-radius: 12px; padding: 13px 18px;
+  transition: border-color .25s, box-shadow .25s, background .25s;
 }
-.search-bar:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.search-bar:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); background: rgba(0,0,0,0.45); }
 .search-bar__input {
-  flex: 1; background: transparent; border: none; color: var(--text); font-size: .9rem; outline: none;
+  flex: 1; background: transparent; border: none; color: var(--text); font-size: .95rem; outline: none;
   font-family: var(--font);
 }
 .search-bar__input::placeholder { color: var(--text-dim); }
-.community-stats { font-size: .82rem; color: var(--text-dim); white-space: nowrap; }
+.search-bar__clear {
+  width: 22px; height: 22px; border-radius: 50%; background: rgba(255,255,255,0.08); color: var(--text-dim);
+  display: none; align-items: center; justify-content: center; font-size: 15px; line-height: 1; flex-shrink: 0;
+  transition: all .15s;
+}
+.search-bar__clear:hover { background: var(--danger); color: #fff; }
+.search-bar__clear.show { display: flex; }
+.community-stats {
+  font-size: .82rem; color: var(--text-dim); white-space: nowrap;
+  padding: 6px 14px; background: rgba(74,222,128,0.06); border: 1px solid rgba(74,222,128,0.12);
+  border-radius: 999px; font-weight: 600;
+}
+
+/* Add-images button (clear, labeled) */
+.add-media-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 12px 0; border-top: 1px dashed var(--border); margin-top: 4px;
+}
+.add-media-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 16px; border-radius: 10px; font-weight: 600; font-size: .85rem;
+  background: rgba(74,222,128,0.08); color: var(--accent); border: 1px solid rgba(74,222,128,0.2);
+  transition: all .2s; font-family: var(--font-display);
+}
+.add-media-btn:hover { background: rgba(74,222,128,0.15); border-color: var(--accent); transform: translateY(-1px); }
+.add-media-btn svg { width: 18px; height: 18px; }
+.add-media-hint { font-size: .78rem; color: var(--text-dim); }
+
+/* "+N more" overlay on 4th image */
+.post-card__image { position: relative; }
+.post-card__image-more {
+  position: absolute; inset: 0; background: rgba(0,0,0,0.65); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-size: 1.6rem; font-weight: 700;
+  font-family: var(--font-display); backdrop-filter: blur(2px);
+}
 
 /* ============================================================
    POST CARDS (list view)

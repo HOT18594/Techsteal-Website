@@ -229,13 +229,20 @@
                 </div>
                 <div class="editor__content" contenteditable="true" data-placeholder="What's happening on the server?" id="communityEditor"></div>
               </div>
+              <!-- Add images row -->
+              <div class="add-media-row">
+                <button type="button" class="add-media-btn" id="addImageBtn2">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  Add Images
+                </button>
+                <span class="add-media-hint">Drag &amp; drop or click · Max 25MB each · Multiple allowed</span>
+              </div>
               <!-- Image preview area -->
               <div class="image-previews" id="imagePreviews"></div>
               <input type="file" id="postImageInput" accept="image/*" multiple style="display:none;" />
               <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
                 <button type="submit" class="btn btn--start" id="postSubmitBtn">Post</button>
                 <button type="button" class="btn btn--ghost" id="cancelEditBtn" style="display:none;">Cancel Edit</button>
-                <span style="color:var(--text-dim);font-size:.78rem;">Max 25MB per image · Multiple allowed</span>
               </div>
             </form>
           </div>
@@ -244,7 +251,8 @@
           <div class="community-toolbar">
             <div class="search-bar">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;color:var(--text-dim);flex-shrink:0;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input type="text" id="postSearch" placeholder="Search posts..." class="search-bar__input" />
+              <input type="text" id="postSearch" placeholder="Search posts by author or content..." class="search-bar__input" />
+              <button type="button" class="search-bar__clear" id="searchClear" title="Clear">&times;</button>
             </div>
             <div class="community-stats" id="communityStats"></div>
           </div>

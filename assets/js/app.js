@@ -545,10 +545,12 @@ function initCommunityPosts() {
   if (!form || !editor) return;
   initEditorToolbar(editor);
 
-  // Image upload button
+  // Image upload buttons (toolbar icon + labeled button)
   const addImageBtn = $("#addImageBtn");
+  const addImageBtn2 = $("#addImageBtn2");
   const imageInput = $("#postImageInput");
   addImageBtn?.addEventListener("click", () => imageInput?.click());
+  addImageBtn2?.addEventListener("click", () => imageInput?.click());
   imageInput?.addEventListener("change", (e) => {
     const files = [...(e.target.files || [])];
     files.forEach(handleImageUpload);
@@ -600,11 +602,22 @@ function initCommunityPosts() {
     resetComposer();
   });
 
-  // Search
-  $("#postSearch")?.addEventListener("input", (e) => {
+  // Search + clear button
+  const searchInput = $("#postSearch");
+  const searchClear = $("#searchClear");
+  searchInput?.addEventListener("input", (e) => {
     searchTerm = e.target.value.toLowerCase().trim();
     currentPage = 1;
+    if (searchClear) searchClear.classList.toggle("show", searchTerm.length > 0);
     renderPostList();
+  });
+  searchClear?.addEventListener("click", () => {
+    if (searchInput) searchInput.value = "";
+    searchTerm = "";
+    currentPage = 1;
+    searchClear.classList.remove("show");
+    renderPostList();
+    searchInput?.focus();
   });
 }
 
@@ -734,13 +747,29 @@ function parseImages(imagesJson) {
   try { return JSON.parse(imagesJson); } catch { return []; }
 }
 
+// Global image registry for bug-proof lightbox (avoids inline JSON in onclick)
+const imageGroups = {};
+function registerImageGroup(images) {
+  const key = "g" + Math.random().toString(36).slice(2, 10);
+  imageGroups[key] = images;
+  return key;
+}
+function openLightboxGroup(key, index) {
+  const images = imageGroups[key];
+  if (!images) return;
+  openLightbox(images, index);
+}
+window.openLightboxGroup = openLightboxGroup;
+
 function renderPostImages(images, postId) {
   const count = images.length;
   if (!count) return "";
   const cls = `post-card__images--${Math.min(count, 4)}`;
-  return `<div class="post-card__images ${cls}">${images.slice(0, 4).map((url, i) =>
-    `<div class="post-card__image" onclick="event.stopPropagation();openLightbox(${JSON.stringify(images).replace(/"/g, '&quot;')}, ${i})"><img src="${url}" alt="" loading="lazy" /></div>`
-  ).join("")}</div>`;
+  const key = registerImageGroup(images);
+  return `<div class="post-card__images ${cls}">${images.slice(0, 4).map((url, i) => {
+    const more = (count > 4 && i === 3) ? `<div class="post-card__image-more">+${count - 4}</div>` : "";
+    return `<div class="post-card__image" onclick="event.stopPropagation();openLightboxGroup('${key}', ${i})"><img src="${url}" alt="" loading="lazy" />${more}</div>`;
+  }).join("")}</div>`;
 }
 
 function renderPagination(totalPages) {
@@ -839,8 +868,9 @@ async function openPostDetail(postId) {
   if (!container) return;
   const liked = getLikedPosts().includes(post.id);
   const images = parseImages(post.images);
+  const detailKey = images.length ? registerImageGroup(images) : "";
   const imagesHtml = images.length ? `<div class="post-detail__images post-detail__images--${Math.min(images.length, 4)}">${images.map((url, i) =>
-    `<div class="post-detail__image" onclick="openLightbox(${JSON.stringify(images).replace(/"/g, '&quot;')}, ${i})"><img src="${url}" alt="" /></div>`
+    `<div class="post-detail__image" onclick="openLightboxGroup('${detailKey}', ${i})"><img src="${url}" alt="" /></div>`
   ).join("")}</div>` : "";
   const adminControls = isAdmin() ? `
     <div class="post-detail__admin">
@@ -983,8 +1013,9 @@ async function loadComments(postId) {
     }
     list.innerHTML = comments.map((c) => {
       const images = parseImages(c.images);
+      const cKey = images.length ? registerImageGroup(images) : "";
       const imagesHtml = images.length ? `<div class="comment__images">${images.map((url, i) =>
-        `<div class="comment__image" onclick="openLightbox(${JSON.stringify(images).replace(/"/g, '&quot;')}, ${i})"><img src="${url}" alt="" /></div>`).join("")}</div>` : "";
+        `<div class="comment__image" onclick="openLightboxGroup('${cKey}', ${i})"><img src="${url}" alt="" /></div>`).join("")}</div>` : "";
       const adminControls = isAdmin() ? `<div class="comment__admin"><button class="admin-btn danger" onclick="deleteComment(${c.id}, ${postId})">Delete</button></div>` : "";
       return `
       <div class="comment">
