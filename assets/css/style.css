@@ -244,7 +244,26 @@ code { font-family: var(--mono); }
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 22px;
-  align-items: start;
+  align-items: stretch;
+}
+.home-grid .card {
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* Make both cards fill the same height */
+.home-grid .card > *:last-child {
+  margin-top: auto;
+}
+/* Discord card fills remaining space */
+.discord-card .discord-widget {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.discord-online-list {
+  flex: 1;
+  overflow-y: auto;
 }
 @media (max-width: 640px) {
   .home-grid { grid-template-columns: 1fr; }

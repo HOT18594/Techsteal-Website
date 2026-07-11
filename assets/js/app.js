@@ -20,6 +20,35 @@ const DISCORD_INVITE_API = `https://discord.com/api/v9/invites/bEZ5M5jBvz?with_c
 const DISCORD_GUILD_ID = "1349848075371413515";
 const DISCORD_WIDGET_API = `https://discord.com/api/guilds/${DISCORD_GUILD_ID}/widget.json`;
 
+// ---- Supabase config ----
+const SUPABASE_URL = "https://ektdywbjcpidnuxtjllm.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVrdGR5d2JqY3BpZG51eHRqbGxtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NzIzNTcsImV4cCI6MjA5OTM0ODM1N30.Svxxxpz_saeeju5AER4Zi0LRr0W_UPJPXzzS7g4eQ78";
+const SUPABASE_HEADERS = {
+  "apikey": SUPABASE_ANON_KEY,
+  "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+  "Content-Type": "application/json"
+};
+
+// ---- Supabase API helpers ----
+async function supabaseSelect(table, orderBy = "created_at", ascending = false) {
+  const orderParam = ascending ? "asc" : "desc";
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?order=${orderBy}.${orderParam}`, {
+    headers: SUPABASE_HEADERS
+  });
+  if (!res.ok) throw new Error(`Supabase ${table} fetch failed: ${res.status}`);
+  return await res.json();
+}
+
+async function supabaseInsert(table, data) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    method: "POST",
+    headers: { ...SUPABASE_HEADERS, "Prefer": "return=representation" },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) throw new Error(`Supabase ${table} insert failed: ${res.status}`);
+  return await res.json();
+}
+
 const $  = (sel, ctx = document) => ctx.querySelector(sel);
 const $$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)];
 
@@ -464,22 +493,58 @@ function initCommunityPosts() {
   const editor = $("#communityEditor");
   if (!form || !editor) return;
   initEditorToolbar(editor);
-  form.addEventListener("submit", (e) => {
+  form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const body = editor.innerHTML.trim();
     if (!stripHtml(body)) { toast("Please write something before posting."); return; }
-    const posts = JSON.parse(localStorage.getItem(STORAGE_KEYS.posts) || "[]");
-    posts.unshift({
-      id: `local_${Date.now()}`,
-      author: localStorage.getItem(STORAGE_KEYS.user) || "Guest",
-      body, pfp: localStorage.getItem(STORAGE_KEYS.pfp) || "",
-      created_at: new Date().toISOString()
-    });
-    localStorage.setItem(STORAGE_KEYS.posts, JSON.stringify(posts));
-    editor.innerHTML = "";
-    renderPosts();
-    toast("Post published!");
+    const author = localStorage.getItem(STORAGE_KEYS.user) || "Guest";
+    const pfp = localStorage.getItem(STORAGE_KEYS.pfp) || "";
+    try {
+      await supabaseInsert("posts", { author, body, pfp });
+      editor.innerHTML = "";
+      await loadPosts();
+      toast("Post published!");
+    } catch {
+      // Fallback to localStorage if Supabase fails
+      const posts = JSON.parse(localStorage.getItem(STORAGE_KEYS.posts) || "[]");
+      posts.unshift({ id: `local_${Date.now()}`, author, body, pfp, created_at: new Date().toISOString() });
+      localStorage.setItem(STORAGE_KEYS.posts, JSON.stringify(posts));
+      editor.innerHTML = "";
+      renderPosts();
+      toast("Post saved locally (will sync later).");
+    }
   });
+}
+
+async function loadPosts() {
+  try {
+    const posts = await supabaseSelect("posts");
+    renderPostsFromData(posts);
+  } catch {
+    // Fallback to localStorage
+    renderPosts();
+  }
+}
+
+function renderPostsFromData(posts) {
+  const list = $("#postList");
+  if (!list) return;
+  if (!posts.length) {
+    list.innerHTML = '<div class="empty-state">No posts yet. Be the first to share something!</div>';
+    return;
+  }
+  list.innerHTML = posts.map((post) => `
+    <div class="post">
+      <div class="post__head">
+        <div class="avatar">${post.pfp ? `<img src="${post.pfp}" alt="avatar" />` : (post.author || "A").charAt(0).toUpperCase()}</div>
+        <div>
+          <div class="post__author">${post.author || "Guest"}</div>
+          <div class="post__time">${new Date(post.created_at).toLocaleString()}</div>
+        </div>
+      </div>
+      <div class="post__body">${post.body}</div>
+    </div>
+  `).join("");
 }
 
 function renderPosts() {
@@ -516,24 +581,40 @@ function initBlogPosts() {
   if (composerCard && localStorage.getItem(STORAGE_KEYS.role) === "admin") {
     composerCard.style.display = "block";
   }
-  form?.addEventListener("submit", (e) => {
+  form?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const title = titleInput?.value.trim() || "Untitled";
     const body = editor?.innerHTML.trim() || "";
     if (!stripHtml(body)) { toast("Please write something before publishing."); return; }
-    const posts = JSON.parse(localStorage.getItem(STORAGE_KEYS.blog) || "[]");
-    posts.unshift({
-      title, body,
-      author: localStorage.getItem(STORAGE_KEYS.user) || "Admin",
-      created_at: new Date().toISOString()
-    });
-    localStorage.setItem(STORAGE_KEYS.blog, JSON.stringify(posts));
-    renderBlogPosts(posts);
-    if (titleInput) titleInput.value = "";
-    if (editor) editor.innerHTML = "";
-    toast("Blog post published!");
+    const author = localStorage.getItem(STORAGE_KEYS.user) || "Admin";
+    try {
+      await supabaseInsert("blog_posts", { title, body, author });
+      if (titleInput) titleInput.value = "";
+      if (editor) editor.innerHTML = "";
+      await loadBlogPosts();
+      toast("Blog post published!");
+    } catch {
+      // Fallback to localStorage
+      const posts = JSON.parse(localStorage.getItem(STORAGE_KEYS.blog) || "[]");
+      posts.unshift({ title, body, author, created_at: new Date().toISOString() });
+      localStorage.setItem(STORAGE_KEYS.blog, JSON.stringify(posts));
+      if (titleInput) titleInput.value = "";
+      if (editor) editor.innerHTML = "";
+      renderBlogPosts(posts);
+      toast("Blog post saved locally (will sync later).");
+    }
   });
-  renderBlogPosts(JSON.parse(localStorage.getItem(STORAGE_KEYS.blog) || "[]"));
+  loadBlogPosts();
+}
+
+async function loadBlogPosts() {
+  try {
+    const posts = await supabaseSelect("blog_posts");
+    renderBlogPosts(posts);
+  } catch {
+    // Fallback to localStorage
+    renderBlogPosts(JSON.parse(localStorage.getItem(STORAGE_KEYS.blog) || "[]"));
+  }
 }
 
 function renderBlogPosts(posts) {
@@ -673,7 +754,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initSettings();
   loadSeasons();
   initViewer();
-  renderPosts();
+  loadPosts();
   updateProfileLabel();
   renderAvatar();
 });
