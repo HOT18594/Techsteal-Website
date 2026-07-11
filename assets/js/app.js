@@ -208,7 +208,10 @@ async function fetchServerStatus() {
 }
 
 async function refreshServerStatus() {
+  const spinner = $("#statusSpinner");
+  if (spinner) spinner.style.display = "flex";
   const data = await fetchServerStatus();
+  if (spinner) spinner.style.display = "none";
   const online = Boolean(data?.online);
 
   const topDot = $("#statusDot");
@@ -272,6 +275,79 @@ function initServerStatus() {
   $("#btnRefresh")?.addEventListener("click", refreshServerStatus);
   if (serverRefreshTimer) clearInterval(serverRefreshTimer);
   serverRefreshTimer = setInterval(refreshServerStatus, 60000);
+}
+
+/* ============================================================
+   DISCORD WIDGET — invite API for counts + widget API for members
+   ============================================================ */
+async function loadDiscordWidget() {
+  // 1) Fetch invite data for guild name, icon, total counts
+  let guildName = "Techsteal - Season V";
+  let guildIcon = null;
+  let onlineCount = "—";
+  let memberCount = "—";
+
+  try {
+    const res = await fetch(DISCORD_INVITE_API);
+    if (res.ok) {
+      const data = await res.json();
+      const guild = data.guild || {};
+      guildName = guild.name || guildName;
+      guildIcon = guild.icon || null;
+      onlineCount = data.approximate_presence_count ?? "—";
+      memberCount = data.approximate_member_count ?? "—";
+    }
+  } catch { /* invite API failed, use defaults */ }
+
+  // Update header
+  const nameEl = $("#discordName");
+  const onlineEl = $("#discordOnline");
+  const membersEl = $("#discordMembers");
+  const iconEl = $("#discordIcon");
+  const placeholderEl = $("#discordIconPlaceholder");
+
+  if (nameEl) nameEl.textContent = guildName;
+  if (onlineEl) onlineEl.textContent = onlineCount;
+  if (membersEl) membersEl.textContent = memberCount;
+
+  if (guildIcon && iconEl && placeholderEl) {
+    iconEl.src = `https://cdn.discordapp.com/icons/${DISCORD_GUILD_ID}/${guildIcon}.png?size=128`;
+    iconEl.style.display = "block";
+    placeholderEl.style.display = "none";
+  }
+
+  // 2) Fetch widget data for online member list
+  const listBody = $("#discordOnlineListBody");
+  if (!listBody) return;
+
+  try {
+    const wRes = await fetch(DISCORD_WIDGET_API);
+    if (!wRes.ok) throw new Error(`HTTP ${wRes.status}`);
+    const wData = await wRes.json();
+    const members = wData.members || [];
+
+    if (!members.length) {
+      listBody.innerHTML = '<div class="discord-empty">No members online right now.</div>';
+    } else {
+      listBody.innerHTML = members.map((m) => {
+        const avatar = m.avatar_url
+          ? m.avatar_url
+          : m.avatar
+            ? `https://cdn.discordapp.com/avatars/${m.id}/${m.avatar}.png?size=32`
+            : `https://cdn.discordapp.com/embed/avatars/${Number(m.discriminator || 0) % 5}.png`;
+        const game = m.game ? `<span class="discord-member__game">${escapeHtml(m.game.name)}</span>` : "";
+        return `<div class="discord-member"><img class="discord-member__avatar" src="${avatar}" alt="" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'" /><span class="discord-member__name">${escapeHtml(m.username)}</span>${game}</div>`;
+      }).join("");
+    }
+  } catch {
+    listBody.innerHTML = `<div class="discord-empty">Enable "Server Widget" in Discord settings to see online members.<br><a href="https://discord.gg/bEZ5M5jBvz" target="_blank" rel="noopener">Join Discord here</a></div>`;
+  }
+}
+
+function escapeHtml(str) {
+  const tmp = document.createElement("div");
+  tmp.textContent = str;
+  return tmp.innerHTML;
 }
 
 /* ============================================================
@@ -587,6 +663,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initLogin();
   initNav();
   initServerStatus();
+  loadDiscordWidget();
   initCopyIP();
   initCommunityPosts();
   initBlogPosts();
