@@ -87,63 +87,63 @@
             <p class="page-header__sub">Server Status</p>
           </div>
 
-          <div class="card">
-            <div class="card__title"><span class="dot"></span> Server Status</div>
-            <div class="server-dashboard">
-              <div class="server-dashboard__card">
-                <div class="server-dashboard__label">Status</div>
-                <div class="server-dashboard__value">
-                  <span class="server-dashboard__status"><span class="server-dashboard__dot" id="serverStatusDot"></span><span id="serverStatusText">Checking…</span></span>
+          <!-- Side by side: Server Status (left) + Discord (right) -->
+          <div class="home-grid">
+            <div class="card">
+              <div class="card__title"><span class="dot"></span> Server Status</div>
+              <div class="server-dashboard">
+                <div class="server-dashboard__card">
+                  <div class="server-dashboard__label">Status</div>
+                  <div class="server-dashboard__value">
+                    <span class="server-dashboard__status"><span class="server-dashboard__dot" id="serverStatusDot"></span><span id="serverStatusText">Checking…</span></span>
+                  </div>
+                </div>
+                <div class="server-dashboard__card">
+                  <div class="server-dashboard__label">Players Online</div>
+                  <div class="server-dashboard__value" id="serverPlayers">—</div>
+                </div>
+                <div class="server-dashboard__card">
+                  <div class="server-dashboard__label">Server Address</div>
+                  <div class="server-dashboard__value server-dashboard__address-value">
+                    <span id="serverAddress" data-server-ip>play.techsteal.space</span>
+                    <button class="copy-btn compact" id="copyIP" type="button">Copy</button>
+                  </div>
+                </div>
+                <div class="server-dashboard__card">
+                  <div class="server-dashboard__label">Version</div>
+                  <div class="server-dashboard__value" id="serverVersion">—</div>
                 </div>
               </div>
-              <div class="server-dashboard__card">
-                <div class="server-dashboard__label">Players Online</div>
-                <div class="server-dashboard__value" id="serverPlayers">—</div>
+              <div id="playerListWrapper" style="margin-top:18px;display:none;">
+                <div class="card__title" style="font-size:.95rem;margin-bottom:10px;"><span class="dot"></span> Online Players</div>
+                <div class="player-list" id="playerList"></div>
               </div>
-              <div class="server-dashboard__card">
-                <div class="server-dashboard__label">Server Address</div>
-                <div class="server-dashboard__value server-dashboard__address-value">
-                  <span id="serverAddress" data-server-ip>play.techsteal.space</span>
-                  <button class="copy-btn compact" id="copyIP" type="button">Copy</button>
-                </div>
+              <div id="motdCard" style="margin-top:18px;display:none;">
+                <div class="card__title" style="font-size:.95rem;margin-bottom:8px;"><span class="dot"></span> Server MOTD</div>
+                <div class="motd-body" id="motdBody"></div>
               </div>
-              <div class="server-dashboard__card">
-                <div class="server-dashboard__label">Version</div>
-                <div class="server-dashboard__value" id="serverVersion">—</div>
+              <div class="server-dashboard__actions">
+                <button class="btn btn--ghost" id="btnRefresh">Refresh Status</button>
               </div>
             </div>
-            <div id="playerListWrapper" style="margin-top:18px;display:none;">
-              <div class="card__title" style="font-size:.95rem;margin-bottom:10px;"><span class="dot"></span> Online Players</div>
-              <div class="player-list" id="playerList"></div>
-            </div>
-            <div id="motdCard" style="margin-top:18px;display:none;">
-              <div class="card__title" style="font-size:.95rem;margin-bottom:8px;"><span class="dot"></span> Server MOTD</div>
-              <div class="motd-body" id="motdBody"></div>
-            </div>
-            <div class="server-dashboard__actions">
-              <button class="btn btn--ghost" id="btnRefresh">Refresh Status</button>
-            </div>
-          </div>
 
-          <!-- Discord Widget Card -->
-          <div class="card discord-card">
-            <div class="card__title"><span class="dot"></span> Discord Community</div>
-            <div class="discord-widget" id="discordWidget">
-              <div class="discord-widget__icon">
-                <img id="discordIcon" src="" alt="Discord" style="display:none;" />
-                <div id="discordIconPlaceholder" class="discord-widget__icon-placeholder">⚙</div>
+            <!-- Discord Widget (official iframe embed) -->
+            <div class="card discord-card">
+              <div class="card__title"><span class="dot"></span> Discord Community</div>
+              <div class="discord-embed">
+                <iframe
+                  src="https://discord.com/widget?id=1349848075371413515&theme=dark"
+                  width="100%"
+                  height="400"
+                  frameborder="0"
+                  allowtransparency="true"
+                  sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"
+                  title="Discord Widget">
+                </iframe>
               </div>
-              <div class="discord-widget__info">
-                <div class="discord-widget__name" id="discordName">Techsteal - Season V</div>
-                <div class="discord-widget__stats">
-                  <span class="discord-stat"><span class="discord-stat__dot discord-stat__dot--online"></span> <span id="discordOnline">—</span> Online</span>
-                  <span class="discord-stat"><span class="discord-stat__dot discord-stat__dot--members"></span> <span id="discordMembers">—</span> Members</span>
-                </div>
-              </div>
-              <a href="https://discord.gg/bEZ5M5jBvz" target="_blank" rel="noopener" class="btn btn--discord">
-                <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20.3 4.74A18.8 18.8 0 0 0 15.2 3l-.2.4a17.4 17.4 0 0 1 5.2 2.56 17.8 17.8 0 0 0-5.2-2.56 17.8 17.8 0 0 1-5.2 2.56A17.4 17.4 0 0 1 8.8 3l-.2-.4A18.8 18.8 0 0 0 3.7 4.74C1.7 8.4 1.2 11.9 1.5 15.3A18.7 18.7 0 0 0 7.3 18.1c.4-.5.7-1 .9-1.6a14.7 14.7 0 0 1-2.4-1.1c.2-.1.4-.2.6-.3 4.2 2 8.8 2 13 0 .2.1.4.2.6.3a14.7 14.7 0 0 1-2.4 1.1c.2.6.5 1.1.9 1.6a18.7 18.7 0 0 0 5.8-2.8c.5-4-.9-7.6-3.2-10.56ZM8.8 13.8c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4c1.2 0 2.2 1.1 2.2 2.4s-1 2.4-2.2 2.4Zm6.4 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4c1.2 0 2.2 1.1 2.2 2.4s-1 2.4-2.2 2.4Z"/></svg>
-                Join Discord
-              </a>
+              <p style="color:var(--text-dim);font-size:.82rem;margin-top:10px;text-align:center;">
+                Can't see the widget? <a href="https://discord.gg/bEZ5M5jBvz" target="_blank" rel="noopener">Join directly here</a>
+              </p>
             </div>
           </div>
         </section>
@@ -154,7 +154,6 @@
             <h1 class="page-header__title">How to Join</h1>
             <p class="page-header__sub">Connect to TechSteal Season 5</p>
           </div>
-
           <div class="card">
             <div class="card__title"><span class="dot"></span> Server Address</div>
             <div class="ip-box">
@@ -163,7 +162,6 @@
               <button class="copy-btn" id="joinCopyIP" type="button">Copy</button>
             </div>
           </div>
-
           <div class="card">
             <div class="card__title"><span class="dot"></span> Quick Start Guide</div>
             <div class="steps">
@@ -190,7 +188,6 @@
               </div>
             </div>
           </div>
-
           <div class="card">
             <div class="card__title"><span class="dot"></span> Current Season</div>
             <div class="season-picker" id="seasonPicker"></div>
@@ -275,7 +272,6 @@
             <form id="settingsForm" class="settings-form">
               <label class="settings-label" for="settingsUsername">Minecraft Username</label>
               <input id="settingsUsername" class="settings-input" type="text" placeholder="Enter your username" />
-
               <label class="settings-label">Profile Picture</label>
               <div class="dropzone" id="pfpDropzone">
                 <div class="dropzone__preview" id="settingsPfpPreview">
@@ -284,14 +280,12 @@
                 </div>
                 <input id="settingsPfpInput" type="file" accept="image/*" style="display:none;" />
               </div>
-
               <div style="display:flex;gap:10px;margin-top:6px;">
                 <button type="submit" class="btn btn--start">Save Profile</button>
                 <button type="button" class="btn btn--ghost" id="clearPfpBtn">Remove Picture</button>
               </div>
             </form>
           </div>
-
           <div class="card">
             <div class="card__title"><span class="dot"></span> Session</div>
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
@@ -329,8 +323,8 @@
     </div>
   </div>
 
-  <!-- Toast (only in app, not splash) -->
-  <div class="toast" id="toast"></div>
+  <!-- Toast — hidden by default, only shows briefly -->
+  <div class="toast" id="toast" style="display:none;"></div>
 
   <script src="assets/js/app.js"></script>
 </body>

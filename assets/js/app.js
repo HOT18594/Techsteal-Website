@@ -1,9 +1,9 @@
 /* ============================================================
    TechSteal — Season 5 Website
-   App logic: login, routing, server status, posts, blog, Discord
+   App logic: login, routing, server status, posts, blog
    All data in localStorage/sessionStorage (browser cache)
    Server status via api.mcsrvstat.us (free, public, CORS)
-   Discord data via discord.com/api (free, public, CORS)
+   Discord via official widget iframe (always works on static sites)
    ============================================================ */
 
 const MEMBER_CODE = "123456";
@@ -15,20 +15,30 @@ const STORAGE_KEYS = {
 const SERVER_ADDRESS = "play.techsteal.space";
 const STATUS_API = `https://api.mcsrvstat.us/3/${SERVER_ADDRESS}`;
 const STATUS_API_FALLBACK = `https://api.mcsrvstat.us/2/${SERVER_ADDRESS}`;
-const DISCORD_INVITE_CODE = "bEZ5M5jBvz";
-const DISCORD_API = `https://discord.com/api/v9/invites/${DISCORD_INVITE_CODE}?with_counts=true`;
 const CURRENT_SEASON_ID = 5;
 
 const $  = (sel, ctx = document) => ctx.querySelector(sel);
 const $$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)];
 
+/* ============================================================
+   TOAST — properly hidden, never stuck
+   ============================================================ */
+let toastTimer = null;
 function toast(msg) {
   const t = $("#toast");
   if (!t) return;
+  // Make it visible first
+  t.style.display = "block";
   t.textContent = msg;
+  // Force reflow so transition works
+  void t.offsetHeight;
   t.classList.add("show");
-  clearTimeout(t._timer);
-  t._timer = setTimeout(() => t.classList.remove("show"), 2600);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    t.classList.remove("show");
+    // Hide completely after transition
+    setTimeout(() => { t.style.display = "none"; }, 350);
+  }, 2600);
 }
 
 /* ============================================================
@@ -78,7 +88,7 @@ function initLogin() {
 }
 
 /* ============================================================
-   USERNAME MODAL
+   USERNAME MODAL — properly closes
    ============================================================ */
 function openUsernameModal() {
   const overlay = $("#usernameModal");
@@ -86,10 +96,18 @@ function openUsernameModal() {
   const saveBtn = $("#usernameModalSave");
   const skipBtn = $("#usernameModalSkip");
   if (!overlay || !input || !saveBtn || !skipBtn) return;
+
   overlay.classList.add("open");
   overlay.setAttribute("aria-hidden", "false");
   input.value = localStorage.getItem(STORAGE_KEYS.user) || "";
   input.focus();
+
+  // Clean up any previous listeners by cloning
+  const newSave = saveBtn.cloneNode(true);
+  const newSkip = skipBtn.cloneNode(true);
+  saveBtn.parentNode.replaceChild(newSave, saveBtn);
+  skipBtn.parentNode.replaceChild(newSkip, skipBtn);
+
   const finish = () => {
     const value = input.value.trim();
     const clean = value || "Guest";
@@ -99,14 +117,16 @@ function openUsernameModal() {
     overlay.setAttribute("aria-hidden", "true");
     toast(value ? `Profile saved for ${clean}` : "Using guest profile.");
   };
-  saveBtn.onclick = finish;
-  skipBtn.onclick = () => {
+
+  newSave.addEventListener("click", finish);
+  newSkip.addEventListener("click", () => {
     localStorage.setItem(STORAGE_KEYS.user, "Guest");
     updateProfileLabel();
     overlay.classList.remove("open");
     overlay.setAttribute("aria-hidden", "true");
     toast("Using guest profile.");
-  };
+  });
+
   input.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); finish(); } };
 }
 
@@ -252,37 +272,6 @@ function initServerStatus() {
   $("#btnRefresh")?.addEventListener("click", refreshServerStatus);
   if (serverRefreshTimer) clearInterval(serverRefreshTimer);
   serverRefreshTimer = setInterval(refreshServerStatus, 60000);
-}
-
-/* ============================================================
-   DISCORD WIDGET
-   ============================================================ */
-async function loadDiscordWidget() {
-  try {
-    const res = await fetch(DISCORD_API);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const guild = data.guild || {};
-    const profile = data.profile || {};
-    const nameEl = $("#discordName");
-    const onlineEl = $("#discordOnline");
-    const membersEl = $("#discordMembers");
-    const iconEl = $("#discordIcon");
-    const placeholderEl = $("#discordIconPlaceholder");
-
-    if (nameEl) nameEl.textContent = guild.name || "Techsteal - Season V";
-    if (onlineEl) onlineEl.textContent = data.approximate_presence_count ?? "—";
-    if (membersEl) membersEl.textContent = data.approximate_member_count ?? "—";
-
-    if (guild.icon && iconEl && placeholderEl) {
-      const iconUrl = `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=128`;
-      iconEl.src = iconUrl;
-      iconEl.style.display = "block";
-      placeholderEl.style.display = "none";
-    }
-  } catch {
-    // Silently fail — widget just shows defaults
-  }
 }
 
 /* ============================================================
@@ -512,7 +501,10 @@ function initViewer() {
     if (e.target.id === "viewerOverlay") e.target.classList.remove("open");
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") $("#viewerOverlay")?.classList.remove("open");
+    if (e.key === "Escape") {
+      $("#viewerOverlay")?.classList.remove("open");
+      $("#usernameModal")?.classList.remove("open");
+    }
   });
 }
 
@@ -556,14 +548,12 @@ function initSettings() {
     reader.readAsDataURL(file);
   }
 
-  // Click to browse
   dropzone.addEventListener("click", () => pfpInput?.click());
   pfpInput?.addEventListener("change", (e) => {
     const file = e.target.files?.[0];
     if (file) handleFile(file);
   });
 
-  // Drag & drop
   dropzone.addEventListener("dragover", (e) => { e.preventDefault(); dropzone.classList.add("dragover"); });
   dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
   dropzone.addEventListener("drop", (e) => {
@@ -573,7 +563,6 @@ function initSettings() {
     if (file) handleFile(file);
   });
 
-  // Remove picture
   clearBtn?.addEventListener("click", () => {
     localStorage.removeItem(STORAGE_KEYS.pfp);
     updateDropzonePreview();
@@ -581,7 +570,6 @@ function initSettings() {
     toast("Profile picture removed.");
   });
 
-  // Save profile
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     const value = usernameInput.value.trim();
@@ -599,7 +587,6 @@ document.addEventListener("DOMContentLoaded", () => {
   initLogin();
   initNav();
   initServerStatus();
-  loadDiscordWidget();
   initCopyIP();
   initCommunityPosts();
   initBlogPosts();
