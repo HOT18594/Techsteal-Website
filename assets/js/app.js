@@ -15,7 +15,7 @@ const STORAGE_KEYS = {
   pfp: "ts_pfp",
   blog: "ts_blog_posts"
 };
-const SERVER_ADDRESS = "play.techsteal.net";
+const SERVER_ADDRESS = "play.techsteal.space";
 const STATUS_API = `https://api.mcsrvstat.us/3/${SERVER_ADDRESS}`;
 const STATUS_API_FALLBACK = `https://api.mcsrvstat.us/2/${SERVER_ADDRESS}`;
 
@@ -230,6 +230,8 @@ async function refreshServerStatus() {
   }
 
   if (addressEl) addressEl.textContent = data?.hostname || SERVER_ADDRESS;
+  // Update any other address displays
+  $$("[data-server-ip]").forEach((el) => { el.textContent = SERVER_ADDRESS; });
   if (versionEl) versionEl.textContent = online ? (data.version || "—") : "—";
 
   // Player list
