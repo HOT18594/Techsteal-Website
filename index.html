@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TechSteal</title>
+  <title>TechSteal — Season 5</title>
   <link rel="icon" href="assets/img/logo.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -13,19 +13,17 @@
 <body>
 
   <!-- ============================================================
-       SPLASH / LOGIN PAGE — only background + logo + code input
+       SPLASH / LOGIN PAGE
        ============================================================ -->
   <div id="splash" class="splash">
     <div class="splash__inner">
       <img src="assets/img/logo.png" alt="TechSteal Logo" class="splash__logo" />
-
       <form id="loginForm" class="login" autocomplete="off">
         <input id="keyInput" class="login__input" type="password" placeholder="Enter access code" autocomplete="off" />
         <button type="submit" class="login__btn">Enter</button>
         <p class="login__error" id="loginError"></p>
       </form>
     </div>
-
   </div>
 
   <!-- ============================================================
@@ -38,40 +36,28 @@
       <div class="sidebar__brand">
         <img src="assets/img/logo.png" alt="Logo" class="sidebar__logo" />
       </div>
-
       <ul class="sidebar__nav">
         <li class="nav-item active" data-page="home">
-          <span class="nav-item__icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>
-          </span>
+          <span class="nav-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg></span>
           Home
         </li>
         <li class="nav-item" data-page="join">
-          <span class="nav-item__icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="11" x2="10" y2="11"/><line x1="8" y1="9" x2="8" y2="13"/><line x1="15" y1="12" x2="15.01" y2="12"/><line x1="18" y1="10" x2="18.01" y2="10"/><path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.152A4 4 0 0 0 17.32 5z"/></svg>
-          </span>
+          <span class="nav-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="11" x2="10" y2="11"/><line x1="8" y1="9" x2="8" y2="13"/><line x1="15" y1="12" x2="15.01" y2="12"/><line x1="18" y1="10" x2="18.01" y2="10"/><path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.152A4 4 0 0 0 17.32 5z"/></svg></span>
           How to Join
         </li>
         <li class="nav-item" data-page="community">
-          <span class="nav-item__icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          </span>
+          <span class="nav-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
           Community
         </li>
         <li class="nav-item" data-page="blog">
-          <span class="nav-item__icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6z"/></svg>
-          </span>
+          <span class="nav-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6z"/></svg></span>
           Blog
         </li>
         <li class="nav-item" data-page="settings">
-          <span class="nav-item__icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.2a1.7 1.7 0 0 0 1 1.5h.1a1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.2a1.7 1.7 0 0 0-1.5 1Z"/></svg>
-          </span>
+          <span class="nav-item__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.2a1.7 1.7 0 0 0 1 1.5h.1a1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.2a1.7 1.7 0 0 0-1.5 1Z"/></svg></span>
           Settings
         </li>
       </ul>
-
       <div class="sidebar__footer">
         <div id="sidebarAvatar" class="sidebar__avatar"></div>
         <div id="profileLabel">Logged in as Guest</div>
@@ -96,16 +82,18 @@
 
         <!-- ============ HOME ============ -->
         <section id="page-home" class="page active">
+          <div class="page-header">
+            <h1 class="page-header__title">TechSteal <span class="badge-season">Season 5</span></h1>
+            <p class="page-header__sub">Server Status</p>
+          </div>
+
           <div class="card">
             <div class="card__title"><span class="dot"></span> Server Status</div>
             <div class="server-dashboard">
               <div class="server-dashboard__card">
                 <div class="server-dashboard__label">Status</div>
                 <div class="server-dashboard__value">
-                  <span class="server-dashboard__status">
-                    <span class="server-dashboard__dot" id="serverStatusDot"></span>
-                    <span id="serverStatusText">Checking…</span>
-                  </span>
+                  <span class="server-dashboard__status"><span class="server-dashboard__dot" id="serverStatusDot"></span><span id="serverStatusText">Checking…</span></span>
                 </div>
               </div>
               <div class="server-dashboard__card">
@@ -124,84 +112,101 @@
                 <div class="server-dashboard__value" id="serverVersion">—</div>
               </div>
             </div>
-
-            <!-- Online players list -->
             <div id="playerListWrapper" style="margin-top:18px;display:none;">
               <div class="card__title" style="font-size:.95rem;margin-bottom:10px;"><span class="dot"></span> Online Players</div>
               <div class="player-list" id="playerList"></div>
             </div>
-
-            <!-- MOTD -->
             <div id="motdCard" style="margin-top:18px;display:none;">
               <div class="card__title" style="font-size:.95rem;margin-bottom:8px;"><span class="dot"></span> Server MOTD</div>
               <div class="motd-body" id="motdBody"></div>
             </div>
-
             <div class="server-dashboard__actions">
-              <button class="btn btn--ghost" id="btnRefresh">Refresh</button>
+              <button class="btn btn--ghost" id="btnRefresh">Refresh Status</button>
             </div>
           </div>
 
-          <div class="card">
-            <div class="card__title"><span class="dot"></span> Community</div>
-            <p style="color:var(--text-dim);margin-bottom:12px;">
-              Join the TechSteal Discord to stay connected with the server community and updates.
-            </p>
-            <a href="https://discord.gg/bEZ5M5jBvz" target="_blank" rel="noopener" class="btn btn--start" style="display:inline-flex;align-items:center;gap:8px;">
-              <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20.3 4.74A18.8 18.8 0 0 0 15.2 3l-.2.4a17.4 17.4 0 0 1 5.2 2.56 17.8 17.8 0 0 0-5.2-2.56 17.8 17.8 0 0 1-5.2 2.56A17.4 17.4 0 0 1 8.8 3l-.2-.4A18.8 18.8 0 0 0 3.7 4.74C1.7 8.4 1.2 11.9 1.5 15.3A18.7 18.7 0 0 0 7.3 18.1c.4-.5.7-1 .9-1.6a14.7 14.7 0 0 1-2.4-1.1c.2-.1.4-.2.6-.3 4.2 2 8.8 2 13 0 .2.1.4.2.6.3a14.7 14.7 0 0 1-2.4 1.1c.2.6.5 1.1.9 1.6a18.7 18.7 0 0 0 5.8-2.8c.5-4-.9-7.6-3.2-10.56ZM8.8 13.8c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4c1.2 0 2.2 1.1 2.2 2.4s-1 2.4-2.2 2.4Zm6.4 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4c1.2 0 2.2 1.1 2.2 2.4s-1 2.4-2.2 2.4Z"/></svg>
-              Join Discord
-            </a>
+          <!-- Discord Widget Card -->
+          <div class="card discord-card">
+            <div class="card__title"><span class="dot"></span> Discord Community</div>
+            <div class="discord-widget" id="discordWidget">
+              <div class="discord-widget__icon">
+                <img id="discordIcon" src="" alt="Discord" style="display:none;" />
+                <div id="discordIconPlaceholder" class="discord-widget__icon-placeholder">⚙</div>
+              </div>
+              <div class="discord-widget__info">
+                <div class="discord-widget__name" id="discordName">Techsteal - Season V</div>
+                <div class="discord-widget__stats">
+                  <span class="discord-stat"><span class="discord-stat__dot discord-stat__dot--online"></span> <span id="discordOnline">—</span> Online</span>
+                  <span class="discord-stat"><span class="discord-stat__dot discord-stat__dot--members"></span> <span id="discordMembers">—</span> Members</span>
+                </div>
+              </div>
+              <a href="https://discord.gg/bEZ5M5jBvz" target="_blank" rel="noopener" class="btn btn--discord">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M20.3 4.74A18.8 18.8 0 0 0 15.2 3l-.2.4a17.4 17.4 0 0 1 5.2 2.56 17.8 17.8 0 0 0-5.2-2.56 17.8 17.8 0 0 1-5.2 2.56A17.4 17.4 0 0 1 8.8 3l-.2-.4A18.8 18.8 0 0 0 3.7 4.74C1.7 8.4 1.2 11.9 1.5 15.3A18.7 18.7 0 0 0 7.3 18.1c.4-.5.7-1 .9-1.6a14.7 14.7 0 0 1-2.4-1.1c.2-.1.4-.2.6-.3 4.2 2 8.8 2 13 0 .2.1.4.2.6.3a14.7 14.7 0 0 1-2.4 1.1c.2.6.5 1.1.9 1.6a18.7 18.7 0 0 0 5.8-2.8c.5-4-.9-7.6-3.2-10.56ZM8.8 13.8c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4c1.2 0 2.2 1.1 2.2 2.4s-1 2.4-2.2 2.4Zm6.4 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4c1.2 0 2.2 1.1 2.2 2.4s-1 2.4-2.2 2.4Z"/></svg>
+                Join Discord
+              </a>
+            </div>
           </div>
         </section>
 
         <!-- ============ HOW TO JOIN ============ -->
         <section id="page-join" class="page">
-          <div class="card">
-            <div class="card__title"><span class="dot"></span> How to Join TechSteal</div>
+          <div class="page-header">
+            <h1 class="page-header__title">How to Join</h1>
+            <p class="page-header__sub">Connect to TechSteal Season 5</p>
+          </div>
 
+          <div class="card">
+            <div class="card__title"><span class="dot"></span> Server Address</div>
             <div class="ip-box">
-              <span style="color:var(--text-dim);">Server IP:</span>
+              <span style="color:var(--text-dim);">IP:</span>
               <code data-server-ip>play.techsteal.space</code>
               <button class="copy-btn" id="joinCopyIP" type="button">Copy</button>
             </div>
+          </div>
 
-            <div class="steps" style="margin-top:20px;">
+          <div class="card">
+            <div class="card__title"><span class="dot"></span> Quick Start Guide</div>
+            <div class="steps">
               <div class="step">
                 <div class="step__num"></div>
                 <div class="step__body">
-                  <h4>Open Minecraft</h4>
-                  <p>Launch Minecraft Java Edition (check the Home page for server version).</p>
+                  <h4>Open Minecraft Java Edition</h4>
+                  <p>Check the Home page for the current server version to make sure you're compatible.</p>
                 </div>
               </div>
               <div class="step">
                 <div class="step__num"></div>
                 <div class="step__body">
-                  <h4>Add Server</h4>
-                  <p>Click <strong>Multiplayer</strong> → <strong>Add Server</strong>. Enter <code>play.techsteal.space</code> as the server address.</p>
+                  <h4>Add a New Server</h4>
+                  <p>Go to <strong>Multiplayer</strong> → click <strong>Add Server</strong>. Enter <code>play.techsteal.space</code> as the server address.</p>
                 </div>
               </div>
               <div class="step">
                 <div class="step__num"></div>
                 <div class="step__body">
                   <h4>Join &amp; Play</h4>
-                  <p>Click <strong>Join Server</strong>. If the server is offline, it may be starting up — check back in a few minutes or ask in our Discord.</p>
+                  <p>Click <strong>Join Server</strong>. If it's offline, it may be starting up — check back in a few minutes or ping us in Discord.</p>
                 </div>
               </div>
             </div>
+          </div>
 
-            <div style="margin-top:24px;">
-              <div class="card__title" style="font-size:1rem;margin-bottom:10px;"><span class="dot"></span> Seasons</div>
-              <div class="season-picker" id="seasonPicker"></div>
-              <div class="season-panel">
-                <div class="season-panel__title" id="seasonTitle">—</div>
-                <div class="season-panel__body" id="seasonBody"></div>
-              </div>
+          <div class="card">
+            <div class="card__title"><span class="dot"></span> Current Season</div>
+            <div class="season-picker" id="seasonPicker"></div>
+            <div class="season-panel">
+              <div class="season-panel__title" id="seasonTitle">—</div>
+              <div class="season-panel__body" id="seasonBody"></div>
             </div>
           </div>
         </section>
 
         <!-- ============ COMMUNITY ============ -->
         <section id="page-community" class="page">
+          <div class="page-header">
+            <h1 class="page-header__title">Community</h1>
+            <p class="page-header__sub">Share updates with the server</p>
+          </div>
           <div class="card">
             <div class="card__title"><span class="dot"></span> Share something</div>
             <form id="newPostForm" class="new-post" style="flex-direction:column;">
@@ -220,7 +225,6 @@
               <button type="submit" class="btn btn--start" style="align-self:flex-start;">Post</button>
             </form>
           </div>
-
           <div class="card">
             <div class="card__title"><span class="dot"></span> Recent Posts</div>
             <div id="postList"></div>
@@ -229,6 +233,10 @@
 
         <!-- ============ BLOG ============ -->
         <section id="page-blog" class="page">
+          <div class="page-header">
+            <h1 class="page-header__title">Blog &amp; Announcements</h1>
+            <p class="page-header__sub">Latest news from TechSteal</p>
+          </div>
           <div class="card" id="blogComposerCard" style="display:none;">
             <div class="card__title"><span class="dot"></span> Write a Blog Post</div>
             <form id="newBlogPostForm" style="display:flex;flex-direction:column;gap:12px;">
@@ -248,7 +256,6 @@
               <button type="submit" class="btn btn--start" style="align-self:flex-start;">Publish Blog Post</button>
             </form>
           </div>
-
           <div class="card">
             <div class="card__title"><span class="dot"></span> Latest News</div>
             <div class="blog-grid" id="blogGrid">
@@ -259,18 +266,41 @@
 
         <!-- ============ SETTINGS ============ -->
         <section id="page-settings" class="page">
+          <div class="page-header">
+            <h1 class="page-header__title">Settings</h1>
+            <p class="page-header__sub">Manage your profile</p>
+          </div>
           <div class="card">
-            <div class="card__title"><span class="dot"></span> Settings</div>
+            <div class="card__title"><span class="dot"></span> Profile</div>
             <form id="settingsForm" class="settings-form">
-              <label class="settings-label" for="settingsUsername">Minecraft username</label>
+              <label class="settings-label" for="settingsUsername">Minecraft Username</label>
               <input id="settingsUsername" class="settings-input" type="text" placeholder="Enter your username" />
 
-              <label class="settings-label" for="settingsPfpInput">Profile picture</label>
-              <input id="settingsPfpInput" type="file" accept="image/*" />
-              <div id="settingsPfpPreview" class="settings-preview"></div>
+              <label class="settings-label">Profile Picture</label>
+              <div class="dropzone" id="pfpDropzone">
+                <div class="dropzone__preview" id="settingsPfpPreview">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:28px;height:28px;color:var(--text-dim);"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  <span>Drag &amp; drop or click to upload</span>
+                </div>
+                <input id="settingsPfpInput" type="file" accept="image/*" style="display:none;" />
+              </div>
 
-              <button type="submit" class="btn btn--start" style="align-self:flex-start;">Save Profile</button>
+              <div style="display:flex;gap:10px;margin-top:6px;">
+                <button type="submit" class="btn btn--start">Save Profile</button>
+                <button type="button" class="btn btn--ghost" id="clearPfpBtn">Remove Picture</button>
+              </div>
             </form>
+          </div>
+
+          <div class="card">
+            <div class="card__title"><span class="dot"></span> Session</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+              <div>
+                <div style="font-weight:600;margin-bottom:2px;" id="settingsRoleDisplay">Role: Member</div>
+                <div style="color:var(--text-dim);font-size:.85rem;">Login state is saved per browser session.</div>
+              </div>
+              <button class="btn btn--ghost" id="logoutBtn2" style="background:rgba(239,68,68,0.10);color:var(--danger);border-color:rgba(239,68,68,0.2);">Log Out</button>
+            </div>
           </div>
         </section>
 
@@ -299,7 +329,7 @@
     </div>
   </div>
 
-  <!-- Toast -->
+  <!-- Toast (only in app, not splash) -->
   <div class="toast" id="toast"></div>
 
   <script src="assets/js/app.js"></script>
