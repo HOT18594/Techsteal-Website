@@ -21,7 +21,8 @@
   --text-dim: #8b97aa;
   --radius: 14px;
   --sidebar-w: 248px;
-  --font: 'Segoe UI', 'Inter', system-ui, -apple-system, sans-serif;
+  --font: 'Chakra Petch', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Rajdhani', 'Chakra Petch', sans-serif;
   --mono: 'JetBrains Mono', 'Consolas', monospace;
   --glow: 0 0 20px rgba(74, 222, 128, 0.15);
   --glow-hover: 0 0 30px rgba(74, 222, 128, 0.30);
@@ -40,41 +41,7 @@ body {
   position: relative;
 }
 
-/* Animated grid background */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(74, 222, 128, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(74, 222, 128, 0.025) 1px, transparent 1px);
-  background-size: 50px 50px;
-  z-index: 0;
-  pointer-events: none;
-  animation: gridShift 20s linear infinite;
-}
-@keyframes gridShift {
-  0% { transform: translate(0, 0); }
-  100% { transform: translate(50px, 50px); }
-}
-
-/* Floating glow orbs */
-body::after {
-  content: "";
-  position: fixed;
-  top: 10%;
-  right: -100px;
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, rgba(74, 222, 128, 0.06) 0%, transparent 70%);
-  z-index: 0;
-  pointer-events: none;
-  animation: floatOrb 12s ease-in-out infinite;
-}
-@keyframes floatOrb {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(-40px, 60px) scale(1.15); }
-}
+/* No grid background or glow orbs — clean dark look */
 
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -131,6 +98,14 @@ code { font-family: var(--mono); }
   width: 680px; max-width: 92vw;
   filter: drop-shadow(0 10px 36px rgba(0,0,0,0.7));
   animation: logoFloat 6s ease-in-out infinite;
+}
+/* Gaming-style title font for headings */
+.topbar__title, .card__title, .hero__title, .viewer__title, .modal-card__title, .blog-card__title, .step__body h4, .season-panel__title {
+  font-family: var(--font-display);
+  letter-spacing: .5px;
+}
+.login__btn, .btn {
+  font-family: var(--font-display);
 }
 @keyframes logoFloat {
   0%, 100% { transform: translateY(0); }
@@ -204,10 +179,7 @@ code { font-family: var(--mono); }
   25% { transform: translateX(-6px); }
   75% { transform: translateX(6px); }
 }
-.splash__footer {
-  position: absolute; bottom: 18px; z-index: 2;
-  color: var(--text-dim); font-size: .75rem; letter-spacing: 1px;
-}
+/* splash footer removed */
 
 /* ============================================================
    APP SHELL
