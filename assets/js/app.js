@@ -1,17 +1,26 @@
 /* ============================================================
    TechSteal — Minecraft Server Website
-   Static app logic (no backend, no Node.js)
-   Uses api.mcsrvstat.us (free, public, CORS-enabled)
+   App logic: login, routing, server status, posts, blog
+   All data in localStorage/sessionStorage (browser cache)
+   Server status via api.mcsrvstat.us (free, public, CORS)
    ============================================================ */
 
-/* ---- CONFIG ---- */
+const MEMBER_CODE = "123456";
+const ADMIN_CODE  = "654321";
+const STORAGE_KEYS = {
+  auth: "ts_auth",
+  user: "ts_user",
+  role: "ts_role",
+  posts: "ts_posts",
+  pfp: "ts_pfp",
+  blog: "ts_blog_posts"
+};
 const SERVER_ADDRESS = "play.techsteal.net";
 const STATUS_API = `https://api.mcsrvstat.us/3/${SERVER_ADDRESS}`;
 const STATUS_API_FALLBACK = `https://api.mcsrvstat.us/2/${SERVER_ADDRESS}`;
 
-/* ---- HELPERS ---- */
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => [...document.querySelectorAll(sel)];
+const $  = (sel, ctx = document) => ctx.querySelector(sel);
+const $$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)];
 
 function toast(msg) {
   const t = $("#toast");
@@ -22,43 +31,261 @@ function toast(msg) {
   t._timer = setTimeout(() => t.classList.remove("show"), 2600);
 }
 
-/* ---- NAVBAR ---- */
-function initNav() {
-  const toggle = $("#navToggle");
-  const links = $("#navLinks");
-  toggle?.addEventListener("click", () => links?.classList.toggle("open"));
+/* ============================================================
+   LOGIN
+   ============================================================ */
+function initLogin() {
+  const splash = $("#splash");
+  const app = $("#app");
+  if (!splash || !app) return;
 
-  $$(".nav-link").forEach((link) => {
-    link.addEventListener("click", () => {
-      links?.classList.remove("open");
-      $$(".nav-link").forEach((l) => l.classList.remove("active"));
-      if (link.getAttribute("href")?.startsWith("#")) link.classList.add("active");
-    });
-  });
+  if (sessionStorage.getItem(STORAGE_KEYS.auth) === "1") {
+    splash.style.display = "none";
+    app.classList.add("show");
+    promptForUsername();
+    return;
+  }
 
-  // Highlight nav on scroll
-  const sections = ["home", "blog", "join"];
-  window.addEventListener("scroll", () => {
-    let current = "home";
-    for (const id of sections) {
-      const el = document.getElementById(id);
-      if (el && el.getBoundingClientRect().top <= 120) current = id;
+  const form = $("#loginForm");
+  const input = $("#keyInput");
+  const error = $("#loginError");
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const val = input.value.trim();
+    let role = null;
+
+    if (val === MEMBER_CODE) role = "member";
+    else if (val === ADMIN_CODE) role = "admin";
+
+    if (!role) {
+      error.textContent = "Invalid code. Try again.";
+      error.classList.add("show");
+      input.value = "";
+      input.focus();
+      return;
     }
-    $$(".nav-link").forEach((l) => {
-      const href = l.getAttribute("href");
-      l.classList.toggle("active", href === `#${current}`);
-    });
+
+    sessionStorage.setItem(STORAGE_KEYS.auth, "1");
+    localStorage.setItem(STORAGE_KEYS.role, role);
+    error.classList.remove("show");
+    splash.style.transition = "opacity .5s ease";
+    splash.style.opacity = "0";
+    setTimeout(() => {
+      splash.style.display = "none";
+      app.classList.add("show");
+      promptForUsername();
+      toast(role === "admin" ? "Welcome Admin" : "Welcome Member");
+    }, 500);
   });
 }
 
-/* ---- COPY IP ---- */
+/* ============================================================
+   USERNAME MODAL (first visit)
+   ============================================================ */
+function openUsernameModal() {
+  const overlay = $("#usernameModal");
+  const input = $("#usernameModalInput");
+  const saveBtn = $("#usernameModalSave");
+  const skipBtn = $("#usernameModalSkip");
+  if (!overlay || !input || !saveBtn || !skipBtn) return;
+
+  overlay.classList.add("open");
+  overlay.setAttribute("aria-hidden", "false");
+  input.value = localStorage.getItem(STORAGE_KEYS.user) || "";
+  input.focus();
+
+  const finish = () => {
+    const value = input.value.trim();
+    const clean = value || "Guest";
+    localStorage.setItem(STORAGE_KEYS.user, clean);
+    updateProfileLabel();
+    overlay.classList.remove("open");
+    overlay.setAttribute("aria-hidden", "true");
+    toast(value ? `Profile saved for ${clean}` : "Using guest profile.");
+  };
+
+  saveBtn.onclick = finish;
+  skipBtn.onclick = () => {
+    localStorage.setItem(STORAGE_KEYS.user, "Guest");
+    updateProfileLabel();
+    overlay.classList.remove("open");
+    overlay.setAttribute("aria-hidden", "true");
+    toast("Using guest profile.");
+  };
+
+  input.onkeydown = (e) => {
+    if (e.key === "Enter") { e.preventDefault(); finish(); }
+  };
+}
+
+function promptForUsername() {
+  if (localStorage.getItem(STORAGE_KEYS.user)) {
+    updateProfileLabel();
+    return;
+  }
+  openUsernameModal();
+}
+
+function updateProfileLabel() {
+  const label = $("#profileLabel");
+  const role = localStorage.getItem(STORAGE_KEYS.role) || "member";
+  const user = localStorage.getItem(STORAGE_KEYS.user) || "Guest";
+  if (label) label.textContent = `${user} • ${role === "admin" ? "Admin" : "Member"}`;
+  renderAvatar();
+}
+
+function renderAvatar() {
+  const avatarContainer = $("#sidebarAvatar");
+  const pfp = localStorage.getItem(STORAGE_KEYS.pfp);
+  if (!avatarContainer) return;
+  avatarContainer.innerHTML = "";
+  if (pfp) {
+    const img = document.createElement("img");
+    img.src = pfp;
+    img.alt = "Profile";
+    avatarContainer.appendChild(img);
+    avatarContainer.classList.add("show");
+  } else {
+    avatarContainer.classList.remove("show");
+  }
+}
+
+function logout() {
+  sessionStorage.removeItem(STORAGE_KEYS.auth);
+  location.reload();
+}
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+const PAGES = ["home", "join", "community", "blog", "settings"];
+const TITLES = { home: "Home", join: "How to Join", community: "Community", blog: "Blog", settings: "Settings" };
+
+function navigate(page) {
+  if (!PAGES.includes(page)) page = "home";
+  $$(".nav-item").forEach((n) => n.classList.toggle("active", n.dataset.page === page));
+  $$(".page").forEach((p) => p.classList.toggle("active", p.id === `page-${page}`));
+  const title = $("#topbarTitle");
+  if (title) title.textContent = TITLES[page];
+  $(".sidebar")?.classList.remove("open");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function initNav() {
+  $$(".nav-item").forEach((n) => n.addEventListener("click", () => navigate(n.dataset.page)));
+  $("#logoutBtn")?.addEventListener("click", logout);
+  $(".menu-toggle")?.addEventListener("click", () => $(".sidebar")?.classList.toggle("open"));
+}
+
+/* ============================================================
+   SERVER STATUS (mcsrvstat.us public API)
+   ============================================================ */
+let serverRefreshTimer = null;
+
+async function fetchServerStatus() {
+  try {
+    const res = await fetch(STATUS_API);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch {
+    try {
+      const res2 = await fetch(STATUS_API_FALLBACK);
+      if (!res2.ok) throw new Error(`HTTP ${res2.status}`);
+      return await res2.json();
+    } catch {
+      return null;
+    }
+  }
+}
+
+async function refreshServerStatus() {
+  const data = await fetchServerStatus();
+  const online = Boolean(data?.online);
+
+  // Topbar
+  const topDot = $("#statusDot");
+  const topText = $("#statusText");
+  if (topDot) topDot.classList.toggle("off", !online);
+  if (topText) topText.textContent = online ? "Online" : "Offline";
+
+  // Dashboard cards
+  const dotEl = $("#serverStatusDot");
+  const statusEl = $("#serverStatusText");
+  const playersEl = $("#serverPlayers");
+  const addressEl = $("#serverAddress");
+  const versionEl = $("#serverVersion");
+
+  if (dotEl) dotEl.classList.toggle("offline", !online);
+  if (statusEl) statusEl.textContent = online ? "Online" : "Offline";
+
+  if (playersEl) {
+    if (online && data.players) {
+      const on = data.players.online ?? 0;
+      const max = data.players.max ?? 0;
+      playersEl.textContent = max > 0 ? `${on} / ${max}` : `${on}`;
+    } else {
+      playersEl.textContent = "—";
+    }
+  }
+
+  if (addressEl) addressEl.textContent = data?.hostname || SERVER_ADDRESS;
+  if (versionEl) versionEl.textContent = online ? (data.version || "—") : "—";
+
+  // Player list
+  const wrapper = $("#playerListWrapper");
+  const list = $("#playerList");
+  if (wrapper && list) {
+    const players = online ? data?.players?.list : null;
+    if (players && players.length) {
+      wrapper.style.display = "block";
+      list.innerHTML = players.map((p) => {
+        const name = typeof p === "string" ? p : (p.name || p.uuid || "Player");
+        const uuid = typeof p === "object" ? p.uuid : null;
+        const headUrl = uuid
+          ? `https://crafatar.com/avatars/${uuid}?size=32&overlay`
+          : `https://mc-heads.net/avatar/${name}/32`;
+        return `<div class="player-chip"><img class="player-chip__head" src="${headUrl}" alt="${name}" loading="lazy" onerror="this.style.display='none'" /><span>${name}</span></div>`;
+      }).join("");
+    } else {
+      wrapper.style.display = "none";
+    }
+  }
+
+  // MOTD
+  const motdCard = $("#motdCard");
+  const motdBody = $("#motdBody");
+  if (motdCard && motdBody) {
+    const motd = online ? data?.motd : null;
+    if (motd) {
+      const text = Array.isArray(motd.clean) ? motd.clean.join("\n") : (motd.clean || motd.raw || "");
+      if (text.trim()) {
+        motdCard.style.display = "block";
+        motdBody.textContent = text;
+      } else {
+        motdCard.style.display = "none";
+      }
+    } else {
+      motdCard.style.display = "none";
+    }
+  }
+}
+
+function initServerStatus() {
+  refreshServerStatus();
+  $("#btnRefresh")?.addEventListener("click", refreshServerStatus);
+  if (serverRefreshTimer) clearInterval(serverRefreshTimer);
+  serverRefreshTimer = setInterval(refreshServerStatus, 60000);
+}
+
+/* ============================================================
+   COPY IP
+   ============================================================ */
 function initCopyIP() {
   const copyIPs = [
-    { btn: "#heroCopyIP", target: "#heroIP" },
     { btn: "#copyIP", target: "#serverAddress" },
     { btn: "#joinCopyIP", target: null },
   ];
-
   copyIPs.forEach(({ btn, target }) => {
     $(btn)?.addEventListener("click", async () => {
       const ip = target ? $(target)?.textContent?.trim() : SERVER_ADDRESS;
@@ -79,202 +306,11 @@ function initCopyIP() {
   });
 }
 
-/* ---- SERVER STATUS ---- */
-let statusRefreshTimer = null;
-let lastStatusData = null;
-
-async function fetchServerStatus() {
-  try {
-    const res = await fetch(STATUS_API);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    lastStatusData = data;
-    return data;
-  } catch {
-    try {
-      const res2 = await fetch(STATUS_API_FALLBACK);
-      if (!res2.ok) throw new Error(`HTTP ${res2.status}`);
-      const data2 = await res2.json();
-      lastStatusData = data2;
-      return data2;
-    } catch {
-      return null;
-    }
-  }
-}
-
-function renderServerStatus(data) {
-  const online = Boolean(data?.online);
-
-  // Hero status
-  const heroDot = $("#heroStatusDot");
-  const heroText = $("#heroStatusText");
-  if (heroDot) heroDot.classList.toggle("off", !online);
-  if (heroText) heroText.textContent = online ? "Server Online" : "Server Offline";
-
-  // Status grid
-  const statusDot = $("#serverStatusDot");
-  const statusText = $("#serverStatusText");
-  const playersEl = $("#serverPlayers");
-  const addressEl = $("#serverAddress");
-  const versionEl = $("#serverVersion");
-
-  if (statusDot) statusDot.classList.toggle("offline", !online);
-  if (statusText) statusText.textContent = online ? "Online" : "Offline";
-
-  if (playersEl) {
-    if (online && data.players) {
-      const online_count = data.players.online ?? 0;
-      const max_count = data.players.max ?? 0;
-      playersEl.textContent = max_count > 0 ? `${online_count} / ${max_count}` : `${online_count}`;
-    } else {
-      playersEl.textContent = "—";
-    }
-  }
-
-  if (addressEl) addressEl.textContent = data?.hostname || SERVER_ADDRESS;
-  if (versionEl) versionEl.textContent = online ? (data.version || "—") : "—";
-
-  // Player list
-  renderPlayerList(online ? data : null);
-
-  // MOTD
-  renderMOTD(online ? data : null);
-}
-
-function renderPlayerList(data) {
-  const wrapper = $("#playerListWrapper");
-  const list = $("#playerList");
-  if (!wrapper || !list) return;
-
-  const players = data?.players?.list;
-  if (!players || !players.length) {
-    wrapper.style.display = "none";
-    return;
-  }
-
-  wrapper.style.display = "block";
-  list.innerHTML = players.map((p) => {
-    const name = typeof p === "string" ? p : (p.name || p.uuid || "Player");
-    const uuid = typeof p === "object" ? p.uuid : null;
-    const headUrl = uuid
-      ? `https://crafatar.com/avatars/${uuid}?size=32&overlay`
-      : `https://mc-heads.net/avatar/${name}/32`;
-    return `<div class="player-chip"><img class="player-chip__head" src="${headUrl}" alt="${name}" loading="lazy" onerror="this.style.display='none'" /><span>${name}</span></div>`;
-  }).join("");
-}
-
-function renderMOTD(data) {
-  const card = $("#motdCard");
-  const body = $("#motdBody");
-  if (!card || !body) return;
-
-  const motd = data?.motd;
-  if (!motd) {
-    card.style.display = "none";
-    return;
-  }
-
-  const text = Array.isArray(motd.clean) ? motd.clean.join("\n") : (motd.clean || motd.raw || "");
-  if (!text.trim()) {
-    card.style.display = "none";
-    return;
-  }
-
-  card.style.display = "block";
-  body.textContent = text;
-}
-
-async function refreshServerStatus() {
-  const data = await fetchServerStatus();
-  renderServerStatus(data);
-}
-
-function initServerStatus() {
-  refreshServerStatus();
-  if (statusRefreshTimer) clearInterval(statusRefreshTimer);
-  // Refresh every 60 seconds (mcsrvstat.us caches for ~60s)
-  statusRefreshTimer = setInterval(refreshServerStatus, 60000);
-}
-
-/* ---- BLOG / ANNOUNCEMENTS ---- */
-async function loadBlogPosts() {
-  const grid = $("#blogGrid");
-  if (!grid) return;
-
-  try {
-    const res = await fetch("data/blog.json");
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const posts = data.posts || [];
-
-    if (!posts.length) {
-      grid.innerHTML = '<div class="empty-state">No posts yet. Check back soon!</div>';
-      return;
-    }
-
-    grid.innerHTML = posts.map((post, i) => {
-      const excerpt = stripHtml(post.body || "").slice(0, 120);
-      const truncated = stripHtml(post.body || "").length >= 120 ? "…" : "";
-      const emoji = post.emoji || "📰";
-      const tag = post.tag || "News";
-      const date = post.date ? formatDate(post.date) : "";
-      return `
-        <article class="blog-card" data-index="${i}">
-          <div class="blog-card__banner"><span style="font-size:2rem;">${emoji}</span></div>
-          <div class="blog-card__body">
-            <span class="blog-card__tag">${tag}</span>
-            <h3 class="blog-card__title">${escapeHtml(post.title || "Untitled")}</h3>
-            <p class="blog-card__excerpt">${escapeHtml(excerpt)}${truncated}</p>
-            <div class="blog-card__meta">${date ? `${date} · ` : ""}by ${escapeHtml(post.author || "TechSteal")}</div>
-          </div>
-        </article>`;
-    }).join("");
-
-    // Store for modal
-    blogPosts = posts;
-
-    // Click handlers
-    $$(".blog-card").forEach((card) => {
-      card.addEventListener("click", () => {
-        const idx = Number(card.dataset.index);
-        openBlogModal(posts[idx]);
-      });
-    });
-  } catch {
-    grid.innerHTML = '<div class="empty-state">Unable to load blog posts. Check back later.</div>';
-  }
-}
-
-let blogPosts = [];
-
-function openBlogModal(post) {
-  const modal = $("#blogModal");
-  if (!modal) return;
-
-  $("#blogModalTag").textContent = post.tag || "News";
-  $("#blogModalTitle").textContent = post.title || "Untitled";
-  $("#blogModalMeta").textContent = post.date ? `${formatDate(post.date)} · by ${post.author || "TechSteal"}` : `by ${post.author || "TechSteal"}`;
-  $("#blogModalBody").innerHTML = post.body || "";
-
-  modal.classList.add("open");
-}
-
-function initBlogModal() {
-  const modal = $("#blogModal");
-  const close = $("#blogModalClose");
-  close?.addEventListener("click", () => modal?.classList.remove("open"));
-  modal?.addEventListener("click", (e) => {
-    if (e.target === modal) modal.classList.remove("open");
-  });
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") modal?.classList.remove("open");
-  });
-}
-
-/* ---- SEASONS ---- */
+/* ============================================================
+   SEASONS
+   ============================================================ */
 let seasonData = [];
-let activeSeasonId = null;
+let activeSeasonId = 5;
 
 async function loadSeasons() {
   try {
@@ -283,32 +319,30 @@ async function loadSeasons() {
     const data = await res.json();
     seasonData = data.seasons || [];
     if (!seasonData.length) return;
-
     activeSeasonId = seasonData[0].id;
-    const wrapper = $("#seasonsWrapper");
-    if (wrapper) wrapper.style.display = "block";
-
     renderSeasonPicker();
   } catch {
-    // Seasons are optional — just hide
+    seasonData = [];
+    renderSeasonPicker();
   }
 }
 
 function renderSeasonPicker() {
   const picker = $("#seasonPicker");
   if (!picker) return;
-
-  picker.innerHTML = seasonData.map((s) =>
-    `<button class="season-btn ${s.id === activeSeasonId ? "active" : ""}" data-season="${s.id}">${escapeHtml(s.title)}</button>`
-  ).join("");
-
+  if (!seasonData.length) {
+    picker.innerHTML = '<button class="season-btn active">Season 5</button>';
+  } else {
+    picker.innerHTML = seasonData.map((s) =>
+      `<button class="season-btn ${s.id === activeSeasonId ? "active" : ""}" data-season="${s.id}">${s.title}</button>`
+    ).join("");
+  }
   $$(".season-btn", picker).forEach((btn) => {
     btn.addEventListener("click", () => {
       activeSeasonId = Number(btn.dataset.season);
       renderSeasonPicker();
     });
   });
-
   renderActiveSeason();
 }
 
@@ -321,34 +355,220 @@ function renderActiveSeason() {
   if (bodyEl) bodyEl.innerHTML = season.body || "";
 }
 
-/* ---- UTILITIES ---- */
+/* ============================================================
+   COMMUNITY POSTS (localStorage)
+   ============================================================ */
 function stripHtml(html) {
   const tmp = document.createElement("div");
   tmp.innerHTML = html;
   return tmp.textContent || tmp.innerText || "";
 }
 
-function escapeHtml(str) {
-  const tmp = document.createElement("div");
-  tmp.textContent = str;
-  return tmp.innerHTML;
+function initEditorToolbar(editor) {
+  if (!editor) return;
+  const toolbar = editor.closest(".editor");
+  if (!toolbar) return;
+  toolbar.querySelectorAll(".editor__btn").forEach((button) => {
+    button.addEventListener("click", (e) => {
+      e.preventDefault();
+      const cmd = button.getAttribute("data-cmd");
+      const val = button.getAttribute("data-value") || null;
+      if (!cmd) return;
+      editor.focus();
+      document.execCommand(cmd, false, val);
+      if (cmd === "insertUnorderedList" || cmd === "insertOrderedList") {
+        setTimeout(() => editor.focus(), 0);
+      }
+      if (["bold", "italic", "underline"].includes(cmd)) {
+        button.classList.toggle("active", document.queryCommandState(cmd));
+      }
+    });
+  });
 }
 
-function formatDate(dateStr) {
-  try {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
-  } catch {
-    return dateStr;
+function initCommunityPosts() {
+  const form = $("#newPostForm");
+  const editor = $("#communityEditor");
+  if (!form || !editor) return;
+  initEditorToolbar(editor);
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const body = editor.innerHTML.trim();
+    if (!stripHtml(body)) { toast("Please write something before posting."); return; }
+    const posts = JSON.parse(localStorage.getItem(STORAGE_KEYS.posts) || "[]");
+    posts.unshift({
+      id: `local_${Date.now()}`,
+      author: localStorage.getItem(STORAGE_KEYS.user) || "Guest",
+      body,
+      pfp: localStorage.getItem(STORAGE_KEYS.pfp) || "",
+      created_at: new Date().toISOString()
+    });
+    localStorage.setItem(STORAGE_KEYS.posts, JSON.stringify(posts));
+    editor.innerHTML = "";
+    renderPosts();
+    toast("Post published!");
+  });
+}
+
+function renderPosts() {
+  const list = $("#postList");
+  if (!list) return;
+  const posts = JSON.parse(localStorage.getItem(STORAGE_KEYS.posts) || "[]");
+  if (!posts.length) {
+    list.innerHTML = '<div class="empty-state">No posts yet. Be the first to share something!</div>';
+    return;
   }
+  list.innerHTML = posts.map((post) => `
+    <div class="post">
+      <div class="post__head">
+        <div class="avatar">${post.pfp ? `<img src="${post.pfp}" alt="avatar" />` : (post.author || "A").charAt(0).toUpperCase()}</div>
+        <div>
+          <div class="post__author">${post.author || "Guest"}</div>
+          <div class="post__time">${new Date(post.created_at).toLocaleString()}</div>
+        </div>
+      </div>
+      <div class="post__body">${post.body}</div>
+    </div>
+  `).join("");
 }
 
-/* ---- INIT ---- */
+/* ============================================================
+   BLOG (localStorage, admin can post)
+   ============================================================ */
+function initBlogPosts() {
+  const form = $("#newBlogPostForm");
+  const titleInput = $("#blogTitleInput");
+  const editor = $("#blogEditor");
+  const composerCard = $("#blogComposerCard");
+  initEditorToolbar(editor);
+  if (composerCard && localStorage.getItem(STORAGE_KEYS.role) === "admin") {
+    composerCard.style.display = "block";
+  }
+
+  form?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const title = titleInput?.value.trim() || "Untitled";
+    const body = editor?.innerHTML.trim() || "";
+    if (!stripHtml(body)) { toast("Please write something before publishing."); return; }
+    const posts = JSON.parse(localStorage.getItem(STORAGE_KEYS.blog) || "[]");
+    posts.unshift({
+      title,
+      body,
+      author: localStorage.getItem(STORAGE_KEYS.user) || "Admin",
+      created_at: new Date().toISOString()
+    });
+    localStorage.setItem(STORAGE_KEYS.blog, JSON.stringify(posts));
+    renderBlogPosts(posts);
+    if (titleInput) titleInput.value = "";
+    if (editor) editor.innerHTML = "";
+    toast("Blog post published!");
+  });
+
+  renderBlogPosts(JSON.parse(localStorage.getItem(STORAGE_KEYS.blog) || "[]"));
+}
+
+function renderBlogPosts(posts) {
+  const grid = $("#blogGrid");
+  if (!grid) return;
+  if (!posts.length) {
+    grid.innerHTML = '<div class="empty-state">No blog posts yet. Check back soon!</div>';
+    return;
+  }
+  grid.innerHTML = posts.map((post, i) => `
+    <article class="blog-card" data-index="${i}">
+      <div class="blog-card__banner"><span style="font-size:2rem;">📰</span></div>
+      <div class="blog-card__body">
+        <span class="blog-card__tag">News</span>
+        <h3 class="blog-card__title">${post.title || "Untitled"}</h3>
+        <p class="blog-card__excerpt">${stripHtml(post.body || "").slice(0, 120)}${stripHtml(post.body || "").length >= 120 ? "…" : ""}</p>
+        <div class="blog-card__meta">by ${post.author || "Admin"} · ${new Date(post.created_at).toLocaleDateString()}</div>
+      </div>
+    </article>
+  `).join("");
+
+  $$(".blog-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      const idx = Number(card.dataset.index);
+      openBlogViewer(posts[idx]);
+    });
+  });
+}
+
+function openBlogViewer(post) {
+  const overlay = $("#viewerOverlay");
+  const content = $("#viewerContent");
+  if (!overlay || !content) return;
+  content.innerHTML = `
+    <div class="viewer__title">${post.title || "Untitled"}</div>
+    <div class="viewer__meta">by ${post.author || "Admin"} · ${new Date(post.created_at).toLocaleDateString()}</div>
+    <div class="viewer__body">${post.body || ""}</div>
+  `;
+  overlay.classList.add("open");
+}
+
+function initViewer() {
+  $("#viewerClose")?.addEventListener("click", () => $("#viewerOverlay")?.classList.remove("open"));
+  $("#viewerOverlay")?.addEventListener("click", (e) => {
+    if (e.target.id === "viewerOverlay") e.target.classList.remove("open");
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") $("#viewerOverlay")?.classList.remove("open");
+  });
+}
+
+/* ============================================================
+   SETTINGS
+   ============================================================ */
+function initSettings() {
+  const form = $("#settingsForm");
+  const usernameInput = $("#settingsUsername");
+  const pfpInput = $("#settingsPfpInput");
+  const preview = $("#settingsPfpPreview");
+  if (!form || !usernameInput || !pfpInput || !preview) return;
+
+  usernameInput.value = localStorage.getItem(STORAGE_KEYS.user) || "";
+  const currentPfp = localStorage.getItem(STORAGE_KEYS.pfp);
+  if (currentPfp) preview.innerHTML = `<img src="${currentPfp}" alt="profile preview" />`;
+  else preview.textContent = "No image";
+
+  pfpInput.addEventListener("change", (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result;
+      localStorage.setItem(STORAGE_KEYS.pfp, dataUrl);
+      preview.innerHTML = `<img src="${dataUrl}" alt="profile preview" />`;
+      renderAvatar();
+      toast("Profile picture updated.");
+    };
+    reader.readAsDataURL(file);
+  });
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const value = usernameInput.value.trim();
+    if (!value) { toast("Please enter a username."); return; }
+    localStorage.setItem(STORAGE_KEYS.user, value);
+    updateProfileLabel();
+    toast("Profile saved.");
+  });
+}
+
+/* ============================================================
+   INIT
+   ============================================================ */
 document.addEventListener("DOMContentLoaded", () => {
+  initLogin();
   initNav();
-  initCopyIP();
   initServerStatus();
-  loadBlogPosts();
-  initBlogModal();
+  initCopyIP();
+  initCommunityPosts();
+  initBlogPosts();
+  initSettings();
   loadSeasons();
+  initViewer();
+  renderPosts();
+  updateProfileLabel();
+  renderAvatar();
 });
