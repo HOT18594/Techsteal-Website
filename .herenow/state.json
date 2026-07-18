@@ -11,6 +11,9 @@
       "claimToken": "5ceb0738508124980f0112a8f627cef10720a3b8699aaf8feefca2e33fbf4e54",
       "claimUrl": "https://here.now/claim?slug=serene-canopy-f4d3&token=5ceb0738508124980f0112a8f627cef10720a3b8699aaf8feefca2e33fbf4e54",
       "expiresAt": "2026-07-12T01:42:58.547Z"
+    },
+    "walnut-cipher-d7ba": {
+      "siteUrl": "https://walnut-cipher-d7ba.here.now/"
     }
   }
 }

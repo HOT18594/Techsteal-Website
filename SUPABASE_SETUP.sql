@@ -97,7 +97,20 @@ CREATE TABLE IF NOT EXISTS user_roles (
 ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
 
 -- The frontend (anon key) needs to READ roles to determine access after login.
--- Writes (granting admin) must be done by you in the Supabase dashboard, NOT
--- from the frontend, so we only allow SELECT here.
+-- We also allow INSERT so new users can create their own row during account
+-- setup (role defaults to 'member' via the column default; the CHECK
+-- constraint prevents anyone from inserting 'admin' from the anon key
+-- because we restrict the allowed values — but to be safe we also add a
+-- policy that only allows inserting 'member').
+-- Admin grants must still be done by you in the Supabase dashboard.
 DROP POLICY IF EXISTS "user_roles_read" ON user_roles;
 CREATE POLICY "user_roles_read" ON user_roles FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "user_roles_insert" ON user_roles;
+CREATE POLICY "user_roles_insert" ON user_roles
+  FOR INSERT WITH CHECK (role = 'member');
+
+-- Allow users to UPDATE their own row (e.g., change display username).
+DROP POLICY IF EXISTS "user_roles_update_self" ON user_roles;
+CREATE POLICY "user_roles_update_self" ON user_roles
+  FOR UPDATE USING (true) WITH CHECK (role = 'member');

@@ -1,0 +1,179 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { loadSeasons, SERVER_ADDRESS, updateSeason } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
+import type { Season } from "@/lib/supabase";
+
+const LAUNCHER_LABELS: Record<string, string> = {
+  prism: "Prism",
+  sklauncher: "SK Launcher",
+  modrinth: "Modrinth",
+  curseforge: "CurseForge",
+};
+
+export default function Join() {
+  const { user } = useAuth();
+  const [seasons, setSeasons] = useState<Season[]>([]);
+  const [activeSeasonId, setActiveSeasonId] = useState<number>(5);
+  const [activeLauncher, setActiveLauncher] = useState<string>("prism");
+  const [loading, setLoading] = useState(true);
+
+  // Admin editor state
+  const [editTitle, setEditTitle] = useState("");
+  const [editCurrent, setEditCurrent] = useState(false);
+  const [editLaunchers, setEditLaunchers] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const data = await loadSeasons();
+      setSeasons(data);
+      if (data.length) {
+        const current = data.find((s) => s.is_current);
+        setActiveSeasonId(current ? current.id : data[0].id);
+      }
+    } catch {
+      // fallback to local
+    }
+    setLoading(false);
+  };
+
+  const activeSeason = seasons.find((s) => s.id === activeSeasonId) || seasons[0];
+
+  const isAdmin = user?.role === "admin";
+
+  const handleSeasonSelect = (id: number) => {
+    setActiveSeasonId(id);
+    const season = seasons.find((s) => s.id === id);
+    if (season) {
+      setEditTitle(season.title || "");
+      setEditCurrent(season.is_current || false);
+      setEditLaunchers({
+        prism: season.prism || "",
+        sklauncher: season.sklauncher || "",
+        modrinth: season.modrinth || "",
+        curseforge: season.curseforge || "",
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (activeSeason) {
+      setEditTitle(activeSeason.title || "");
+      setEditCurrent(activeSeason.is_current || false);
+      setEditLaunchers({
+        prism: activeSeason.prism || "",
+        sklauncher: activeSeason.sklauncher || "",
+        modrinth: activeSeason.modrinth || "",
+        curseforge: activeSeason.curseforge || "",
+      });
+    }
+  }, [activeSeason]);
+
+  return (
+    <div>
+      <div className="page-header">
+        <h1 className="page-header__title">
+          How to Join
+          {activeSeason && <span className="badge-season">{activeSeason.title}</span>}
+        </h1>
+        <p className="page-header__sub">Follow the steps below to join the server with your preferred launcher.</p>
+      </div>
+
+      <div className="card">
+        <div className="card__title"><span className="dot" />Server Address</div>
+        <div className="ip-box">
+          <code>{SERVER_ADDRESS}</code>
+          <button className="copy-btn" onClick={() => navigator.clipboard.writeText(SERVER_ADDRESS).then(() => alert("IP copied!"))}>
+            Copy
+          </button>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card__title"><span className="dot" />Select Season</div>
+        <div className="season-picker">
+          {seasons.length === 0 ? (
+            <button className="season-btn active current">Season 5 ★</button>
+          ) : (
+            seasons.map((s) => (
+              <button
+                key={s.id}
+                className={`season-btn ${s.id === activeSeasonId ? "active" : ""} ${s.is_current ? "current" : ""}`}
+                onClick={() => handleSeasonSelect(s.id)}
+              >
+                {s.title || `Season ${s.id}`}
+              </button>
+            ))
+          )}
+        </div>
+
+        <div className="launcher-tabs">
+          {Object.entries(LAUNCHER_LABELS).map(([key, label]) => (
+            <button
+              key={key}
+              className={`launcher-tab ${activeLauncher === key ? "active" : ""}`}
+              onClick={() => setActiveLauncher(key)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="launcher-content">
+          {activeSeason ? (
+            <div dangerouslySetInnerHTML={{ __html: activeSeason[activeLauncher as keyof Season] as string || `<p>No ${LAUNCHER_LABELS[activeLauncher]} instructions for this season yet.</p>` }} />
+          ) : (
+            <p style={{ color: "var(--text-dim)" }}>No season data available.</p>
+          )}
+        </div>
+      </div>
+
+      {isAdmin && activeSeason && (
+        <div className="card" id="seasonEditor">
+          <div className="card__title"><span className="dot" />Admin: Edit Season</div>
+          <div className="settings-form">
+            <label className="settings-label">Title</label>
+            <input className="settings-input" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
+            <label className="settings-label" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <input type="checkbox" checked={editCurrent} onChange={(e) => setEditCurrent(e.target.checked)} />
+              Current Season
+            </label>
+            {Object.entries(LAUNCHER_LABELS).map(([key, label]) => (
+              <div key={key} className="season-launcher-edit">
+                <label>{label} Instructions (HTML)</label>
+                <textarea
+                  value={editLaunchers[key] || ""}
+                  onChange={(e) => setEditLaunchers((prev) => ({ ...prev, [key]: e.target.value }))}
+                  placeholder={`Enter ${label} instructions...`}
+                />
+              </div>
+            ))}
+            <div className="admin-actions">
+              <button className="admin-btn" onClick={async () => {
+                try {
+                  await updateSeason(activeSeason.id, {
+                    title: editTitle,
+                    is_current: editCurrent,
+                    prism: editLaunchers.prism || "",
+                    sklauncher: editLaunchers.sklauncher || "",
+                    modrinth: editLaunchers.modrinth || "",
+                    curseforge: editLaunchers.curseforge || "",
+                  });
+                  alert("Season saved!");
+                  loadData();
+                } catch {
+                  alert("Failed to save season.");
+                }
+              }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
