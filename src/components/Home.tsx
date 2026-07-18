@@ -25,6 +25,7 @@ export default function Home() {
     const data = await fetchServerStatus();
     setServerData(data);
     setLoading(false);
+    return data;
   };
 
   const loadDiscord = async () => {
@@ -74,8 +75,8 @@ export default function Home() {
       const targetOnline = action === "start";
       for (let i = 0; i < 30; i++) {
         await new Promise((r) => setTimeout(r, 2000));
-        await refreshServerStatus();
-        const nowOnline = Boolean(serverData?.online);
+        const fresh = await refreshServerStatus();
+        const nowOnline = Boolean(fresh?.online);
         if (nowOnline === targetOnline) {
           setServerState(targetOnline ? "running" : "offline");
           break;

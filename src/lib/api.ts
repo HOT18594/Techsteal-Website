@@ -10,7 +10,15 @@ export const DISCORD_WIDGET_API = `https://discord.com/api/guilds/${DISCORD_GUIL
 export const POSTS_PER_PAGE = 6;
 export const MAX_IMAGE_SIZE = 25 * 1024 * 1024; // 25MB
 
-export async function fetchServerStatus(): Promise<any | null> {
+export async function fetchServerStatus(): Promise<any | null> {  // Primary: our own status route (live exaroton data, no caching).
+  try {
+    const res = await fetch("/api/server/status", { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      if (!data.error) return data;
+    }
+  } catch {}
+  // Fallback: public mcsrvstat API.
   try {
     const res = await fetch(STATUS_API);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
