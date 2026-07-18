@@ -5,12 +5,37 @@
    blog with admin edit/delete, Supabase sync, lightbox viewer
    ============================================================ */
 
-const MEMBER_CODE = "om{u{WAMrDn/g4243.>B_4X%3UmV^|";
-const ADMIN_CODE  = "Qvo6;.@1L\\tnz2Gyc.CL$WbP8>VVm9";
+/* ============================================================
+   DISCORD OAUTH (Implicit Flow — frontend-only, no backend)
+   ------------------------------------------------------------
+   Setup:
+   1. Create a Discord app at https://discord.com/developers/applications
+   2. Copy the "Client ID" (APPLICATION ID) into DISCORD_CLIENT_ID below.
+   3. Under OAuth2 → Redirects, add this site's URL:
+        - Local/dev:   http://localhost:PORT  (or your here.now URL)
+        - Production:  https://techsteal.space
+   4. Under OAuth2 → General, enable "Implicit Grant" flow.
+   5. Add your Discord user ID to ADMIN_DISCORD_IDS to get admin access.
+      (Find your ID: enable Developer Mode in Discord settings, right-click
+       your profile → "Copy User ID".)
+   ------------------------------------------------------------
+   NOTE: Implicit flow exposes the access token in the URL fragment.
+   This is acceptable for a static site prototype. For production with
+   sensitive admin actions, consider Supabase Auth + Discord provider
+   (server-side token exchange) instead.
+   ============================================================ */
+const DISCORD_CLIENT_ID = "YOUR_DISCORD_CLIENT_ID"; // <-- replace with your Discord app's Client ID
+const DISCORD_REDIRECT_URI = `${window.location.origin}${window.location.pathname}`;
+const DISCORD_SCOPES = "identify"; // "identify" gives username + avatar
+const ADMIN_DISCORD_IDS = [
+  "YOUR_DISCORD_USER_ID" // <-- replace with your Discord user ID (string)
+];
+
 const STORAGE_KEYS = {
   auth: "ts_auth", user: "ts_user", role: "ts_role",
   posts: "ts_posts", pfp: "ts_pfp", blog: "ts_blog_posts",
-  liked: "ts_liked_posts"
+  liked: "ts_liked_posts",
+  discordId: "ts_discord_id", discordToken: "ts_discord_token"
 };
 const SERVER_ADDRESS = "play.techsteal.space";
 const STATUS_API = `https://api.mcsrvstat.us/3/${SERVER_ADDRESS}`;
@@ -123,46 +148,103 @@ function toast(msg) {
 }
 
 /* ============================================================
-   LOGIN
+   LOGIN (Discord OAuth)
    ============================================================ */
+
+// Build the Discord OAuth authorization URL (implicit flow).
+function discordAuthUrl() {
+  const params = new URLSearchParams({
+    client_id: DISCORD_CLIENT_ID,
+    redirect_uri: DISCORD_REDIRECT_URI,
+    response_type: "token",
+    scope: DISCORD_SCOPES,
+    prompt: "consent"
+  });
+  return `https://discord.com/api/oauth2/authorize?${params.toString()}`;
+}
+
+// Redirect the browser to Discord's authorization page.
+function loginWithDiscord() {
+  if (DISCORD_CLIENT_ID === "YOUR_DISCORD_CLIENT_ID") {
+    const err = $("#loginError");
+    if (err) {
+      err.textContent = "Discord login not configured. Add your Client ID in app.js.";
+      err.classList.add("show");
+    }
+    return;
+  }
+  window.location.href = discordAuthUrl();
+}
+
+// Parse the access token from the URL fragment after Discord redirects back.
+function handleDiscordCallback() {
+  if (!window.location.hash || !window.location.hash.includes("access_token")) return false;
+  const params = new URLSearchParams(window.location.hash.slice(1));
+  const accessToken = params.get("access_token");
+  const tokenType = params.get("token_type");
+  const state = params.get("state");
+  if (!accessToken) return false;
+  // Clean the URL fragment so the token isn't visible/refreshable.
+  history.replaceState(null, "", window.location.pathname + window.location.search);
+  // Fetch the Discord user profile with the token.
+  fetch("https://discord.com/api/users/@me", {
+    headers: { Authorization: `${tokenType} ${accessToken}` }
+  })
+    .then((res) => { if (!res.ok) throw new Error(`Discord /users/@me failed: ${res.status}`); return res.json(); })
+    .then((user) => {
+      const role = ADMIN_DISCORD_IDS.includes(String(user.id)) ? "admin" : "member";
+      const username = user.global_name || user.username || "Discord User";
+      const avatar = user.avatar
+        ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`
+        : `https://cdn.discordapp.com/embed/avatars/${Number(user.discriminator || 0) % 5}.png`;
+      sessionStorage.setItem(STORAGE_KEYS.auth, "1");
+      sessionStorage.setItem(STORAGE_KEYS.discordToken, accessToken);
+      localStorage.setItem(STORAGE_KEYS.discordId, String(user.id));
+      localStorage.setItem(STORAGE_KEYS.role, role);
+      // Auto-fill profile from Discord (don't overwrite a custom username the user set).
+      if (!localStorage.getItem(STORAGE_KEYS.user)) localStorage.setItem(STORAGE_KEYS.user, username);
+      if (!localStorage.getItem(STORAGE_KEYS.pfp)) localStorage.setItem(STORAGE_KEYS.pfp, avatar);
+      showApp(role);
+      toast(role === "admin" ? `Welcome ${username} (Admin)` : `Welcome ${username}`);
+    })
+    .catch((err) => {
+      console.error(err);
+      const e = $("#loginError");
+      if (e) { e.textContent = "Discord login failed. Please try again."; e.classList.add("show"); }
+    });
+  return true;
+}
+
+// Reveal the main app after a successful login.
+function showApp(role) {
+  const splash = $("#splash");
+  const app = $("#app");
+  if (!splash || !app) return;
+  splash.style.transition = "opacity .4s ease";
+  splash.style.opacity = "0";
+  setTimeout(() => {
+    splash.style.display = "none";
+    app.classList.add("show");
+    promptForUsername();
+  }, 400);
+}
+
 function initLogin() {
   const splash = $("#splash");
   const app = $("#app");
   if (!splash || !app) return;
+  // Handle the Discord OAuth redirect callback first.
+  if (handleDiscordCallback()) return;
+  // Already authenticated this session → go straight to the app.
   if (sessionStorage.getItem(STORAGE_KEYS.auth) === "1") {
     splash.style.display = "none";
     app.classList.add("show");
     promptForUsername();
     return;
   }
-  const form = $("#loginForm");
-  const input = $("#keyInput");
-  const error = $("#loginError");
-  form.addEventListener("submit", (e) => {
-    e.preventDefault();
-    const val = input.value.trim();
-    let role = null;
-    if (val === MEMBER_CODE) role = "member";
-    else if (val === ADMIN_CODE) role = "admin";
-    if (!role) {
-      error.textContent = "Invalid code. Try again.";
-      error.classList.add("show");
-      input.value = "";
-      input.focus();
-      return;
-    }
-    sessionStorage.setItem(STORAGE_KEYS.auth, "1");
-    localStorage.setItem(STORAGE_KEYS.role, role);
-    error.classList.remove("show");
-    splash.style.transition = "opacity .4s ease";
-    splash.style.opacity = "0";
-    setTimeout(() => {
-      splash.style.display = "none";
-      app.classList.add("show");
-      promptForUsername();
-      toast(role === "admin" ? "Welcome Admin" : "Welcome Member");
-    }, 400);
-  });
+  // Wire up the "Login with Discord" button.
+  const btn = $("#discordLoginBtn");
+  if (btn) btn.addEventListener("click", (e) => { e.preventDefault(); loginWithDiscord(); });
 }
 
 /* ============================================================
@@ -232,7 +314,11 @@ function renderAvatar() {
   } else { c.classList.remove("show"); }
 }
 
-function logout() { sessionStorage.removeItem(STORAGE_KEYS.auth); location.reload(); }
+function logout() {
+  sessionStorage.removeItem(STORAGE_KEYS.auth);
+  sessionStorage.removeItem(STORAGE_KEYS.discordToken);
+  location.reload();
+}
 
 /* ============================================================
    NAVIGATION

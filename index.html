@@ -16,11 +16,13 @@
   <div id="splash" class="splash">
     <div class="splash__inner">
       <img src="assets/img/logo.png" alt="TechSteal Logo" class="splash__logo" />
-      <form id="loginForm" class="login" autocomplete="off">
-        <input id="keyInput" class="login__input" type="password" placeholder="Enter access code" autocomplete="off" />
-        <button type="submit" class="login__btn">Enter</button>
+      <div class="login">
+        <button type="button" id="discordLoginBtn" class="login__btn login__btn--discord">
+          <svg class="login__btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.317 4.369A19.79 19.79 0 0 0 16.558 3.1a.074.074 0 0 0-.079.037c-.34.602-.717 1.388-.982 2.006a18.27 18.27 0 0 0-5.487 0 12.51 12.51 0 0 0-.998-2.006.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C1.322 7.799.69 11.144.99 14.45a.082.082 0 0 0 .031.056 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.1 13.1 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .078-.01c3.927 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .079.009c.12.099.246.198.373.292a.077.077 0 0 1-.006.127c-.598.349-1.223.645-1.873.892a.076.076 0 0 0-.04.107c.36.698.772 1.363 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-3.828-.838-7.15-3.549-10.055a.06.06 0 0 0-.031-.028ZM8.02 12.331c-1.182 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418Zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418Z"/></svg>
+          <span>Login with Discord</span>
+        </button>
         <p class="login__error" id="loginError"></p>
-      </form>
+      </div>
     </div>
   </div>
 
@@ -341,7 +343,7 @@
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
               <div>
                 <div style="font-weight:600;margin-bottom:2px;" id="settingsRoleDisplay">Role: Member</div>
-                <div style="color:var(--text-dim);font-size:.85rem;">Login state is saved per browser session.</div>
+                <div style="color:var(--text-dim);font-size:.85rem;">Logged in with Discord. Sign out to use a different account.</div>
               </div>
               <button class="btn btn--ghost" id="logoutBtn2" style="background:rgba(239,68,68,0.10);color:var(--danger);border-color:rgba(239,68,68,0.2);">Log Out</button>
             </div>

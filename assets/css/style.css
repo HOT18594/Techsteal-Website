@@ -108,6 +108,17 @@ code { font-family: var(--mono); }
 .login__error.show { opacity: 1; animation: shake 0.4s ease; }
 @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
 
+/* Discord login button */
+.login__btn--discord {
+  display: inline-flex; align-items: center; justify-content: center; gap: 12px;
+  background: var(--discord); color: #fff;
+  box-shadow: 0 8px 24px rgba(88,101,242,0.35);
+  letter-spacing: 0.5px; text-transform: none; font-family: var(--font-display);
+}
+.login__btn--discord:hover { background: #4752d4; box-shadow: 0 12px 32px rgba(88,101,242,0.45); filter: brightness(1.05); }
+.login__btn--discord:active { transform: translateY(0); }
+.login__btn-icon { width: 22px; height: 22px; flex-shrink: 0; }
+
 /* ============================================================
    APP SHELL
    ============================================================ */
