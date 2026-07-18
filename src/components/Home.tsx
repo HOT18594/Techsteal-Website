@@ -47,11 +47,36 @@ export default function Home() {
 
   const online = Boolean(serverData?.online);
   const players = online && serverData?.players ? serverData.players : null;
+  const [serverState, setServerState] = useState<"running" | "offline" | "starting" | "stopping">(
+    online ? "running" : "offline"
+  );
+  const [controlBusy, setControlBusy] = useState(false);
+
+  const controlServer = async (action: "start" | "stop") => {
+    setControlBusy(true);
+    setServerState(action === "start" ? "starting" : "stopping");
+    try {
+      const res = await fetch("/api/server/control", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed");
+      setServerState(action === "start" ? "running" : "offline");
+      await refreshServerStatus();
+    } catch (e: any) {
+      alert(e.message || "Could not control server");
+      setServerState(online ? "running" : "offline");
+    } finally {
+      setControlBusy(false);
+    }
+  };
 
   return (
     <div className="home-grid">
       <div className="card">
-        <div className="card__title"><span className="dot" />Season V Server Status</div>
+        <div className="card__title">Season V Server Status</div>
         {loading ? (
           <div className="status-spinner-wrapper">
             <div className="status-spinner" />
@@ -60,7 +85,7 @@ export default function Home() {
         ) : (
           <>
             <div className="server-dashboard">
-              <div className="server-dashboard__card">
+              <div className="server-dashboard__card server-dashboard__card--status">
                 <div className="server-dashboard__label">Status</div>
                 <div className="server-dashboard__status">
                   <span className={`server-dashboard__dot ${online ? "" : "offline"}`} />
@@ -89,6 +114,20 @@ export default function Home() {
                 Copy IP
               </button>
               <button className="btn btn--ghost" onClick={refreshServerStatus}>Refresh</button>
+              <button
+                className="btn btn--start"
+                disabled={controlBusy || serverState === "running" || serverState === "starting"}
+                onClick={() => controlServer("start")}
+              >
+                {serverState === "starting" ? "Starting…" : "Start Server"}
+              </button>
+              <button
+                className="btn btn--stop"
+                disabled={controlBusy || serverState === "offline" || serverState === "stopping"}
+                onClick={() => controlServer("stop")}
+              >
+                {serverState === "stopping" ? "Stopping…" : "Stop Server"}
+              </button>
             </div>
             {players?.list?.length > 0 && (
               <div style={{ marginTop: "16px" }}>
@@ -113,7 +152,7 @@ export default function Home() {
       </div>
 
       <div className="card discord-card">
-        <div className="card__title"><span className="dot" />Discord Community</div>
+        <div className="card__title">Discord Community</div>
         <div className="discord-widget">
           <div className="discord-widget__header">
             <div className="discord-widget__icon">

@@ -112,6 +112,7 @@ img { max-width: 100%; display: block; }
 .btn, .copy-btn, .admin-btn, .season-btn, .launcher-tab, .add-media-btn, .editor__btn { border-radius: var(--radius-sm); min-height: 40px; padding: 10px 15px; font-weight: 900; transition: transform .12s ease, filter .12s ease, background .12s ease; }
 .btn:hover, .copy-btn:hover, .admin-btn:hover, .season-btn:hover, .launcher-tab:hover, .add-media-btn:hover, .editor__btn:hover { transform: translateY(-1px); filter: brightness(1.04); }
 .btn--start, .admin-btn { border: 2px solid #6ef28c; color: #061108; background: linear-gradient(180deg, var(--green), #24b64a); box-shadow: 0 12px 22px rgba(55,208,92,.20), inset 0 -3px 0 rgba(0,0,0,.20), inset 0 2px 0 rgba(255,255,255,.22); }
+.btn--stop { border: 2px solid #ff8377; color: #fff; background: linear-gradient(180deg, #ef5d4e, var(--redstone)); box-shadow: 0 12px 22px rgba(224,74,57,.20), inset 0 -3px 0 rgba(0,0,0,.20), inset 0 2px 0 rgba(255,255,255,.18); }
 .btn--ghost, .copy-btn, .season-btn, .launcher-tab, .add-media-btn, .editor__btn { color: var(--ink); background: #242b2f; border: 2px solid #3a444a; box-shadow: inset 0 1px 0 rgba(255,255,255,.04); }
 .btn--discord { display: flex; justify-content: center; align-items: center; color: #fff; background: var(--discord); border-color: #7782ff; }
 .admin-btn.danger, .danger { color: #fff; background: linear-gradient(180deg, #ef5d4e, var(--redstone)); border-color: #ff8377; }
@@ -119,12 +120,14 @@ img { max-width: 100%; display: block; }
 
 /* Server status */
 .server-dashboard { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.server-dashboard__card { min-height: 102px; padding: 16px; border-radius: var(--radius); background: #20272a; border: 2px solid #30393e; box-shadow: inset 0 1px 0 rgba(255,255,255,.04); }
+.server-dashboard__card { min-height: 92px; padding: 14px 16px; border-radius: var(--radius); background: #20272a; border: 2px solid #30393e; box-shadow: inset 0 1px 0 rgba(255,255,255,.04); display: flex; flex-direction: column; justify-content: center; }
+.server-dashboard__card--status { grid-column: span 2; flex-direction: row; align-items: center; justify-content: flex-start; gap: 14px; }
 .server-dashboard__label, .settings-label, .discord-online-list__title { font-family: var(--mono); color: var(--text-dim); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; font-weight: 900; }
-.server-dashboard__status { display: flex; align-items: center; gap: 9px; margin-top: 10px; }
-.server-dashboard__dot { width: 10px; height: 10px; background: var(--green); box-shadow: 0 0 0 5px rgba(55,208,92,.13); }
+.server-dashboard__status { display: flex; align-items: center; gap: 9px; margin-top: 0; }
+.server-dashboard__dot { width: 12px; height: 12px; background: var(--green); box-shadow: 0 0 0 5px rgba(55,208,92,.13); border-radius: 50%; }
 .server-dashboard__dot.offline { background: var(--redstone); box-shadow: 0 0 0 5px rgba(224,74,57,.13); }
 .server-dashboard__value { display: block; margin-top: 9px; font-family: var(--font-display); font-size: 31px; line-height: .95; font-weight: 800; text-transform: uppercase; word-break: break-word; }
+.server-dashboard__card--status .server-dashboard__value { margin-top: 0; font-size: 26px; }
 .server-dashboard__address-value .server-dashboard__value { font-family: var(--mono); font-size: 17px; line-height: 1.25; text-transform: none; color: var(--green); }
 .server-dashboard__actions, .modal-actions, .admin-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
 .player-list { display: flex; gap: 8px; flex-wrap: wrap; }

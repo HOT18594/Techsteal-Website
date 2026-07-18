@@ -53,14 +53,6 @@ export default function Settings() {
           </div>
         </div>
       </div>
-
-      <div className="card">
-        <div className="card__title"><span className="dot" />About</div>
-        <p style={{ color: "var(--text-dim)", fontSize: "0.9rem", lineHeight: 1.7 }}>
-          TechSteal is a Minecraft community. This site is built with Next.js and
-          uses Discord for authentication and Supabase for data storage.
-        </p>
-      </div>
     </div>
   );
 }

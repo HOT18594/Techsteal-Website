@@ -79,7 +79,6 @@ export default function Join() {
       <div className="page-header">
         <h1 className="page-header__title">
           How to Join
-          {activeSeason && <span className="badge-season">{activeSeason.title}</span>}
         </h1>
         <p className="page-header__sub">Follow the steps below to join the server with your preferred launcher.</p>
       </div>
