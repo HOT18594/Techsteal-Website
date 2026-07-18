@@ -49,6 +49,8 @@ export default function Community() {
 
   // Liked posts (client-side tracking)
   const [liked, setLiked] = useState<number[]>([]);
+  const [likedHydrated, setLikedHydrated] = useState(false);
+  const [likingPostIds, setLikingPostIds] = useState<number[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const commentFileInputRef = useRef<HTMLInputElement>(null);
@@ -58,6 +60,27 @@ export default function Community() {
   useEffect(() => {
     loadData();
   }, [page, search]);
+
+  useEffect(() => {
+    setLikedHydrated(false);
+    if (!user?.discordId) {
+      setLiked([]);
+      return;
+    }
+    try {
+      const stored = JSON.parse(localStorage.getItem(`techsteal-liked-${user.discordId}`) || "[]");
+      setLiked(Array.isArray(stored) ? stored.filter(Number.isInteger) : []);
+    } catch {
+      setLiked([]);
+    }
+    setLikedHydrated(true);
+  }, [user?.discordId]);
+
+  useEffect(() => {
+    if (likedHydrated && user?.discordId) {
+      localStorage.setItem(`techsteal-liked-${user.discordId}`, JSON.stringify(liked));
+    }
+  }, [liked, likedHydrated, user?.discordId]);
 
   const loadData = async () => {
     setLoading(true);
@@ -144,29 +167,30 @@ export default function Community() {
   };
 
   const toggleLike = async (post: Post) => {
+    if (likingPostIds.includes(post.id)) return;
     const isLiked = liked.includes(post.id);
     const delta = isLiked ? -1 : 1;
-    // Optimistic update
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.id === post.id ? { ...p, likes: (p.likes || 0) + delta } : p
-      )
-    );
-    setLiked((prev) =>
-      isLiked ? prev.filter((id) => id !== post.id) : [...prev, post.id]
-    );
+    const optimisticLikes = Math.max(0, (post.likes || 0) + delta);
+    const optimisticPost = { ...post, likes: optimisticLikes };
+
+    // Optimistic update both list cards and the currently opened detail post.
+    setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, likes: optimisticLikes } : p)));
+    setSelectedPost((prev) => (prev?.id === post.id ? optimisticPost : prev));
+    setLiked((prev) => (isLiked ? prev.filter((id) => id !== post.id) : [...prev, post.id]));
+    setLikingPostIds((prev) => [...prev, post.id]);
+
     try {
-      await likePost(post.id, delta);
+      const updated = await likePost(post.id, delta);
+      setPosts((prev) => prev.map((p) => (p.id === post.id ? updated : p)));
+      setSelectedPost((prev) => (prev?.id === post.id ? updated : prev));
     } catch {
-      // revert
-      setPosts((prev) =>
-        prev.map((p) =>
-          p.id === post.id ? { ...p, likes: (p.likes || 0) - delta } : p
-        )
-      );
-      setLiked((prev) =>
-        isLiked ? [...prev, post.id] : prev.filter((id) => id !== post.id)
-      );
+      // Revert every UI copy if the backend rejects the update.
+      setPosts((prev) => prev.map((p) => (p.id === post.id ? post : p)));
+      setSelectedPost((prev) => (prev?.id === post.id ? post : prev));
+      setLiked((prev) => (isLiked ? [...prev, post.id] : prev.filter((id) => id !== post.id)));
+      alert("Could not update like. Please try again.");
+    } finally {
+      setLikingPostIds((prev) => prev.filter((id) => id !== post.id));
     }
   };
 
@@ -275,15 +299,19 @@ export default function Community() {
           </div>
         )}
         <div className="post-detail__footer">
-          <span
+          <button
+            type="button"
             className={`post-detail__stat ${liked.includes(selectedPost.id) ? "liked" : ""}`}
             onClick={() => toggleLike(selectedPost)}
+            disabled={likingPostIds.includes(selectedPost.id)}
+            aria-pressed={liked.includes(selectedPost.id)}
+            aria-label={liked.includes(selectedPost.id) ? "Unlike post" : "Like post"}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
             </svg>
             {selectedPost.likes || 0} Likes
-          </span>
+          </button>
           <span className="post-detail__stat">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />

@@ -34,6 +34,32 @@ CREATE POLICY "posts_insert" ON posts FOR INSERT WITH CHECK (true);
 CREATE POLICY "posts_update" ON posts FOR UPDATE USING (true);
 CREATE POLICY "posts_delete" ON posts FOR DELETE USING (true);
 
+-- Update a post's like count atomically so concurrent likes cannot overwrite
+-- each other. The function returns the complete updated post row.
+CREATE OR REPLACE FUNCTION update_post_likes(post_id BIGINT, like_delta INTEGER)
+RETURNS posts
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  updated_post posts;
+BEGIN
+  IF like_delta NOT IN (-1, 1) THEN
+    RAISE EXCEPTION 'like_delta must be -1 or 1';
+  END IF;
+
+  UPDATE posts
+  SET likes = GREATEST(0, COALESCE(likes, 0) + like_delta)
+  WHERE id = post_id
+  RETURNING * INTO updated_post;
+
+  RETURN updated_post;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION update_post_likes(BIGINT, INTEGER) TO anon, authenticated;
+
 -- ---------- BLOG_POSTS POLICIES ----------
 DROP POLICY IF EXISTS "blog_read"   ON blog_posts;
 DROP POLICY IF EXISTS "blog_insert" ON blog_posts;

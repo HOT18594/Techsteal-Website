@@ -139,21 +139,14 @@ export async function deletePost(id: number): Promise<void> {
   if (error) throw error;
 }
 
-export async function likePost(id: number, delta: number): Promise<void> {
-  // Read current likes, then increment. (Anon key allows update per RLS.)
-  const { data, error } = await supabase
-    .from("posts")
-    .select("likes")
-    .eq("id", id)
-    .single();
+export async function likePost(id: number, delta: number): Promise<Post> {
+  const { data, error } = await supabase.rpc("update_post_likes", {
+    post_id: id,
+    like_delta: delta,
+  });
   if (error) throw error;
-  const current = (data?.likes as number) || 0;
-  const next = Math.max(0, current + delta);
-  const { error: updErr } = await supabase
-    .from("posts")
-    .update({ likes: next })
-    .eq("id", id);
-  if (updErr) throw updErr;
+  if (!data) throw new Error("Post not found");
+  return data as Post;
 }
 
 // ---------- COMMENTS ----------
