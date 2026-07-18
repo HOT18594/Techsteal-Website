@@ -417,11 +417,6 @@ export default function Community() {
   // ---------- LIST VIEW ----------
   return (
     <div>
-      <div className="page-header">
-        <h1 className="page-header__title">Community</h1>
-        <p className="page-header__sub">Share builds, ask questions, and show off your creations.</p>
-      </div>
-
       <div className="community-toolbar">
         <div className="search-bar">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">

@@ -65,7 +65,6 @@ export default function AppShell({ page }: { page: AppPage }) {
       <Sidebar activePage={page} />
       <div className="main">
         <div className="topbar">
-          <div className="topbar__eyebrow">TechSteal Space</div>
           <div className="topbar__title">{PAGE_TITLES[page]}</div>
         </div>
         <main className="content">{renderPage(page)}</main>

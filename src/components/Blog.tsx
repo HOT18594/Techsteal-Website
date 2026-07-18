@@ -111,10 +111,6 @@ export default function Blog() {
   // ---------- LIST ----------
   return (
     <div>
-      <div className="page-header">
-        <h1 className="page-header__title">Blog</h1>
-        <p className="page-header__sub">News, updates, and announcements from the TechSteal team.</p>
-      </div>
 
       {isAdmin && (
         <div style={{ marginBottom: "20px" }}>

@@ -3,7 +3,7 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 
 export const metadata: Metadata = {
-  title: "TechSteal Space",
+  title: "TechSteal",
   description: "TechSteal Minecraft community dashboard, blog, and join guide",
 };
 

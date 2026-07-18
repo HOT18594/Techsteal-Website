@@ -76,13 +76,6 @@ export default function Join() {
 
   return (
     <div>
-      <div className="page-header">
-        <h1 className="page-header__title">
-          How to Join
-        </h1>
-        <p className="page-header__sub">Follow the steps below to join the server with your preferred launcher.</p>
-      </div>
-
       <div className="card">
         <div className="card__title"><span className="dot" />Server Address</div>
         <div className="ip-box">
