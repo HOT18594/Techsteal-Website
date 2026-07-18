@@ -8,6 +8,7 @@ export type AuthUser = {
   avatar: string;
   role: "admin" | "member";
   isNewUser?: boolean;
+  inGuild?: boolean;
 };
 
 type AuthContextValue = {

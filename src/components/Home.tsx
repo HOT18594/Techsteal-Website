@@ -2,12 +2,17 @@
 
 import { useState, useEffect } from "react";
 import { fetchServerStatus, DISCORD_INVITE_API, DISCORD_WIDGET_API, DISCORD_GUILD_ID, SERVER_ADDRESS } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 
 export default function Home() {
   const [serverData, setServerData] = useState<any>(null);
   const [discordData, setDiscordData] = useState<any>({ name: "Techsteal - Season V", online: "—", members: "—", icon: null });
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+
+  // Server controls are only unlocked for members of the TechSteal Discord.
+  const canControlServer = Boolean(user?.inGuild);
 
   useEffect(() => {
     refreshServerStatus();
@@ -131,20 +136,33 @@ export default function Home() {
                 </button>
               </div>
               <div className="server-dashboard__actions-group">
-                <button
-                  className="btn btn--start"
-                  disabled={controlBusy || serverState === "running" || serverState === "starting"}
-                  onClick={() => controlServer("start")}
-                >
-                  {serverState === "starting" ? "Starting…" : "Start Server"}
-                </button>
-                <button
-                  className="btn btn--stop"
-                  disabled={controlBusy || serverState === "offline" || serverState === "stopping"}
-                  onClick={() => controlServer("stop")}
-                >
-                  {serverState === "stopping" ? "Stopping…" : "Stop Server"}
-                </button>
+                {canControlServer ? (
+                  <>
+                    <button
+                      className="btn btn--start"
+                      disabled={controlBusy || serverState === "running" || serverState === "starting"}
+                      onClick={() => controlServer("start")}
+                    >
+                      {serverState === "starting" ? "Starting…" : "Start Server"}
+                    </button>
+                    <button
+                      className="btn btn--stop"
+                      disabled={controlBusy || serverState === "offline" || serverState === "stopping"}
+                      onClick={() => controlServer("stop")}
+                    >
+                      {serverState === "stopping" ? "Stopping…" : "Stop Server"}
+                    </button>
+                  </>
+                ) : (
+                  <a
+                    className="server-locked"
+                    href={`https://discord.gg/${DISCORD_INVITE_API.split("/invites/")[1]?.split("?")[0] || "bEZ5M5jBvz"}`}
+                    target="_blank"
+                    rel="noopener"
+                  >
+                    🔒 Join our Discord to unlock Start / Stop
+                  </a>
+                )}
               </div>
             </div>
             {players?.list?.length > 0 && (

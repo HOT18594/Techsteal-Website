@@ -133,6 +133,8 @@ img { max-width: 100%; display: block; }
 .server-dashboard__actions-group { display: flex; gap: 10px; flex-wrap: wrap; }
 .btn__refresh-icon { display: inline-block; font-size: 1.05em; line-height: 1; }
 .btn__refresh-icon.spinning { animation: spin .8s linear infinite; }
+.server-locked { display: inline-flex; align-items: center; gap: 8px; padding: 11px 16px; border-radius: var(--radius); background: #20272a; border: 2px dashed #3a444a; color: var(--text-dim); font-weight: 800; text-transform: uppercase; letter-spacing: .03em; font-size: 13px; text-decoration: none; transition: border-color .15s ease, color .15s ease; }
+.server-locked:hover { border-color: var(--green); color: var(--green); }
 .player-list { display: flex; gap: 8px; flex-wrap: wrap; }
 .player-chip { display: flex; align-items: center; gap: 7px; padding: 6px 9px; border-radius: var(--radius-sm); background: #111814; border: 1px solid rgba(55,208,92,.25); color: var(--green); font-weight: 800; font-size: 13px; }
 .player-chip__head { width: 24px; height: 24px; border-radius: 3px; }

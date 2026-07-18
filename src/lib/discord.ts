@@ -6,8 +6,9 @@ export const DISCORD_CLIENT_ID = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID || ""
 export const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || "";
 export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
-// Scopes: "identify" gives username + avatar. Add "email" if you need email.
-export const DISCORD_SCOPES = "identify";
+// Scopes: "identify" gives username + avatar. "guilds" lets us verify the
+// user is a member of the TechSteal Discord server (to unlock server controls).
+export const DISCORD_SCOPES = "identify guilds";
 
 // Discord API endpoints
 export const DISCORD_AUTH_URL = "https://discord.com/api/oauth2/authorize";

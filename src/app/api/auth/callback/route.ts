@@ -6,6 +6,7 @@ import {
   DISCORD_USER_URL,
   getRedirectUri,
 } from "@/lib/discord";
+import { DISCORD_GUILD_ID } from "@/lib/api";
 import { fetchUserRole, findUser } from "@/lib/supabase";
 
 // GET /api/auth/callback
@@ -81,6 +82,22 @@ export async function GET(req: NextRequest) {
     ? `https://cdn.discordapp.com/avatars/${discordId}/${discordUser.avatar}.png?size=128`
     : `https://cdn.discordapp.com/embed/avatars/${Number(discordUser.discriminator || 0) % 5}.png`;
 
+  // Verify the user is a member of the TechSteal Discord server.
+  // We use the "guilds" OAuth scope to read the user's guild list and check
+  // for our guild id. This gates server controls (start/stop) on membership.
+  let inGuild = false;
+  try {
+    const guildsRes = await fetch("https://discord.com/api/users/@me/guilds", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (guildsRes.ok) {
+      const guilds = await guildsRes.json();
+      inGuild = Array.isArray(guilds) && guilds.some((g: any) => String(g.id) === DISCORD_GUILD_ID);
+    }
+  } catch {
+    inGuild = false;
+  }
+
   // Look up the user's role from the database.
   const role = await fetchUserRole(discordId);
 
@@ -91,7 +108,7 @@ export async function GET(req: NextRequest) {
   // Build the session payload and store it in an httpOnly cookie.
   // NOTE: This is a simple unsigned session. For production, sign this JWT
   // with a secret or use Supabase Auth sessions instead.
-  const session = { discordId, username, avatar, role, isNewUser };
+  const session = { discordId, username, avatar, role, isNewUser, inGuild };
   const res = NextResponse.redirect(
     new URL(isNewUser ? "/?setup=1" : "/", req.url)
   );
