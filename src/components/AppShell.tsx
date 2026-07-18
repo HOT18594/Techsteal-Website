@@ -67,10 +67,6 @@ export default function AppShell({ page }: { page: AppPage }) {
         <div className="topbar">
           <div className="topbar__eyebrow">TechSteal Space</div>
           <div className="topbar__title">{PAGE_TITLES[page]}</div>
-          <div className="topbar__status">
-            <span className="status-dot" />
-            Live network
-          </div>
         </div>
         <main className="content">{renderPage(page)}</main>
       </div>

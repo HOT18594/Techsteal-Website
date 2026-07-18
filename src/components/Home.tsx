@@ -51,7 +51,7 @@ export default function Home() {
   return (
     <div className="home-grid">
       <div className="card">
-        <div className="card__title"><span className="dot" />Server Status</div>
+        <div className="card__title"><span className="dot" />Season V Server Status</div>
         {loading ? (
           <div className="status-spinner-wrapper">
             <div className="status-spinner" />
