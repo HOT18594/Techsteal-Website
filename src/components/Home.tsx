@@ -63,8 +63,20 @@ export default function Home() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed");
-      setServerState(action === "start" ? "running" : "offline");
-      await refreshServerStatus();
+
+      // Poll the server status until it reflects the requested state,
+      // so the user sees live feedback instead of waiting blindly.
+      const targetOnline = action === "start";
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        await refreshServerStatus();
+        const nowOnline = Boolean(serverData?.online);
+        if (nowOnline === targetOnline) {
+          setServerState(targetOnline ? "running" : "offline");
+          break;
+        }
+        if (i === 29) setServerState(targetOnline ? "running" : "offline");
+      }
     } catch (e: any) {
       alert(e.message || "Could not control server");
       setServerState(online ? "running" : "offline");
@@ -110,24 +122,30 @@ export default function Home() {
               </div>
             </div>
             <div className="server-dashboard__actions">
-              <button className="btn btn--start" onClick={() => navigator.clipboard.writeText(SERVER_ADDRESS).then(() => alert("IP copied!"))}>
-                Copy IP
-              </button>
-              <button className="btn btn--ghost" onClick={refreshServerStatus}>Refresh</button>
-              <button
-                className="btn btn--start"
-                disabled={controlBusy || serverState === "running" || serverState === "starting"}
-                onClick={() => controlServer("start")}
-              >
-                {serverState === "starting" ? "Starting…" : "Start Server"}
-              </button>
-              <button
-                className="btn btn--stop"
-                disabled={controlBusy || serverState === "offline" || serverState === "stopping"}
-                onClick={() => controlServer("stop")}
-              >
-                {serverState === "stopping" ? "Stopping…" : "Stop Server"}
-              </button>
+              <div className="server-dashboard__actions-group">
+                <button className="btn btn--start" onClick={() => navigator.clipboard.writeText(SERVER_ADDRESS).then(() => alert("IP copied!"))}>
+                  Copy IP
+                </button>
+                <button className="btn btn--ghost" onClick={refreshServerStatus} disabled={loading}>
+                  <span className={`btn__refresh-icon ${loading ? "spinning" : ""}`}>↻</span> Refresh
+                </button>
+              </div>
+              <div className="server-dashboard__actions-group">
+                <button
+                  className="btn btn--start"
+                  disabled={controlBusy || serverState === "running" || serverState === "starting"}
+                  onClick={() => controlServer("start")}
+                >
+                  {serverState === "starting" ? "Starting…" : "Start Server"}
+                </button>
+                <button
+                  className="btn btn--stop"
+                  disabled={controlBusy || serverState === "offline" || serverState === "stopping"}
+                  onClick={() => controlServer("stop")}
+                >
+                  {serverState === "stopping" ? "Stopping…" : "Stop Server"}
+                </button>
+              </div>
             </div>
             {players?.list?.length > 0 && (
               <div style={{ marginTop: "16px" }}>
