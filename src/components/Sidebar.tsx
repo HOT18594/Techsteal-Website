@@ -23,10 +23,6 @@ export default function Sidebar({ activePage }: SidebarProps) {
     <aside className="sidebar">
       <Link href="/" className="sidebar__brand" aria-label="TechSteal home">
         <img className="sidebar__logo" src="/img/logo.png" alt="TechSteal" />
-        <div className="sidebar__brand-copy">
-          <strong>TechSteal</strong>
-          <span>Season V network</span>
-        </div>
       </Link>
       <ul className="sidebar__nav">
         {NAV_ITEMS.map((item) => (

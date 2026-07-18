@@ -80,7 +80,7 @@ export default function Home() {
               <div className="server-dashboard__card">
                 <div className="server-dashboard__label">Address</div>
                 <div className="server-dashboard__address-value">
-                  <span className="server-dashboard__value">{serverData?.hostname || SERVER_ADDRESS}</span>
+                  <span className="server-dashboard__value">{SERVER_ADDRESS}</span>
                 </div>
               </div>
             </div>
