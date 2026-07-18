@@ -15,21 +15,21 @@
         - Local/dev:   http://localhost:PORT  (or your here.now URL)
         - Production:  https://techsteal.space
    4. Under OAuth2 → General, enable "Implicit Grant" flow.
-   5. Add your Discord user ID to ADMIN_DISCORD_IDS to get admin access.
-      (Find your ID: enable Developer Mode in Discord settings, right-click
-       your profile → "Copy User ID".)
    ------------------------------------------------------------
-   NOTE: Implicit flow exposes the access token in the URL fragment.
-   This is acceptable for a static site prototype. For production with
-   sensitive admin actions, consider Supabase Auth + Discord provider
-   (server-side token exchange) instead.
+   ROLES: Each user's role is looked up from the Supabase `user_roles`
+   table (keyed by their Discord user ID). No roles are hardcoded here.
+   To grant someone admin, insert a row into `user_roles`:
+     discord_id = '<their discord user id>', role = 'admin'
+   Anyone not in the table defaults to 'member'.
+   ------------------------------------------------------------
+   NOTE: Implicit flow exposes the access token in the URL fragment, and
+   role enforcement happens client-side (a determined user could bypass
+   it via DevTools). Acceptable for a prototype. For production-grade
+   security, use Supabase Auth + Discord provider with RLS policies.
    ============================================================ */
 const DISCORD_CLIENT_ID = "YOUR_DISCORD_CLIENT_ID"; // <-- replace with your Discord app's Client ID
 const DISCORD_REDIRECT_URI = `${window.location.origin}${window.location.pathname}`;
 const DISCORD_SCOPES = "identify"; // "identify" gives username + avatar
-const ADMIN_DISCORD_IDS = [
-  "YOUR_DISCORD_USER_ID" // <-- replace with your Discord user ID (string)
-];
 
 const STORAGE_KEYS = {
   auth: "ts_auth", user: "ts_user", role: "ts_role",
@@ -176,6 +176,25 @@ function loginWithDiscord() {
   window.location.href = discordAuthUrl();
 }
 
+// Look up a user's role from the Supabase `user_roles` table by Discord ID.
+// Returns "admin" if a row exists with role='admin', otherwise "member".
+// Falls back to "member" on any error so login never blocks on a DB hiccup.
+async function fetchUserRole(discordId) {
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/user_roles?discord_id=eq.${encodeURIComponent(discordId)}&select=role&limit=1`,
+      { headers: SUPABASE_HEADERS }
+    );
+    if (!res.ok) throw new Error(`user_roles fetch failed: ${res.status}`);
+    const rows = await res.json();
+    if (Array.isArray(rows) && rows.length > 0 && rows[0].role === "admin") return "admin";
+    return "member";
+  } catch (err) {
+    console.error(err);
+    return "member";
+  }
+}
+
 // Parse the access token from the URL fragment after Discord redirects back.
 function handleDiscordCallback() {
   if (!window.location.hash || !window.location.hash.includes("access_token")) return false;
@@ -191,8 +210,8 @@ function handleDiscordCallback() {
     headers: { Authorization: `${tokenType} ${accessToken}` }
   })
     .then((res) => { if (!res.ok) throw new Error(`Discord /users/@me failed: ${res.status}`); return res.json(); })
-    .then((user) => {
-      const role = ADMIN_DISCORD_IDS.includes(String(user.id)) ? "admin" : "member";
+    .then(async (user) => {
+      const role = await fetchUserRole(String(user.id));
       const username = user.global_name || user.username || "Discord User";
       const avatar = user.avatar
         ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`

@@ -78,3 +78,26 @@ DROP POLICY IF EXISTS "uploads_delete" ON storage.objects;
 CREATE POLICY "uploads_read"   ON storage.objects FOR SELECT USING (bucket_id = 'uploads');
 CREATE POLICY "uploads_insert" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'uploads');
 CREATE POLICY "uploads_delete" ON storage.objects FOR DELETE USING (bucket_id = 'uploads');
+
+-- ═══════════════════════════════════════════════════════════
+--  USER ROLES (Discord OAuth login)
+--  Maps a Discord user ID to a role ('admin' or 'member').
+--  Anyone not in this table defaults to 'member'.
+--  To grant admin: INSERT INTO user_roles (discord_id, role, username)
+--                  VALUES ('<discord user id>', 'admin', '<username>');
+-- ═══════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS user_roles (
+  id BIGSERIAL PRIMARY KEY,
+  discord_id TEXT NOT NULL UNIQUE,
+  role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member')),
+  username TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
+
+-- The frontend (anon key) needs to READ roles to determine access after login.
+-- Writes (granting admin) must be done by you in the Supabase dashboard, NOT
+-- from the frontend, so we only allow SELECT here.
+DROP POLICY IF EXISTS "user_roles_read" ON user_roles;
+CREATE POLICY "user_roles_read" ON user_roles FOR SELECT USING (true);
