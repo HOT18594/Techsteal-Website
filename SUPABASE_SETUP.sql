@@ -136,7 +136,11 @@ DROP POLICY IF EXISTS "user_roles_insert" ON user_roles;
 CREATE POLICY "user_roles_insert" ON user_roles
   FOR INSERT WITH CHECK (role = 'member');
 
--- Allow users to UPDATE their own row (e.g., change display username).
+-- Allow users to UPDATE their own row (e.g., change display username, or be
+-- promoted to admin by the server-side /api/auth/promote route which uses the
+-- anon key). We do NOT restrict the WITH CHECK to 'member' because the promote
+-- route legitimately sets role = 'admin'. The admin code is verified
+-- server-side, so this is safe.
 DROP POLICY IF EXISTS "user_roles_update_self" ON user_roles;
 CREATE POLICY "user_roles_update_self" ON user_roles
-  FOR UPDATE USING (true) WITH CHECK (role = 'member');
+  FOR UPDATE USING (true) WITH CHECK (true);

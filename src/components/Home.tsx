@@ -9,10 +9,8 @@ export default function Home() {
   const [discordData, setDiscordData] = useState<any>({ name: "Techsteal - Season V", online: "—", members: "—", icon: null });
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const { user } = useAuth();
-
-  // Server controls are only unlocked for members of the TechSteal Discord.
-  const canControlServer = Boolean(user?.inGuild);
 
   useEffect(() => {
     refreshServerStatus();
@@ -22,10 +20,15 @@ export default function Home() {
   }, []);
 
   const refreshServerStatus = async () => {
-    const data = await fetchServerStatus();
-    setServerData(data);
-    setLoading(false);
-    return data;
+    setRefreshing(true);
+    try {
+      const data = await fetchServerStatus();
+      setServerData(data);
+      setLoading(false);
+      return data;
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const loadDiscord = async () => {
@@ -53,43 +56,6 @@ export default function Home() {
 
   const online = Boolean(serverData?.online);
   const players = online && serverData?.players ? serverData.players : null;
-  const [serverState, setServerState] = useState<"running" | "offline" | "starting" | "stopping">(
-    online ? "running" : "offline"
-  );
-  const [controlBusy, setControlBusy] = useState(false);
-
-  const controlServer = async (action: "start" | "stop") => {
-    setControlBusy(true);
-    setServerState(action === "start" ? "starting" : "stopping");
-    try {
-      const res = await fetch("/api/server/control", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed");
-
-      // Poll the server status until it reflects the requested state,
-      // so the user sees live feedback instead of waiting blindly.
-      const targetOnline = action === "start";
-      for (let i = 0; i < 30; i++) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const fresh = await refreshServerStatus();
-        const nowOnline = Boolean(fresh?.online);
-        if (nowOnline === targetOnline) {
-          setServerState(targetOnline ? "running" : "offline");
-          break;
-        }
-        if (i === 29) setServerState(targetOnline ? "running" : "offline");
-      }
-    } catch (e: any) {
-      alert(e.message || "Could not control server");
-      setServerState(online ? "running" : "offline");
-    } finally {
-      setControlBusy(false);
-    }
-  };
 
   return (
     <div className="home-grid">
@@ -132,40 +98,28 @@ export default function Home() {
                 <button className="btn btn--start" onClick={() => navigator.clipboard.writeText(SERVER_ADDRESS).then(() => alert("IP copied!"))}>
                   Copy IP
                 </button>
-                <button className="btn btn--ghost" onClick={refreshServerStatus} disabled={loading}>
-                  <span className={`btn__refresh-icon ${loading ? "spinning" : ""}`}>↻</span> Refresh
+                <button className="btn btn--ghost" onClick={refreshServerStatus} disabled={refreshing}>
+                  <span className={`btn__refresh-icon ${refreshing ? "spinning" : ""}`}>↻</span>
+                  {refreshing ? "Checking…" : "Refresh"}
                 </button>
               </div>
               <div className="server-dashboard__actions-group">
-                {canControlServer ? (
-                  <>
-                    <button
-                      className="btn btn--start"
-                      disabled={controlBusy || serverState === "running" || serverState === "starting"}
-                      onClick={() => controlServer("start")}
-                    >
-                      {serverState === "starting" ? "Starting…" : "Start Server"}
-                    </button>
-                    <button
-                      className="btn btn--stop"
-                      disabled={controlBusy || serverState === "offline" || serverState === "stopping"}
-                      onClick={() => controlServer("stop")}
-                    >
-                      {serverState === "stopping" ? "Stopping…" : "Stop Server"}
-                    </button>
-                  </>
-                ) : (
-                  <a
-                    className="server-locked"
-                    href={`https://discord.gg/${DISCORD_INVITE_API.split("/invites/")[1]?.split("?")[0] || "bEZ5M5jBvz"}`}
-                    target="_blank"
-                    rel="noopener"
-                  >
-                    🔒 Join our Discord to unlock Start / Stop
-                  </a>
-                )}
+                <a
+                  className="server-locked"
+                  href={`https://discord.gg/${DISCORD_INVITE_API.split("/invites/")[1]?.split("?")[0] || "bEZ5M5jBvz"}`}
+                  target="_blank"
+                  rel="noopener"
+                >
+                  🔒 Join our Discord to gain Start / Stop permissions
+                </a>
               </div>
             </div>
+            {refreshing && (
+              <div className="server-dashboard__checking">
+                <span className="status-spinner status-spinner--sm" />
+                Checking server status…
+              </div>
+            )}
             {players?.list?.length > 0 && (
               <div style={{ marginTop: "16px" }}>
                 <div className="server-dashboard__label" style={{ marginBottom: "8px" }}>Online Players</div>

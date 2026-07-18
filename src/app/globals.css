@@ -235,6 +235,8 @@ img { max-width: 100%; display: block; }
 /* Empty/loading */
 .empty-state, .status-spinner-wrapper { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 112px; color: var(--text-dim); font-weight: 900; }
 .status-spinner { width: 30px; height: 30px; border: 4px solid rgba(255,255,255,.14); border-top-color: var(--green); border-radius: 2px; animation: spin .8s linear infinite; }
+.status-spinner--sm { width: 16px; height: 16px; border-width: 3px; }
+.server-dashboard__checking { display: flex; align-items: center; gap: 10px; margin-top: 14px; color: var(--text-dim); font-weight: 700; font-size: 0.9rem; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* Login: ONLY place with TechSteal background */
