@@ -12,6 +12,7 @@ import {
 } from "@/lib/api";
 import type { BlogPost } from "@/lib/supabase";
 import RichTextEditor from "@/components/RichTextEditor";
+import ConfirmModal from "@/components/ConfirmModal";
 
 export default function Blog() {
   const { user, canAdmin } = useAuth();
@@ -23,6 +24,9 @@ export default function Blog() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+
+  // In-app delete confirmation (replaces native confirm())
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
 
   // Viewer state
   const [viewing, setViewing] = useState<BlogPost | null>(null);
@@ -82,10 +86,17 @@ export default function Blog() {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Delete this blog post?")) return;
+  const handleDelete = (id: number) => {
+    setPendingDeleteId(id);
+  };
+
+  const confirmDelete = async () => {
+    const id = pendingDeleteId;
+    setPendingDeleteId(null);
+    if (id == null) return;
     try {
       await deleteBlogPost(id);
+      if (viewing?.id === id) setViewing(null);
       loadData();
     } catch {
       alert("Failed to delete blog post.");
@@ -142,9 +153,31 @@ export default function Blog() {
                 <div className="blog-card__meta">By {post.author} • {timeAgo(post.created_at)}</div>
               </div>
               {isAdmin && (
-                <div className="admin-actions" onClick={(e) => e.stopPropagation()}>
-                  <button className="admin-btn" onClick={() => openEditor(post)}>Edit</button>
-                  <button className="admin-btn danger" onClick={() => handleDelete(post.id)}>Delete</button>
+                <div className="card-actions" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label="Edit post"
+                    title="Edit post"
+                    onClick={() => openEditor(post)}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 20h9" />
+                      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn icon-btn--danger"
+                    aria-label="Delete post"
+                    title="Delete post"
+                    onClick={() => handleDelete(post.id)}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                      <path d="M10 11v6M14 11v6" />
+                    </svg>
+                  </button>
                 </div>
               )}
             </div>
@@ -175,6 +208,15 @@ export default function Blog() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={pendingDeleteId !== null}
+        title="Delete blog post?"
+        message="This blog post will be permanently removed. This can't be undone."
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDeleteId(null)}
+      />
     </div>
   );
 }

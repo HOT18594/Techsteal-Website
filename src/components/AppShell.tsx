@@ -73,7 +73,6 @@ export default function AppShell({ page }: { page: AppPage }) {
           {/* Admin can switch between Admin and Member view */}
           {isAdmin && (
             <div className="view-toggle" role="group" aria-label="View as">
-              <span className="view-toggle__label">View as</span>
               <button
                 type="button"
                 className={`view-toggle__btn ${viewMode === "admin" ? "active" : ""}`}

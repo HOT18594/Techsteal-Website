@@ -49,7 +49,11 @@ export default function Sidebar({ activePage }: SidebarProps) {
           <div>
               <strong>{user?.username || "Guest"}</strong>
               <span className={`role-pill ${isAdmin ? "role-pill--admin" : ""}`}>
-                {isAdmin ? (viewMode === "admin" ? "Admin" : "Admin · viewing as Member") : "Member"}
+                {isAdmin
+                  ? viewMode === "admin"
+                    ? "Admin"
+                    : "Admin · Member view"
+                  : "Member"}
               </span>
             </div>
         </div>

@@ -24,6 +24,7 @@ import {
 import type { Post, Comment } from "@/lib/supabase";
 import RichTextEditor from "@/components/RichTextEditor";
 import Lightbox from "@/components/Lightbox";
+import ConfirmModal from "@/components/ConfirmModal";
 
 export default function Community() {
   const { user, canAdmin } = useAuth();
@@ -49,6 +50,9 @@ export default function Community() {
   // Lightbox
   const [lightboxImages, setLightboxImages] = useState<string[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
+
+  // In-app delete confirmation (replaces native confirm())
+  const [pendingDelete, setPendingDelete] = useState<null | { kind: "post" | "comment"; id: number }>(null);
 
   // Which posts/comments THIS user has liked. Restored from the DB on load so
   // a refresh (or a different browser) cannot re-like. Source of truth stays
@@ -296,26 +300,31 @@ export default function Community() {
   };
 
   const handleDeletePost = async (id: number) => {
-    if (!confirm("Delete this post?")) return;
-    try {
-      await deletePost(id);
-      setSelectedPost(null);
-      loadData();
-    } catch {
-      alert("Failed to delete post.");
-    }
+    setPendingDelete({ kind: "post", id });
   };
 
-  const handleDeleteComment = async (id: number) => {
-    if (!confirm("Delete this comment?")) return;
+  const handleDeleteComment = (id: number) => {
+    setPendingDelete({ kind: "comment", id });
+  };
+
+  const confirmDelete = async () => {
+    const target = pendingDelete;
+    setPendingDelete(null);
+    if (!target) return;
     try {
-      await deleteComment(id);
-      if (selectedPost) {
-        const c = await loadComments(selectedPost.id);
-        setComments(c);
+      if (target.kind === "post") {
+        await deletePost(target.id);
+        setSelectedPost(null);
+        loadData();
+      } else {
+        await deleteComment(target.id);
+        if (selectedPost) {
+          const c = await loadComments(selectedPost.id);
+          setComments(c);
+        }
       }
     } catch {
-      alert("Failed to delete comment.");
+      alert(`Failed to delete ${target.kind}.`);
     }
   };
 
@@ -343,8 +352,17 @@ export default function Community() {
           </div>
           {canAdmin && (
             <div className="post-detail__admin">
-              <button className="admin-btn danger" onClick={() => handleDeletePost(selectedPost.id)}>
-                Delete
+              <button
+                type="button"
+                className="icon-btn icon-btn--danger"
+                aria-label="Delete post"
+                title="Delete post"
+                onClick={() => handleDeletePost(selectedPost.id)}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                  <path d="M10 11v6M14 11v6" />
+                </svg>
               </button>
             </div>
           )}
@@ -448,8 +466,17 @@ export default function Community() {
                     </div>
                     {canAdmin && (
                       <div className="comment__admin" style={{ marginLeft: "auto" }}>
-                        <button className="admin-btn danger" onClick={() => handleDeleteComment(c.id)}>
-                          Delete
+                        <button
+                          type="button"
+                          className="icon-btn icon-btn--danger"
+                          aria-label="Delete comment"
+                          title="Delete comment"
+                          onClick={() => handleDeleteComment(c.id)}
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                            <path d="M10 11v6M14 11v6" />
+                          </svg>
                         </button>
                       </div>
                     )}
@@ -490,6 +517,15 @@ export default function Community() {
         </div>
 
         <Lightbox images={lightboxImages} index={lightboxIndex} onClose={() => setLightboxImages([])} />
+
+        <ConfirmModal
+          open={pendingDelete !== null}
+          title="Delete post?"
+          message="This post and all of its comments will be permanently removed. This can't be undone."
+          confirmLabel="Delete"
+          onConfirm={confirmDelete}
+          onCancel={() => setPendingDelete(null)}
+        />
       </div>
     );
   }
@@ -597,8 +633,17 @@ export default function Community() {
             <div key={post.id} className="post-card" onClick={() => openPost(post)}>
               {canAdmin && (
                 <div className="post-card__admin" onClick={(e) => e.stopPropagation()}>
-                  <button className="admin-btn danger" onClick={() => handleDeletePost(post.id)}>
-                    Delete
+                  <button
+                    type="button"
+                    className="icon-btn icon-btn--danger"
+                    aria-label="Delete post"
+                    title="Delete post"
+                    onClick={() => handleDeletePost(post.id)}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                      <path d="M10 11v6M14 11v6" />
+                    </svg>
                   </button>
                 </div>
               )}
@@ -676,6 +721,17 @@ export default function Community() {
       )}
 
       <Lightbox images={lightboxImages} index={lightboxIndex} onClose={() => setLightboxImages([])} />
+
+      <ConfirmModal
+        open={pendingDelete !== null}
+        title={pendingDelete?.kind === "comment" ? "Delete comment?" : "Delete post?"}
+        message={pendingDelete?.kind === "comment"
+          ? "This comment will be permanently removed. This can't be undone."
+          : "This post and all of its comments will be permanently removed. This can't be undone."}
+        confirmLabel="Delete"
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }
