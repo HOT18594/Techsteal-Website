@@ -172,6 +172,8 @@ export default function Community() {
       setPosts(filtered.slice(start, start + POSTS_PER_PAGE));
     } catch {
       setPosts([]);
+    } finally {
+      setLoading(false);
     }
   };
 
