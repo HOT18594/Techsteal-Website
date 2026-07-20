@@ -145,6 +145,21 @@ export default function Community() {
     };
   }, [selectedPost?.id]);
 
+  // Periodic refresh so posts/comments stay in sync across users, tabs, and
+  // devices even if Supabase Realtime isn't enabled. Gentle 15s poll. The
+  // realtime subscription above enhances this when the REALTIME migration has
+  // been run; the poller is the baseline that always works.
+  useEffect(() => {
+    const tick = () => {
+      loadData();
+      if (selectedPost) {
+        loadComments(selectedPost.id).then(setComments).catch(() => {});
+      }
+    };
+    const id = setInterval(tick, 15000);
+    return () => clearInterval(id);
+  }, [selectedPost?.id]);
+
   const loadData = async () => {
     setLoading(true);
     try {
