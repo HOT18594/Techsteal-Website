@@ -22,6 +22,7 @@ import {
   MAX_IMAGE_SIZE,
 } from "@/lib/api";
 import type { Post, Comment } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 import RichTextEditor from "@/components/RichTextEditor";
 import Lightbox from "@/components/Lightbox";
 import ConfirmModal from "@/components/ConfirmModal";
@@ -97,6 +98,39 @@ export default function Community() {
       cancelled = true;
     };
   }, [user?.discordId]);
+
+  // Live sync: subscribe to Supabase Realtime so posts/comments created or
+  // deleted by anyone (other user, another tab, mobile) show up without a
+  // manual refresh. Requires the REALTIME migration (tables added to the
+  // supabase_realtime publication) to be run once in Supabase.
+  useEffect(() => {
+    const channel = supabase
+      .channel("community-feed")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "posts" },
+        () => {
+          loadData();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "comments" },
+        (payload: any) => {
+          // If the open post is affected, refresh its comments; also refresh
+          // the list so comment counts stay accurate.
+          if (selectedPost && payload?.new?.post_id === selectedPost.id) {
+            loadComments(selectedPost.id).then(setComments).catch(() => {});
+          }
+          loadData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedPost?.id]);
 
   const loadData = async () => {
     setLoading(true);
