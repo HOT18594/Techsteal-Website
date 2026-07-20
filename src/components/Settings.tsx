@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { SITE_VERSION } from "@/lib/version";
 
 export default function Settings() {
   const { user, logout } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [code, setCode] = useState("");
   const [promoting, setPromoting] = useState(false);
   const [promoteMsg, setPromoteMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -54,16 +56,16 @@ export default function Settings() {
         </div>
 
         <div className="settings-form">
-          <div>
-            <label className="settings-label">Role</label>
-            <div style={{ marginTop: "6px" }}>
-              <span className={`role-pill ${user?.role === "admin" ? "role-pill--admin" : ""}`}>
-                {user?.role === "admin" ? "Admin" : "Member"}
-              </span>
+          {isAdmin && (
+            <div>
+              <label className="settings-label">Role</label>
+              <div style={{ marginTop: "6px" }}>
+                <span className="role-pill role-pill--admin">Admin</span>
+              </div>
             </div>
-          </div>
+          )}
 
-          {user?.role !== "admin" && (
+          {!isAdmin && (
             <div style={{ marginTop: "18px" }}>
               <label className="settings-label">Admin Unlock Code</label>
               <div style={{ display: "flex", gap: "10px", marginTop: "8px", flexWrap: "wrap" }}>
@@ -92,6 +94,23 @@ export default function Settings() {
               Logout
             </button>
           </div>
+
+          {isAdmin && (
+            <div className="version-block">
+              <div>
+                <label className="settings-label">Site Version</label>
+                <div className="version-block__value">{SITE_VERSION}</div>
+              </div>
+              <a
+                className="version-block__link"
+                href="https://github.com/HOT18594/Techsteal-Website/commits/master"
+                target="_blank"
+                rel="noopener"
+              >
+                View changelog ↗
+              </a>
+            </div>
+          )}
         </div>
       </div>
     </div>

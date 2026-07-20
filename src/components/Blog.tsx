@@ -199,9 +199,7 @@ export default function Blog() {
                 <div className="blog-card__banner">
                   {cardImages.length > 0 ? (
                     <img className="blog-card__banner-img" src={cardImages[0]} alt="" loading="lazy" />
-                  ) : (
-                    "NEWS"
-                  )}
+                  ) : null}
                 </div>
                 <div className="blog-card__body">
                   <div className="blog-card__tag">Blog</div>

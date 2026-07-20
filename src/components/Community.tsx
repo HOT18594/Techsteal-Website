@@ -101,25 +101,38 @@ export default function Community() {
 
   // Live sync: subscribe to Supabase Realtime so posts/comments created or
   // deleted by anyone (other user, another tab, mobile) show up without a
-  // manual refresh. Requires the REALTIME migration (tables added to the
-  // supabase_realtime publication) to be run once in Supabase.
+  // manual refresh. We only react to INSERT/DELETE here — like toggles are
+  // already handled optimistically + via RPC, so refetching on every UPDATE
+  // would just cause flicker. Requires the REALTIME migration (tables added
+  // to the supabase_realtime publication) to be run once in Supabase.
   useEffect(() => {
     const channel = supabase
       .channel("community-feed")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "posts" },
-        () => {
+        { event: "INSERT", schema: "public", table: "posts" },
+        () => loadData()
+      )
+      .on(
+        "postgres_changes",
+        { event: "DELETE", schema: "public", table: "posts" },
+        () => loadData()
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "comments" },
+        (payload: any) => {
+          if (selectedPost && payload?.new?.post_id === selectedPost.id) {
+            loadComments(selectedPost.id).then(setComments).catch(() => {});
+          }
           loadData();
         }
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "comments" },
+        { event: "DELETE", schema: "public", table: "comments" },
         (payload: any) => {
-          // If the open post is affected, refresh its comments; also refresh
-          // the list so comment counts stay accurate.
-          if (selectedPost && payload?.new?.post_id === selectedPost.id) {
+          if (selectedPost && payload?.old?.post_id === selectedPost.id) {
             loadComments(selectedPost.id).then(setComments).catch(() => {});
           }
           loadData();
