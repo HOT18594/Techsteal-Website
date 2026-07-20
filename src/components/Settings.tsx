@@ -57,14 +57,7 @@ export default function Settings() {
           <div>
             <label className="settings-label">Role</label>
             <div style={{ marginTop: "6px" }}>
-              <span
-                className="badge-season"
-                style={{
-                  background: user?.role === "admin"
-                    ? "linear-gradient(135deg, #f59e0b, #d97706)"
-                    : "linear-gradient(135deg, var(--accent), var(--accent-2))",
-                }}
-              >
+              <span className={`role-pill ${user?.role === "admin" ? "role-pill--admin" : ""}`}>
                 {user?.role === "admin" ? "Admin" : "Member"}
               </span>
             </div>

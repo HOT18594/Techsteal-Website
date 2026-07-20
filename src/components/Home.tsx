@@ -75,6 +75,9 @@ export default function Home() {
                   <span className={`server-dashboard__dot ${online ? "" : "offline"}`} />
                   <span className="server-dashboard__value">{online ? "Online" : "Offline"}</span>
                 </div>
+                <span className="server-dashboard__hint">
+                  {online ? "Join with the IP below" : "Start it from in-game after joining"}
+                </span>
               </div>
               <div className="server-dashboard__card">
                 <div className="server-dashboard__label">Players</div>
@@ -86,34 +89,35 @@ export default function Home() {
                 <div className="server-dashboard__label">Version</div>
                 <div className="server-dashboard__value">{online ? (serverData.version || "—") : "—"}</div>
               </div>
-              <div className="server-dashboard__card">
+              <div className="server-dashboard__card server-dashboard__card--address">
                 <div className="server-dashboard__label">Address</div>
                 <div className="server-dashboard__address-value">
                   <span className="server-dashboard__value">{SERVER_ADDRESS}</span>
                 </div>
-              </div>
-            </div>
-            <div className="server-dashboard__actions">
-              <div className="server-dashboard__actions-group">
-                <button className="btn btn--start" onClick={() => navigator.clipboard.writeText(SERVER_ADDRESS).then(() => alert("IP copied!"))}>
-                  Copy IP
-                </button>
-                <button className="btn btn--ghost" onClick={refreshServerStatus} disabled={refreshing}>
-                  <span className={`btn__refresh-icon ${refreshing ? "spinning" : ""}`}>↻</span>
-                  {refreshing ? "Checking…" : "Refresh"}
-                </button>
-              </div>
-              <div className="server-dashboard__actions-group">
-                <a
-                  className="server-locked"
-                  href={`https://discord.gg/${DISCORD_INVITE_API.split("/invites/")[1]?.split("?")[0] || "bEZ5M5jBvz"}`}
-                  target="_blank"
-                  rel="noopener"
+                <button
+                  className="copy-btn"
+                  onClick={() => navigator.clipboard.writeText(SERVER_ADDRESS).then(() => alert("IP copied!"))}
                 >
-                  🔒 Join our Discord to gain Start / Stop permissions
-                </a>
+                  Copy
+                </button>
               </div>
             </div>
+
+            <div className="server-dashboard__actions">
+              <button className="btn btn--ghost" onClick={refreshServerStatus} disabled={refreshing}>
+                <span className={`btn__refresh-icon ${refreshing ? "spinning" : ""}`}>↻</span>
+                {refreshing ? "Checking…" : "Refresh"}
+              </button>
+              <a
+                className="server-join"
+                href={`https://discord.gg/${DISCORD_INVITE_API.split("/invites/")[1]?.split("?")[0] || "bEZ5M5jBvz"}`}
+                target="_blank"
+                rel="noopener"
+              >
+                Join Discord to play
+              </a>
+            </div>
+
             {refreshing && (
               <div className="server-dashboard__checking">
                 <span className="status-spinner status-spinner--sm" />

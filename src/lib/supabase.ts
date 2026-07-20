@@ -37,6 +37,7 @@ export type BlogPost = {
   title: string;
   body: string;
   author: string;
+  images: string | null; // JSON array of URLs (added via migration)
   created_at: string;
 };
 

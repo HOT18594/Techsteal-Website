@@ -241,10 +241,17 @@ export async function createBlogPost(post: {
   title: string;
   body: string;
   author: string;
+  images?: string[];
 }): Promise<BlogPost> {
+  const insert: Record<string, unknown> = {
+    title: post.title,
+    body: post.body,
+    author: post.author,
+  };
+  if (post.images) insert.images = JSON.stringify(post.images);
   const { data, error } = await supabase
     .from("blog_posts")
-    .insert({ title: post.title, body: post.body, author: post.author })
+    .insert(insert)
     .select()
     .single();
   if (error) throw error;
@@ -253,9 +260,13 @@ export async function createBlogPost(post: {
 
 export async function updateBlogPost(
   id: number,
-  patch: { title?: string; body?: string }
+  patch: { title?: string; body?: string; images?: string[] }
 ): Promise<void> {
-  const { error } = await supabase.from("blog_posts").update(patch).eq("id", id);
+  const update: Record<string, unknown> = {};
+  if (patch.title !== undefined) update.title = patch.title;
+  if (patch.body !== undefined) update.body = patch.body;
+  if (patch.images !== undefined) update.images = JSON.stringify(patch.images);
+  const { error } = await supabase.from("blog_posts").update(update).eq("id", id);
   if (error) throw error;
 }
 

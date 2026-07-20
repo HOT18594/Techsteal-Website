@@ -148,6 +148,11 @@ img { max-width: 100%; display: block; }
 .server-dashboard__value { display: block; margin-top: 9px; font-family: var(--font-display); font-size: 31px; line-height: .95; font-weight: 800; text-transform: uppercase; word-break: break-word; }
 .server-dashboard__card--status .server-dashboard__value { margin-top: 0; font-size: 26px; }
 .server-dashboard__address-value .server-dashboard__value { font-family: var(--mono); font-size: 17px; line-height: 1.25; text-transform: none; color: var(--green); }
+.server-dashboard__card--address { display: flex; flex-direction: column; gap: 10px; }
+.server-dashboard__card--status { flex-direction: row; align-items: center; justify-content: flex-start; gap: 14px; flex-wrap: wrap; }
+.server-dashboard__hint { width: 100%; font-size: 12px; font-weight: 700; color: var(--text-dim); }
+.server-join { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: var(--radius-sm); text-decoration: none; font-weight: 900; color: #fff; background: var(--discord); border: 2px solid #7782ff; transition: transform .12s ease, filter .12s ease; }
+.server-join:hover { transform: translateY(-1px); filter: brightness(1.06); }
 .server-dashboard__actions, .modal-actions, .admin-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
 .server-dashboard__actions-group { display: flex; gap: 10px; flex-wrap: wrap; }
 .btn__refresh-icon { display: inline-block; font-size: 1.05em; line-height: 1; }
@@ -204,6 +209,10 @@ img { max-width: 100%; display: block; }
 .post-card__author, .post-detail__author, .comment__author { font-weight: 900; }
 .post-card__time, .post-detail__time, .comment__time, .blog-card__meta, .viewer__meta { color: var(--text-dim); font-size: 13px; margin-top: 2px; font-weight: 700; }
 .post-card__body, .post-detail__body, .comment__body, .viewer__body { color: var(--text-soft); line-height: 1.72; overflow-wrap: anywhere; font-weight: 500; }
+.viewer__banner { margin: -22px -22px 18px; height: 220px; overflow: hidden; border-bottom: 2px solid #30393e; background: linear-gradient(180deg, #263038, #14181a); }
+.viewer__banner img { width: 100%; height: 100%; object-fit: cover; }
+.viewer__gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
+.viewer__gallery-img { width: 100%; border-radius: var(--radius-sm); border: 2px solid #30393e; }
 .post-card__footer, .post-detail__footer { display: flex; align-items: center; gap: 16px; margin-top: 14px; color: var(--text-dim); font-size: 13px; font-weight: 800; }
 .post-card__stat, .post-detail__stat { display: flex; align-items: center; gap: 6px; border: 0; background: transparent; color: inherit; padding: 0; }
 .post-detail__stat { cursor: pointer; min-height: 34px; padding: 5px 8px; border: 1px solid transparent; border-radius: var(--radius-sm); }
@@ -249,8 +258,10 @@ img { max-width: 100%; display: block; }
 /* Blog */
 .blog-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .blog-card { position: relative; overflow: hidden; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; }
-.blog-card__banner { height: 150px; display: grid; place-items: center; font-size: 0; background: linear-gradient(180deg, #263038, #14181a); border-bottom: 2px solid #30393e; }
+.blog-card__banner { height: 150px; display: grid; place-items: center; font-size: 0; background: linear-gradient(180deg, #263038, #14181a); border-bottom: 2px solid #30393e; overflow: hidden; }
 .blog-card__banner::after { content: "NEWS"; font-family: var(--font-display); font-size: 58px; line-height: .8; color: var(--green); text-shadow: 0 4px 0 rgba(0,0,0,.35); letter-spacing: .04em; }
+.blog-card__banner:has(img)::after { content: none; }
+.blog-card__banner-img { width: 100%; height: 100%; object-fit: cover; }
 .blog-card__body { padding: 18px; }
 .blog-card__title, .viewer__title { margin-top: 10px; font-family: var(--font-display); font-size: 34px; line-height: .9; font-weight: 800; text-transform: uppercase; color: var(--ink); }
 .blog-card__excerpt { margin-top: 10px; color: var(--text-soft); line-height: 1.65; font-weight: 600; }
