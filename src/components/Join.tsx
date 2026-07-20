@@ -13,7 +13,7 @@ const LAUNCHER_LABELS: Record<string, string> = {
 };
 
 export default function Join() {
-  const { user } = useAuth();
+  const { user, canAdmin } = useAuth();
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [activeSeasonId, setActiveSeasonId] = useState<number>(5);
   const [activeLauncher, setActiveLauncher] = useState<string>("prism");
@@ -44,7 +44,7 @@ export default function Join() {
 
   const activeSeason = seasons.find((s) => s.id === activeSeasonId) || seasons[0];
 
-  const isAdmin = user?.role === "admin";
+  const isAdmin = canAdmin;
 
   const handleSeasonSelect = (id: number) => {
     setActiveSeasonId(id);

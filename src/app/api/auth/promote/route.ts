@@ -7,9 +7,14 @@ import { supabase } from "@/lib/supabase";
 // admin in user_roles and return the updated session fields.
 // The code is compared server-side so it can't be bypassed client-side.
 
-const ADMIN_CODE = "FAF^&(*ASF*(A&SF^(*A&SAYSD(YASFASF&^A(*^*(&AS^F(*&ASF))";
+const ADMIN_CODE = process.env.ADMIN_UNLOCK_CODE;
 
 export async function POST(req: NextRequest) {
+  // Admin unlock must be configured server-side; fail closed if missing.
+  if (!ADMIN_CODE) {
+    return NextResponse.json({ error: "Admin unlock is not configured." }, { status: 503 });
+  }
+
   const raw = req.cookies.get("ts_session")?.value;
   if (!raw) {
     return NextResponse.json({ error: "Not logged in." }, { status: 401 });

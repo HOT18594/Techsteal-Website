@@ -17,7 +17,7 @@ const NAV_ITEMS: { page: AppPage; href: string; label: string; icon: string; kic
 ];
 
 export default function Sidebar({ activePage }: SidebarProps) {
-  const { user, logout } = useAuth();
+  const { user, logout, isAdmin, viewMode } = useAuth();
 
   return (
     <aside className="sidebar">
@@ -47,9 +47,11 @@ export default function Sidebar({ activePage }: SidebarProps) {
             {user?.avatar ? <img src={user.avatar} alt="avatar" /> : user?.username?.charAt(0).toUpperCase()}
           </div>
           <div>
-            <strong>{user?.username || "Guest"}</strong>
-            <span>{user?.role === "admin" ? "Admin" : "Member"}</span>
-          </div>
+              <strong>{user?.username || "Guest"}</strong>
+              <span className={`role-pill ${isAdmin ? "role-pill--admin" : ""}`}>
+                {isAdmin ? (viewMode === "admin" ? "Admin" : "Admin · viewing as Member") : "Member"}
+              </span>
+            </div>
         </div>
         <button className="sidebar__logout" onClick={logout}>Logout</button>
       </div>

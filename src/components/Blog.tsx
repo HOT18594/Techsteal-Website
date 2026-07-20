@@ -14,7 +14,7 @@ import type { BlogPost } from "@/lib/supabase";
 import RichTextEditor from "@/components/RichTextEditor";
 
 export default function Blog() {
-  const { user } = useAuth();
+  const { user, canAdmin } = useAuth();
   const [posts, setPosts] = useState<BlogPost[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -27,7 +27,7 @@ export default function Blog() {
   // Viewer state
   const [viewing, setViewing] = useState<BlogPost | null>(null);
 
-  const isAdmin = user?.role === "admin";
+  const isAdmin = canAdmin;
 
   useEffect(() => {
     loadData();

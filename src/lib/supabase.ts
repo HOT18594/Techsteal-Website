@@ -28,6 +28,7 @@ export type Comment = {
   body: string;
   pfp: string;
   images: string;
+  likes: number;
   created_at: string;
 };
 

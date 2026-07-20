@@ -8,7 +8,10 @@ import {
   createPost,
   updatePost,
   deletePost,
-  likePost,
+  getMyLikedPostIds,
+  getMyLikedCommentIds,
+  togglePostLike,
+  toggleCommentLike,
   createComment,
   deleteComment,
   uploadImage,
@@ -23,7 +26,7 @@ import RichTextEditor from "@/components/RichTextEditor";
 import Lightbox from "@/components/Lightbox";
 
 export default function Community() {
-  const { user } = useAuth();
+  const { user, canAdmin } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -47,40 +50,49 @@ export default function Community() {
   const [lightboxImages, setLightboxImages] = useState<string[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
-  // Liked posts (client-side tracking)
-  const [liked, setLiked] = useState<number[]>([]);
-  const [likedHydrated, setLikedHydrated] = useState(false);
+  // Which posts/comments THIS user has liked. Restored from the DB on load so
+  // a refresh (or a different browser) cannot re-like. Source of truth stays
+  // server-side in post_likes / comment_likes.
+  const [likedPosts, setLikedPosts] = useState<Set<number>>(new Set());
+  const [likedComments, setLikedComments] = useState<Set<number>>(new Set());
+  const [likesHydrated, setLikesHydrated] = useState(false);
   const [likingPostIds, setLikingPostIds] = useState<number[]>([]);
+  const [likingCommentIds, setLikingCommentIds] = useState<number[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const commentFileInputRef = useRef<HTMLInputElement>(null);
 
-  const isAdmin = user?.role === "admin";
+  // True only while we are restoring the user's like state from the DB.
+  // Used to suppress the like buttons until we know their real state.
+  const restoringLikes = !likesHydrated && !!user?.discordId;
 
   useEffect(() => {
     loadData();
   }, [page, search]);
 
+  // Restore which posts/comments the current user has already liked.
   useEffect(() => {
-    setLikedHydrated(false);
     if (!user?.discordId) {
-      setLiked([]);
+      setLikedPosts(new Set());
+      setLikedComments(new Set());
+      setLikesHydrated(true);
       return;
     }
-    try {
-      const stored = JSON.parse(localStorage.getItem(`techsteal-liked-${user.discordId}`) || "[]");
-      setLiked(Array.isArray(stored) ? stored.filter(Number.isInteger) : []);
-    } catch {
-      setLiked([]);
-    }
-    setLikedHydrated(true);
+    let cancelled = false;
+    (async () => {
+      const [postIds, commentIds] = await Promise.all([
+        getMyLikedPostIds(user.discordId),
+        getMyLikedCommentIds(user.discordId),
+      ]);
+      if (cancelled) return;
+      setLikedPosts(new Set(postIds));
+      setLikedComments(new Set(commentIds));
+      setLikesHydrated(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [user?.discordId]);
-
-  useEffect(() => {
-    if (likedHydrated && user?.discordId) {
-      localStorage.setItem(`techsteal-liked-${user.discordId}`, JSON.stringify(liked));
-    }
-  }, [liked, likedHydrated, user?.discordId]);
 
   const loadData = async () => {
     setLoading(true);
@@ -95,7 +107,6 @@ export default function Community() {
     } catch {
       setPosts([]);
     }
-    setLoading(false);
   };
 
   const openLightbox = (images: string[], index: number) => {
@@ -166,31 +177,85 @@ export default function Community() {
     }
   };
 
-  const toggleLike = async (post: Post) => {
-    if (likingPostIds.includes(post.id)) return;
-    const isLiked = liked.includes(post.id);
-    const delta = isLiked ? -1 : 1;
-    const optimisticLikes = Math.max(0, (post.likes || 0) + delta);
-    const optimisticPost = { ...post, likes: optimisticLikes };
+  // Toggle the current user's like on a post. The DB is the source of truth,
+  // so even after a refresh the liked state is restored and cannot be re-liked.
+  const togglePostLikeFn = async (post: Post) => {
+    if (!user?.discordId || likingPostIds.includes(post.id)) return;
+    const wasLiked = likedPosts.has(post.id);
+    const optimisticLikes = Math.max(0, (post.likes || 0) + (wasLiked ? -1 : 1));
 
-    // Optimistic update both list cards and the currently opened detail post.
+    // Optimistic UI for both the list card and the open detail view.
     setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, likes: optimisticLikes } : p)));
-    setSelectedPost((prev) => (prev?.id === post.id ? optimisticPost : prev));
-    setLiked((prev) => (isLiked ? prev.filter((id) => id !== post.id) : [...prev, post.id]));
+    setSelectedPost((prev) => (prev?.id === post.id ? { ...prev, likes: optimisticLikes } : prev));
+    setLikedPosts((prev) => {
+      const next = new Set(prev);
+      if (wasLiked) next.delete(post.id);
+      else next.add(post.id);
+      return next;
+    });
     setLikingPostIds((prev) => [...prev, post.id]);
 
     try {
-      const updated = await likePost(post.id, delta);
-      setPosts((prev) => prev.map((p) => (p.id === post.id ? updated : p)));
-      setSelectedPost((prev) => (prev?.id === post.id ? updated : prev));
+      const res = await togglePostLike(post.id, user.discordId);
+      setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, likes: res.likes } : p)));
+      setSelectedPost((prev) => (prev?.id === post.id ? { ...prev, likes: res.likes } : prev));
+      setLikedPosts((prev) => {
+        const next = new Set(prev);
+        if (res.liked) next.add(post.id);
+        else next.delete(post.id);
+        return next;
+      });
     } catch {
-      // Revert every UI copy if the backend rejects the update.
+      // Revert on failure.
       setPosts((prev) => prev.map((p) => (p.id === post.id ? post : p)));
       setSelectedPost((prev) => (prev?.id === post.id ? post : prev));
-      setLiked((prev) => (isLiked ? [...prev, post.id] : prev.filter((id) => id !== post.id)));
+      setLikedPosts((prev) => {
+        const next = new Set(prev);
+        if (wasLiked) next.add(post.id);
+        else next.delete(post.id);
+        return next;
+      });
       alert("Could not update like. Please try again.");
     } finally {
       setLikingPostIds((prev) => prev.filter((id) => id !== post.id));
+    }
+  };
+
+  // Toggle the current user's like on a comment (persisted, refresh-safe).
+  const toggleCommentLikeFn = async (comment: Comment) => {
+    if (!user?.discordId || likingCommentIds.includes(comment.id)) return;
+    const wasLiked = likedComments.has(comment.id);
+    const optimisticLikes = Math.max(0, (comment.likes || 0) + (wasLiked ? -1 : 1));
+
+    setComments((prev) => prev.map((c) => (c.id === comment.id ? { ...c, likes: optimisticLikes } : c)));
+    setLikedComments((prev) => {
+      const next = new Set(prev);
+      if (wasLiked) next.delete(comment.id);
+      else next.add(comment.id);
+      return next;
+    });
+    setLikingCommentIds((prev) => [...prev, comment.id]);
+
+    try {
+      const res = await toggleCommentLike(comment.id, user.discordId);
+      setComments((prev) => prev.map((c) => (c.id === comment.id ? { ...c, likes: res.likes } : c)));
+      setLikedComments((prev) => {
+        const next = new Set(prev);
+        if (res.liked) next.add(comment.id);
+        else next.delete(comment.id);
+        return next;
+      });
+    } catch {
+      setComments((prev) => prev.map((c) => (c.id === comment.id ? comment : c)));
+      setLikedComments((prev) => {
+        const next = new Set(prev);
+        if (wasLiked) next.add(comment.id);
+        else next.delete(comment.id);
+        return next;
+      });
+      alert("Could not update like. Please try again.");
+    } finally {
+      setLikingCommentIds((prev) => prev.filter((id) => id !== comment.id));
     }
   };
 
@@ -276,7 +341,7 @@ export default function Community() {
             <div className="post-detail__author">{selectedPost.author}</div>
             <div className="post-detail__time">{timeAgo(selectedPost.created_at)}</div>
           </div>
-          {isAdmin && (
+          {canAdmin && (
             <div className="post-detail__admin">
               <button className="admin-btn danger" onClick={() => handleDeletePost(selectedPost.id)}>
                 Delete
@@ -301,22 +366,22 @@ export default function Community() {
         <div className="post-detail__footer">
           <button
             type="button"
-            className={`post-detail__stat ${liked.includes(selectedPost.id) ? "liked" : ""}`}
-            onClick={() => toggleLike(selectedPost)}
-            disabled={likingPostIds.includes(selectedPost.id)}
-            aria-pressed={liked.includes(selectedPost.id)}
-            aria-label={liked.includes(selectedPost.id) ? "Unlike post" : "Like post"}
+            className={`post-detail__stat ${likedPosts.has(selectedPost.id) ? "liked" : ""} ${restoringLikes ? "is-loading" : ""}`}
+            onClick={() => togglePostLikeFn(selectedPost)}
+            disabled={restoringLikes || likingPostIds.includes(selectedPost.id)}
+            aria-pressed={likedPosts.has(selectedPost.id)}
+            aria-label={likedPosts.has(selectedPost.id) ? "Unlike post" : "Like post"}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
             </svg>
-            {selectedPost.likes || 0} Likes
+            {selectedPost.likes || 0} {selectedPost.likes === 1 ? "Like" : "Likes"}
           </button>
           <span className="post-detail__stat">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
-            {comments.length} Comments
+            {comments.length} {comments.length === 1 ? "Comment" : "Comments"}
           </span>
         </div>
 
@@ -381,7 +446,7 @@ export default function Community() {
                       <div className="comment__author">{c.author}</div>
                       <div className="comment__time">{timeAgo(c.created_at)}</div>
                     </div>
-                    {isAdmin && (
+                    {canAdmin && (
                       <div className="comment__admin" style={{ marginLeft: "auto" }}>
                         <button className="admin-btn danger" onClick={() => handleDeleteComment(c.id)}>
                           Delete
@@ -403,6 +468,21 @@ export default function Community() {
                       ))}
                     </div>
                   )}
+                  <div className="comment__footer">
+                    <button
+                      type="button"
+                      className={`post-detail__stat comment__like ${likedComments.has(c.id) ? "liked" : ""} ${restoringLikes ? "is-loading" : ""}`}
+                      onClick={() => toggleCommentLikeFn(c)}
+                      disabled={restoringLikes || likingCommentIds.includes(c.id)}
+                      aria-pressed={likedComments.has(c.id)}
+                      aria-label={likedComments.has(c.id) ? "Unlike comment" : "Like comment"}
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                      </svg>
+                      {c.likes || 0}
+                    </button>
+                  </div>
                 </div>
               );
             })
@@ -445,7 +525,7 @@ export default function Community() {
       <div className="card composer-card">
         <div className="composer-header">
           <span className="composer-header__title">Share something</span>
-          {isAdmin && <span className="composer-header__badge">Admin</span>}
+          {canAdmin && <span className="composer-header__badge">Admin</span>}
         </div>
         {composerOpen ? (
           <>
@@ -497,7 +577,7 @@ export default function Community() {
             style={{ minHeight: "60px", cursor: "text", color: "var(--text-dim)" }}
             onClick={() => setComposerOpen(true)}
           >
-            What's on your mind?
+            What&apos;s on your mind?
           </div>
         )}
       </div>
@@ -515,7 +595,7 @@ export default function Community() {
           const images = parseImages(post.images);
           return (
             <div key={post.id} className="post-card" onClick={() => openPost(post)}>
-              {isAdmin && (
+              {canAdmin && (
                 <div className="post-card__admin" onClick={(e) => e.stopPropagation()}>
                   <button className="admin-btn danger" onClick={() => handleDeletePost(post.id)}>
                     Delete
@@ -549,15 +629,19 @@ export default function Community() {
                 </div>
               )}
               <div className="post-card__footer" onClick={(e) => e.stopPropagation()}>
-                <span
-                  className={`post-card__stat ${liked.includes(post.id) ? "liked" : ""}`}
-                  onClick={() => toggleLike(post)}
+                <button
+                  type="button"
+                  className={`post-card__stat ${likedPosts.has(post.id) ? "liked" : ""} ${restoringLikes ? "is-loading" : ""}`}
+                  onClick={() => togglePostLikeFn(post)}
+                  disabled={restoringLikes || likingPostIds.includes(post.id)}
+                  aria-pressed={likedPosts.has(post.id)}
+                  aria-label={likedPosts.has(post.id) ? "Unlike post" : "Like post"}
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
                   </svg>
                   {post.likes || 0}
-                </span>
+                </button>
                 <span className="post-card__stat" onClick={() => openPost(post)}>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />

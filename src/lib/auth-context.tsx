@@ -11,6 +11,11 @@ export type AuthUser = {
   inGuild?: boolean;
 };
 
+// Global UI view mode. An admin can switch to "member" to preview the site as
+// a regular member, then back to "admin". This is purely a UI layer — the real
+// role (and authorization) lives in `user.role`.
+export type ViewMode = "admin" | "member";
+
 type AuthContextValue = {
   user: AuthUser | null;
   loading: boolean;
@@ -18,6 +23,11 @@ type AuthContextValue = {
   logout: () => Promise<void>;
   completeSetup: (username: string) => Promise<void>;
   isAdmin: boolean;
+  viewMode: ViewMode;
+  setViewMode: (mode: ViewMode) => void;
+  // canAdmin is true only when the user is an admin AND is currently viewing
+  // as admin. Use this for every admin-only UI control.
+  canAdmin: boolean;
 };
 
 const AuthContext = createContext<AuthContextValue>({
@@ -27,6 +37,9 @@ const AuthContext = createContext<AuthContextValue>({
   logout: async () => {},
   completeSetup: async () => {},
   isAdmin: false,
+  viewMode: "member",
+  setViewMode: () => {},
+  canAdmin: false,
 });
 
 export function useAuth() {
@@ -36,6 +49,7 @@ export function useAuth() {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<ViewMode>("member");
 
   // On mount, check if we have a session (cookie set by the callback route).
   useEffect(() => {
@@ -47,6 +61,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  // Default to admin view as soon as an admin logs in; keep member view for members.
+  useEffect(() => {
+    if (user?.role === "admin") setViewMode("admin");
+    else setViewMode("member");
+  }, [user?.role]);
 
   const login = () => {
     // Redirect to the Discord OAuth start route (server-side).
@@ -73,9 +93,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const isAdmin = user?.role === "admin";
+  const canAdmin = isAdmin && viewMode === "admin";
+
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, logout, completeSetup, isAdmin: user?.role === "admin" }}
+      value={{ user, loading, login, logout, completeSetup, isAdmin, viewMode, setViewMode, canAdmin }}
     >
       {children}
     </AuthContext.Provider>

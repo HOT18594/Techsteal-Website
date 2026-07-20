@@ -37,7 +37,7 @@ function renderPage(page: AppPage) {
 }
 
 export default function AppShell({ page }: { page: AppPage }) {
-  const { user, loading } = useAuth();
+  const { user, loading, isAdmin, viewMode, setViewMode } = useAuth();
 
   if (loading) {
     return (
@@ -65,7 +65,33 @@ export default function AppShell({ page }: { page: AppPage }) {
       <Sidebar activePage={page} />
       <div className="main">
         <div className="topbar">
-          <div className="topbar__title">{PAGE_TITLES[page]}</div>
+          <div className="topbar__head">
+            <div className="topbar__eyebrow">{PAGE_TITLES[page]}</div>
+            <div className="topbar__title">{PAGE_TITLES[page]}</div>
+          </div>
+
+          {/* Admin can switch between Admin and Member view */}
+          {isAdmin && (
+            <div className="view-toggle" role="group" aria-label="View as">
+              <span className="view-toggle__label">View as</span>
+              <button
+                type="button"
+                className={`view-toggle__btn ${viewMode === "admin" ? "active" : ""}`}
+                aria-pressed={viewMode === "admin"}
+                onClick={() => setViewMode("admin")}
+              >
+                Admin
+              </button>
+              <button
+                type="button"
+                className={`view-toggle__btn ${viewMode === "member" ? "active" : ""}`}
+                aria-pressed={viewMode === "member"}
+                onClick={() => setViewMode("member")}
+              >
+                Member
+              </button>
+            </div>
+          )}
         </div>
         <main className="content">{renderPage(page)}</main>
       </div>

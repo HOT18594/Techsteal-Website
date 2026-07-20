@@ -147,14 +147,63 @@ export async function deletePost(id: number): Promise<void> {
   if (error) throw error;
 }
 
-export async function likePost(id: number, delta: number): Promise<Post> {
-  const { data, error } = await supabase.rpc("update_post_likes", {
-    post_id: id,
-    like_delta: delta,
+// ---- DB-backed likes (persist per-user; survive refresh) ----
+
+// Fetch the set of post IDs the current user has liked (so likes survive a
+// refresh and stay consistent across devices). Returns an empty array if the
+// likes migration has not been run yet.
+export async function getMyLikedPostIds(discordId: string): Promise<number[]> {
+  try {
+    const { data, error } = await supabase.rpc("my_liked_post_ids", {
+      p_discord_id: discordId,
+    });
+    if (error) throw error;
+    return (data as { post_id: number }[] | null)?.map((r) => r.post_id) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// Fetch the set of comment IDs the current user has liked.
+export async function getMyLikedCommentIds(discordId: string): Promise<number[]> {
+  try {
+    const { data, error } = await supabase.rpc("my_liked_comment_ids", {
+      p_discord_id: discordId,
+    });
+    if (error) throw error;
+    return (data as { comment_id: number }[] | null)?.map((r) => r.comment_id) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+// Toggle the current user's like on a post. Returns the authoritative new
+// count + whether the user now likes it. Idempotent — clicking again unlike.
+export async function togglePostLike(
+  postId: number,
+  discordId: string
+): Promise<{ likes: number; liked: boolean }> {
+  const { data, error } = await supabase.rpc("toggle_post_like", {
+    p_post_id: postId,
+    p_discord_id: discordId,
   });
   if (error) throw error;
-  if (!data) throw new Error("Post not found");
-  return data as Post;
+  if (!data || !data[0]) throw new Error("Like failed");
+  return { likes: data[0].likes, liked: data[0].liked };
+}
+
+// Toggle the current user's like on a comment.
+export async function toggleCommentLike(
+  commentId: number,
+  discordId: string
+): Promise<{ likes: number; liked: boolean }> {
+  const { data, error } = await supabase.rpc("toggle_comment_like", {
+    p_comment_id: commentId,
+    p_discord_id: discordId,
+  });
+  if (error) throw error;
+  if (!data || !data[0]) throw new Error("Like failed");
+  return { likes: data[0].likes, liked: data[0].liked };
 }
 
 // ---------- COMMENTS ----------
