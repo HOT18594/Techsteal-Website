@@ -11,15 +11,18 @@ import {
   parseImages,
   timeAgo,
   stripHtml,
+  MAX_IMAGE_SIZE,
 } from "@/lib/api";
 import type { BlogPost } from "@/lib/supabase";
 import RichTextEditor from "@/components/RichTextEditor";
 import ConfirmModal from "@/components/ConfirmModal";
-
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+import Lightbox from "@/components/Lightbox";
+import { sanitizeHtml } from "@/lib/sanitize";
+import { useToast } from "@/components/Toast";
 
 export default function Blog() {
   const { user, canAdmin } = useAuth();
+  const { showToast } = useToast();
   const [posts, setPosts] = useState<BlogPost[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -31,11 +34,12 @@ export default function Blog() {
   const [images, setImages] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
 
-  // In-app delete confirmation (replaces native confirm())
   const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
 
-  // Viewer state
+  // Viewer + lightbox
   const [viewing, setViewing] = useState<BlogPost | null>(null);
+  const [lightboxImages, setLightboxImages] = useState<string[]>([]);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
 
   const isAdmin = canAdmin;
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -85,15 +89,19 @@ export default function Blog() {
       const urls: string[] = [];
       for (const file of Array.from(files)) {
         if (file.size > MAX_IMAGE_SIZE) {
-          alert(`"${file.name}" is larger than 5MB and was skipped.`);
+          showToast(`"${file.name}" is larger than ${MAX_IMAGE_SIZE / 1024 / 1024}MB and was skipped.`, "error");
           continue;
         }
-        const url = await uploadImage(file);
-        urls.push(url);
+        try {
+          const url = await uploadImage(file);
+          urls.push(url);
+        } catch (e: any) {
+          showToast(e?.message || "Failed to upload image", "error");
+        }
       }
-      setImages((prev) => [...prev, ...urls]);
+      if (urls.length) setImages((prev) => [...prev, ...urls]);
     } catch {
-      alert("Failed to upload image.");
+      showToast("Failed to upload image.", "error");
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -106,7 +114,12 @@ export default function Blog() {
 
   const savePost = async () => {
     if (!title.trim()) {
-      alert("Please enter a title.");
+      showToast("Please enter a title.", "error");
+      return;
+    }
+    const text = stripHtml(body).trim();
+    if (!text) {
+      showToast("Please enter some content.", "error");
       return;
     }
     try {
@@ -115,10 +128,11 @@ export default function Blog() {
       } else {
         await createBlogPost({ title, body, author: user?.username || "Anonymous", images });
       }
+      showToast(editingId ? "Post updated!" : "Post created!", "success");
       closeEditor();
       loadData();
     } catch {
-      alert("Failed to save blog post.");
+      showToast("Failed to save blog post.", "error");
     }
   };
 
@@ -133,10 +147,16 @@ export default function Blog() {
     try {
       await deleteBlogPost(id);
       if (viewing?.id === id) setViewing(null);
+      showToast("Post deleted", "success");
       loadData();
     } catch {
-      alert("Failed to delete blog post.");
+      showToast("Failed to delete blog post.", "error");
     }
+  };
+
+  const openLightbox = (imgs: string[], idx: number) => {
+    setLightboxImages(imgs);
+    setLightboxIndex(idx);
   };
 
   // ---------- VIEWER ----------
@@ -153,21 +173,30 @@ export default function Blog() {
         </div>
         <div className="card">
           {viewerImages.length > 0 && (
-            <div className="viewer__banner">
+            <div className="viewer__banner" onClick={() => openLightbox(viewerImages, 0)} style={{ cursor: "pointer" }}>
               <img src={viewerImages[0]} alt="" />
             </div>
           )}
           <div className="viewer__title">{viewing.title}</div>
           <div className="viewer__meta">By {viewing.author} • {timeAgo(viewing.created_at)}</div>
-          <div className="viewer__body" dangerouslySetInnerHTML={{ __html: viewing.body }} />
+          <div className="viewer__body" dangerouslySetInnerHTML={{ __html: sanitizeHtml(viewing.body) }} />
           {viewerImages.length > 1 && (
             <div className="viewer__gallery">
               {viewerImages.slice(1).map((src, i) => (
-                <img key={i} src={src} alt="" className="viewer__gallery-img" loading="lazy" />
+                <img
+                  key={i}
+                  src={src}
+                  alt=""
+                  className="viewer__gallery-img"
+                  loading="lazy"
+                  style={{ cursor: "pointer" }}
+                  onClick={() => openLightbox(viewerImages, i + 1)}
+                />
               ))}
             </div>
           )}
         </div>
+        <Lightbox images={lightboxImages} index={lightboxIndex} onClose={() => setLightboxImages([])} />
       </div>
     );
   }
@@ -244,7 +273,6 @@ export default function Blog() {
         </div>
       )}
 
-      {/* Editor Modal */}
       {editorOpen && (
         <div className="modal-overlay open" onClick={closeEditor}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ width: "min(100%, 680px)" }}>
@@ -256,11 +284,12 @@ export default function Blog() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Post title..."
+                maxLength={200}
               />
               <label className="settings-label">Content</label>
               <RichTextEditor value={body} onChange={setBody} placeholder="Write your post..." />
 
-              <label className="settings-label">Images</label>
+              <label className="settings-label">Images (max {MAX_IMAGE_SIZE / 1024 / 1024}MB each)</label>
               <div className="add-media-row">
                 <button type="button" className="add-media-btn" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -268,7 +297,7 @@ export default function Blog() {
                   </svg>
                   {uploading ? "Uploading…" : "Add Image"}
                 </button>
-                <span className="add-media-hint">Uploaded to Supabase Storage (max 5MB each).</span>
+                <span className="add-media-hint">Uploaded to Supabase Storage.</span>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -283,12 +312,7 @@ export default function Blog() {
                   {images.map((img, i) => (
                     <div key={i} className="image-thumb">
                       <img src={img} alt="" />
-                      <button
-                        type="button"
-                        className="image-thumb__remove"
-                        onClick={() => removeImage(i)}
-                        aria-label="Remove image"
-                      >
+                      <button type="button" className="image-thumb__remove" onClick={() => removeImage(i)} aria-label="Remove image">
                         ×
                       </button>
                     </div>

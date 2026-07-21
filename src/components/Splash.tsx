@@ -1,11 +1,38 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth-context";
 
 export default function Splash() {
   const { login, loading } = useAuth();
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    // Read login_error from URL query (set by callback route)
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const loginError = params.get("login_error");
+      if (loginError) {
+        const messages: Record<string, string> = {
+          state_mismatch: "Login failed: session expired. Please try again.",
+          missing_params: "Login failed: missing parameters.",
+          token_request_failed: "Login failed: could not reach Discord.",
+          token_exchange_failed: "Login failed: token exchange failed.",
+          no_access_token: "Login failed: no access token.",
+          user_fetch_failed: "Login failed: could not fetch your Discord profile.",
+        };
+        setError(messages[loginError] || `Login failed: ${loginError}`);
+        // Clean URL
+        const url = new URL(window.location.href);
+        url.searchParams.delete("login_error");
+        window.history.replaceState({}, "", url.toString());
+      }
+      const setup = params.get("setup");
+      if (setup) {
+        // Handled by AppShell, but clear param
+      }
+    }
+  }, []);
 
   const handleLogin = () => {
     setError("");

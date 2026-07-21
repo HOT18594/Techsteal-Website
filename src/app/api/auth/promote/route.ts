@@ -1,34 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
-
-// POST /api/auth/promote
-// Body: { code: string }
-// If the code matches the admin unlock code, promote the logged-in user to
-// admin in user_roles and return the updated session fields.
-// The code is compared server-side so it can't be bypassed client-side.
+import { supabaseAdmin, supabase } from "@/lib/supabase";
+import { verifySession, signSession, getSessionCookieName, getSessionCookieOptions } from "@/lib/session";
 
 const ADMIN_CODE = process.env.ADMIN_UNLOCK_CODE;
 
 export async function POST(req: NextRequest) {
-  // Admin unlock must be configured server-side; fail closed if missing.
   if (!ADMIN_CODE) {
     return NextResponse.json({ error: "Admin unlock is not configured." }, { status: 503 });
   }
 
-  const raw = req.cookies.get("ts_session")?.value;
+  const raw = req.cookies.get(getSessionCookieName())?.value;
   if (!raw) {
     return NextResponse.json({ error: "Not logged in." }, { status: 401 });
   }
 
-  let session: any;
-  try {
-    session = JSON.parse(raw);
-  } catch {
-    return NextResponse.json({ error: "Invalid session." }, { status: 401 });
+  let session = await verifySession(raw);
+  if (!session) {
+    // fallback legacy for migration
+    try {
+      const legacy = JSON.parse(raw);
+      if (legacy?.discordId) {
+        session = {
+          discordId: String(legacy.discordId),
+          username: String(legacy.username || ""),
+          avatar: String(legacy.avatar || ""),
+          role: "member" as any,
+          isNewUser: false,
+          inGuild: Boolean(legacy.inGuild),
+        };
+      }
+    } catch {}
   }
 
-  const discordId = session?.discordId;
-  if (!discordId) {
+  if (!session) {
     return NextResponse.json({ error: "Invalid session." }, { status: 401 });
   }
 
@@ -44,23 +48,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid code." }, { status: 403 });
   }
 
-  const { error } = await supabase
+  // Use service role if available to bypass restrictive RLS
+  const client = supabaseAdmin || supabase;
+  const { error } = await client
     .from("user_roles")
     .update({ role: "admin" })
-    .eq("discord_id", discordId);
+    .eq("discord_id", session.discordId);
+
   if (error) {
     return NextResponse.json({ error: "Failed to update role." }, { status: 500 });
   }
 
-  // Update the session cookie role.
-  const updated = { ...session, role: "admin" };
+  const updated = { ...session, role: "admin" as const };
+  const signed = await signSession(updated as any);
   const res = NextResponse.json({ ok: true, role: "admin" });
-  res.cookies.set("ts_session", JSON.stringify(updated), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 7,
-    path: "/",
-  });
+  res.cookies.set(getSessionCookieName(), signed, getSessionCookieOptions());
   return res;
 }

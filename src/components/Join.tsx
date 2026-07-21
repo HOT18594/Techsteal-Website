@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { loadSeasons, SERVER_ADDRESS, updateSeason } from "@/lib/api";
+import { loadSeasons, SERVER_ADDRESS, updateSeason, copyToClipboard } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useToast } from "@/components/Toast";
+import { sanitizeSeasonHtml } from "@/lib/sanitize";
 import type { Season } from "@/lib/supabase";
 
 const LAUNCHER_LABELS: Record<string, string> = {
@@ -13,9 +15,10 @@ const LAUNCHER_LABELS: Record<string, string> = {
 };
 
 export default function Join() {
-  const { user, canAdmin } = useAuth();
+  const { canAdmin } = useAuth();
+  const { showToast } = useToast();
   const [seasons, setSeasons] = useState<Season[]>([]);
-  const [activeSeasonId, setActiveSeasonId] = useState<number>(5);
+  const [activeSeasonId, setActiveSeasonId] = useState<number | null>(null);
   const [activeLauncher, setActiveLauncher] = useState<string>("prism");
   const [loading, setLoading] = useState(true);
 
@@ -29,20 +32,31 @@ export default function Join() {
   }, []);
 
   const loadData = async () => {
+    setLoading(true);
     try {
       const data = await loadSeasons();
       setSeasons(data);
       if (data.length) {
         const current = data.find((s) => s.is_current);
-        setActiveSeasonId(current ? current.id : data[0].id);
+        const targetId = current ? current.id : data[0].id;
+        setActiveSeasonId(targetId);
+        const season = current || data[0];
+        setEditTitle(season.title || "");
+        setEditCurrent(season.is_current || false);
+        setEditLaunchers({
+          prism: season.prism || "",
+          sklauncher: season.sklauncher || "",
+          modrinth: season.modrinth || "",
+          curseforge: season.curseforge || "",
+        });
       }
     } catch {
-      // fallback to local
+      // keep empty
     }
     setLoading(false);
   };
 
-  const activeSeason = seasons.find((s) => s.id === activeSeasonId) || seasons[0];
+  const activeSeason = seasons.find((s) => s.id === activeSeasonId) || seasons[0] || null;
 
   const isAdmin = canAdmin;
 
@@ -72,7 +86,25 @@ export default function Join() {
         curseforge: activeSeason.curseforge || "",
       });
     }
-  }, [activeSeason]);
+  }, [activeSeason?.id]);
+
+  const handleCopy = async () => {
+    try {
+      await copyToClipboard(SERVER_ADDRESS);
+      showToast("IP copied!", "success");
+    } catch {
+      showToast("Failed to copy", "error");
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="status-spinner-wrapper">
+        <div className="status-spinner" />
+        <span>Loading seasons...</span>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -80,7 +112,7 @@ export default function Join() {
         <div className="card__title"><span className="dot" />Server Address</div>
         <div className="ip-box">
           <code>{SERVER_ADDRESS}</code>
-          <button className="copy-btn" onClick={() => navigator.clipboard.writeText(SERVER_ADDRESS).then(() => alert("IP copied!"))}>
+          <button className="copy-btn" onClick={handleCopy}>
             Copy
           </button>
         </div>
@@ -98,7 +130,7 @@ export default function Join() {
                 className={`season-btn ${s.id === activeSeasonId ? "active" : ""} ${s.is_current ? "current" : ""}`}
                 onClick={() => handleSeasonSelect(s.id)}
               >
-                {s.title || `Season ${s.id}`}
+                {s.title || `Season ${s.id}`} {s.is_current ? "★" : ""}
               </button>
             ))
           )}
@@ -118,7 +150,14 @@ export default function Join() {
 
         <div className="launcher-content">
           {activeSeason ? (
-            <div dangerouslySetInnerHTML={{ __html: activeSeason[activeLauncher as keyof Season] as string || `<p>No ${LAUNCHER_LABELS[activeLauncher]} instructions for this season yet.</p>` }} />
+            <div
+              dangerouslySetInnerHTML={{
+                __html: sanitizeSeasonHtml(
+                  (activeSeason[activeLauncher as keyof Season] as string) ||
+                    `<p>No ${LAUNCHER_LABELS[activeLauncher]} instructions for this season yet.</p>`
+                ),
+              }}
+            />
           ) : (
             <p style={{ color: "var(--text-dim)" }}>No season data available.</p>
           )}
@@ -133,7 +172,7 @@ export default function Join() {
             <input className="settings-input" value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
             <label className="settings-label" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
               <input type="checkbox" checked={editCurrent} onChange={(e) => setEditCurrent(e.target.checked)} />
-              Current Season
+              Current Season (will unset others)
             </label>
             {Object.entries(LAUNCHER_LABELS).map(([key, label]) => (
               <div key={key} className="season-launcher-edit">
@@ -146,22 +185,27 @@ export default function Join() {
               </div>
             ))}
             <div className="admin-actions">
-              <button className="admin-btn" onClick={async () => {
-                try {
-                  await updateSeason(activeSeason.id, {
-                    title: editTitle,
-                    is_current: editCurrent,
-                    prism: editLaunchers.prism || "",
-                    sklauncher: editLaunchers.sklauncher || "",
-                    modrinth: editLaunchers.modrinth || "",
-                    curseforge: editLaunchers.curseforge || "",
-                  });
-                  alert("Season saved!");
-                  loadData();
-                } catch {
-                  alert("Failed to save season.");
-                }
-              }}>Save</button>
+              <button
+                className="admin-btn"
+                onClick={async () => {
+                  try {
+                    await updateSeason(activeSeason.id, {
+                      title: editTitle,
+                      is_current: editCurrent,
+                      prism: editLaunchers.prism || "",
+                      sklauncher: editLaunchers.sklauncher || "",
+                      modrinth: editLaunchers.modrinth || "",
+                      curseforge: editLaunchers.curseforge || "",
+                    });
+                    showToast("Season saved!", "success");
+                    loadData();
+                  } catch {
+                    showToast("Failed to save season.", "error");
+                  }
+                }}
+              >
+                Save
+              </button>
             </div>
           </div>
         </div>

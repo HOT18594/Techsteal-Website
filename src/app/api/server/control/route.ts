@@ -1,13 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
-
-// POST /api/server/control
-// Body: { action: "start" | "stop" }
-// Proxies to the exaroton API to start/stop the Minecraft server.
-// Requires EXAROTON_TOKEN and EXAROTON_SERVER_ID in the environment.
+import { verifySession, getSessionCookieName } from "@/lib/session";
 
 const EXAROTON_API = "https://api.exaroton.com/v1";
 
+// POST /api/server/control - secured: requires valid session + inGuild + admin/member check
 export async function POST(req: NextRequest) {
+  // Auth check
+  const raw = req.cookies.get(getSessionCookieName())?.value;
+  if (!raw) {
+    return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+  }
+  const session = await verifySession(raw);
+  if (!session) {
+    // Try legacy JSON fallback once
+    try {
+      const legacy = JSON.parse(raw);
+      if (!legacy?.discordId) throw new Error("invalid");
+    } catch {
+      return NextResponse.json({ error: "Invalid session." }, { status: 401 });
+    }
+  }
+
+  // Must be in Discord guild to control server (as per DESIGN.md)
+  const finalSession = session as any;
+  // If we had legacy session, we check inGuild from parsed legacy
+  let inGuild = finalSession?.inGuild;
+  if (inGuild === undefined) {
+    try {
+      const legacy = JSON.parse(raw);
+      inGuild = legacy?.inGuild;
+    } catch {}
+  }
+  if (!inGuild) {
+    return NextResponse.json({ error: "You must be a member of the Discord server to control the Minecraft server." }, { status: 403 });
+  }
+
   const token = process.env.EXAROTON_TOKEN;
   const serverId = process.env.EXAROTON_SERVER_ID;
 
@@ -30,6 +57,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "action must be 'start' or 'stop'." }, { status: 400 });
   }
 
+  // Only admins can stop server (destructive). Members can start.
+  if (action === "stop" && finalSession?.role !== "admin") {
+    return NextResponse.json({ error: "Only admins can stop the server." }, { status: 403 });
+  }
+
   const endpoint = action === "start" ? "start" : "stop";
 
   try {
@@ -43,8 +75,9 @@ export async function POST(req: NextRequest) {
 
     if (!res.ok) {
       const text = await res.text();
+      // Don't leak raw exaroton response containing token info
       return NextResponse.json(
-        { error: `exaroton error ${res.status}: ${text}` },
+        { error: `exaroton error ${res.status}` },
         { status: 502 }
       );
     }
