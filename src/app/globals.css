@@ -287,6 +287,14 @@ img { max-width: 100%; display: block; }
 .login__btn-icon { width: 22px; height: 22px; }
 .login__error { margin-top: 12px; color: #ff8176; font-weight: 800; }
 
+/* Pagination */
+.pagination { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 24px; flex-wrap: wrap; }
+.pagination button { min-width: 40px; min-height: 40px; border: 2px solid #30393e; background: #171b1e; color: var(--text-soft); border-radius: var(--radius-sm); font-weight: 900; cursor: pointer; transition: all .12s ease; }
+.pagination button:hover:not(:disabled) { border-color: #465157; color: var(--ink); transform: translateY(-1px); }
+.pagination button.active { background: linear-gradient(180deg, var(--green), #24b64a); border-color: #6ef28c; color: #061108; }
+.pagination button:disabled { opacity: .4; cursor: not-allowed; }
+.post-card__image-more { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.72); color: #fff; font-weight: 900; font-size: 18px; }
+
 /* Modal/lightbox */
 .modal-overlay, .lightbox { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: rgba(0, 0, 0, .70); backdrop-filter: blur(8px); }
 .modal-card { padding: 22px; max-height: calc(100vh - 48px); overflow: auto; }

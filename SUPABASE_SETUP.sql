@@ -136,11 +136,33 @@ DROP POLICY IF EXISTS "user_roles_insert" ON user_roles;
 CREATE POLICY "user_roles_insert" ON user_roles
   FOR INSERT WITH CHECK (role = 'member');
 
--- Allow users to UPDATE their own row (e.g., change display username, or be
--- promoted to admin by the server-side /api/auth/promote route which uses the
--- anon key). We do NOT restrict the WITH CHECK to 'member' because the promote
--- route legitimately sets role = 'admin'. The admin code is verified
--- server-side, so this is safe.
+-- FIXED (v0.0.5): Prevent self-promotion to admin via anon key.
+-- Anon clients can now only update username (not role). Admin promotion must go
+-- through /api/auth/promote which uses supabaseAdmin (service_role) to bypass RLS.
 DROP POLICY IF EXISTS "user_roles_update_self" ON user_roles;
 CREATE POLICY "user_roles_update_self" ON user_roles
-  FOR UPDATE USING (true) WITH CHECK (true);
+  FOR UPDATE USING (true) WITH CHECK (role = 'member');
+
+-- Allow service_role to do anything (needed for promote route + future secure API routes)
+DROP POLICY IF EXISTS "user_roles_service_all" ON user_roles;
+CREATE POLICY "user_roles_service_all" ON user_roles
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+-- Also restrict anon updates to only allow username changes (defense in depth via trigger)
+CREATE OR REPLACE FUNCTION prevent_role_escalation()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- If anon tries to set role to admin, force back to member unless service_role
+  IF (current_setting('request.jwt.claims', true) IS NULL OR current_setting('request.jwt.claims', true) NOT ILIKE '%service_role%') THEN
+    IF NEW.role = 'admin' AND OLD.role = 'member' THEN
+      RAISE EXCEPTION 'Role escalation not allowed via anon key. Use /api/auth/promote';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS trg_prevent_role_escalation ON user_roles;
+CREATE TRIGGER trg_prevent_role_escalation
+  BEFORE UPDATE ON user_roles
+  FOR EACH ROW EXECUTE FUNCTION prevent_role_escalation();

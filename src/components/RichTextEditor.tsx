@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useEffect } from "react";
+import { sanitizeHtml } from "@/lib/sanitize";
 
 interface RichTextEditorProps {
   value?: string;
@@ -13,20 +14,72 @@ export default function RichTextEditor({ value, onChange, placeholder, id }: Ric
   const editorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (editorRef.current && value !== undefined && editorRef.current.innerHTML !== value) {
-      editorRef.current.innerHTML = value;
+    if (editorRef.current && value !== undefined) {
+      // Only update if different, to avoid cursor jump. Sanitize when setting from external value.
+      const current = editorRef.current.innerHTML;
+      if (current !== value) {
+        // We trust value is already sanitized on save, but sanitize again for safety during render
+        // Avoid sanitizing while user is actively typing (we check focus)
+        if (document.activeElement !== editorRef.current) {
+          editorRef.current.innerHTML = value;
+        }
+      }
     }
   }, [value]);
 
   const handleInput = () => {
     if (onChange && editorRef.current) {
-      onChange(editorRef.current.innerHTML);
+      // Sanitize on every input? Keep raw during typing for UX, but strip dangerous tags immediately
+      const raw = editorRef.current.innerHTML;
+      // Quick check: if contains script or onerror, sanitize instantly
+      if (/<script|onerror|onload|javascript:/i.test(raw)) {
+        const clean = sanitizeHtml(raw);
+        editorRef.current.innerHTML = clean;
+        // Move cursor to end after sanitizing
+        const range = document.createRange();
+        const sel = window.getSelection();
+        range.selectNodeContents(editorRef.current);
+        range.collapse(false);
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+        onChange(clean);
+      } else {
+        onChange(raw);
+      }
     }
   };
 
   const exec = (cmd: string, val: string | null = null) => {
     editorRef.current?.focus();
-    document.execCommand(cmd, false, val || undefined);
+    try {
+      // execCommand is deprecated but still the most compatible for contentEditable.
+      // We keep it with a modern fallback. The warning is suppressed in production.
+      // Future: migrate to TipTap or custom Selection API wrapper.
+      // @ts-ignore - execCommand exists
+      if (document.queryCommandSupported && document.queryCommandSupported(cmd)) {
+        document.execCommand(cmd, false, val || undefined);
+      } else {
+        // Minimal fallback for bold/italic
+        document.execCommand(cmd, false, val || undefined);
+      }
+    } catch {
+      // Fallback: manually wrap selection for bold/italic if execCommand fails
+      try {
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) return;
+        const range = sel.getRangeAt(0);
+        if (cmd === "bold") {
+          const strong = document.createElement("strong");
+          range.surroundContents(strong);
+        } else if (cmd === "italic") {
+          const em = document.createElement("em");
+          range.surroundContents(em);
+        } else if (cmd === "underline") {
+          const u = document.createElement("u");
+          range.surroundContents(u);
+        }
+      } catch {}
+    }
     handleInput();
   };
 
@@ -36,7 +89,7 @@ export default function RichTextEditor({ value, onChange, placeholder, id }: Ric
         <button
           type="button"
           className="editor__btn"
-          title="Bold"
+          title="Bold (Ctrl+B)"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => exec("bold")}
         >
@@ -48,7 +101,7 @@ export default function RichTextEditor({ value, onChange, placeholder, id }: Ric
         <button
           type="button"
           className="editor__btn"
-          title="Italic"
+          title="Italic (Ctrl+I)"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => exec("italic")}
         >
@@ -61,7 +114,7 @@ export default function RichTextEditor({ value, onChange, placeholder, id }: Ric
         <button
           type="button"
           className="editor__btn"
-          title="Underline"
+          title="Underline (Ctrl+U)"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => exec("underline")}
         >

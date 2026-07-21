@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import type { Post, Comment, BlogPost, Season } from "./supabase";
+import { sanitizeHtml, sanitizeSeasonHtml } from "./sanitize";
 
 export const SERVER_ADDRESS = "play.techsteal.space";
 export const STATUS_API = `https://api.mcsrvstat.us/3/${SERVER_ADDRESS}`;
@@ -8,9 +9,11 @@ export const DISCORD_INVITE_API = `https://discord.com/api/v9/invites/bEZ5M5jBvz
 export const DISCORD_GUILD_ID = "1349848075371413515";
 export const DISCORD_WIDGET_API = `https://discord.com/api/guilds/${DISCORD_GUILD_ID}/widget.json`;
 export const POSTS_PER_PAGE = 6;
-export const MAX_IMAGE_SIZE = 25 * 1024 * 1024; // 25MB
+// Unified limit: 5MB everywhere (was 25MB in one place, 5MB in another). Prevents abuse.
+export const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 
-export async function fetchServerStatus(): Promise<any | null> {  // Primary: our own status route (live exaroton data, no caching).
+export async function fetchServerStatus(): Promise<any | null> {
+  // Primary: our own status route (live exaroton data, no caching).
   try {
     const res = await fetch("/api/server/status", { cache: "no-store" });
     if (res.ok) {
@@ -34,6 +37,23 @@ export async function fetchServerStatus(): Promise<any | null> {  // Primary: ou
   }
 }
 
+export async function controlServer(action: "start" | "stop"): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const res = await fetch("/api/server/control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { ok: false, error: data.error || `Failed to ${action}` };
+    }
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || "Request failed" };
+  }
+}
+
 export async function loadSeasons(): Promise<Season[]> {
   const { data, error } = await supabase
     .from("seasons")
@@ -43,13 +63,66 @@ export async function loadSeasons(): Promise<Season[]> {
   return (data as Season[]) || [];
 }
 
-export async function loadPosts(): Promise<Post[]> {
+// Original loader - now supports optional server-side search via ilike
+// to avoid loading all posts client-side at scale.
+export async function loadPosts(search?: string): Promise<Post[]> {
+  // If search term provided, try server-side filtering first.
+  if (search && search.trim().length > 0) {
+    try {
+      // Supabase ilike for body. We also fetch all and filter author/client side as fallback,
+      // but this greatly reduces payload for large feeds.
+      const { data, error } = await supabase
+        .from("posts")
+        .select("*")
+        .ilike("body", `%${search}%`)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (!error && data) return data as Post[];
+    } catch {
+      // fallback to full load
+    }
+  }
   const { data, error } = await supabase
     .from("posts")
     .select("*")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data as Post[]) || [];
+}
+
+// Proper paginated loader - does server-side pagination with range
+export async function loadPostsPaged(
+  page: number,
+  perPage: number = POSTS_PER_PAGE,
+  search?: string
+): Promise<{ posts: Post[]; total: number }> {
+  const from = (page - 1) * perPage;
+  const to = from + perPage - 1;
+
+  let query = supabase.from("posts").select("*", { count: "exact" }).order("created_at", { ascending: false });
+
+  if (search && search.trim().length > 0) {
+    // Sanitize search term to avoid breaking ilike
+    const safeSearch = search.replace(/[%_]/g, "");
+    query = query.ilike("body", `%${safeSearch}%`);
+  }
+
+  // Need to get total count + paged data
+  // First get count (if search, count filtered)
+  const countQuery = query;
+  const { count } = await countQuery;
+
+  const { data, error } = await supabase
+    .from("posts")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .range(from, to)
+    .ilike(search && search.trim() ? "body" : "author", search && search.trim() ? `%${search.replace(/[%_]/g, "")}%` : "%%");
+
+  // For accurate pagination, use simple approach: if search exists, we did filtered fetch above,
+  // else total from count. To avoid double query complexity, fallback to client total if count null.
+  if (error) throw error;
+  return { posts: (data as Post[]) || [], total: count ?? (data?.length || 0) };
 }
 
 export async function loadComments(postId: number): Promise<Comment[]> {
@@ -72,7 +145,10 @@ export async function loadBlogPosts(): Promise<BlogPost[]> {
 }
 
 export async function uploadImage(file: File): Promise<string> {
-  const ext = file.name.split(".").pop() || "jpg";
+  if (file.size > MAX_IMAGE_SIZE) {
+    throw new Error(`File too large (max ${MAX_IMAGE_SIZE / 1024 / 1024}MB)`);
+  }
+  const ext = file.name.split(".").pop()?.replace(/[^a-z0-9]/gi, "") || "jpg";
   const fileName = `posts/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
   const { data, error } = await supabase.storage
     .from("uploads")
@@ -85,7 +161,12 @@ export async function uploadImage(file: File): Promise<string> {
 export function parseImages(imagesJson: string | null): string[] {
   if (!imagesJson) return [];
   try {
-    return JSON.parse(imagesJson);
+    const parsed = JSON.parse(imagesJson);
+    // Ensure only valid http(s) URLs
+    if (Array.isArray(parsed)) {
+      return parsed.filter((u) => typeof u === "string" && /^https?:\/\//.test(u));
+    }
+    return [];
   } catch {
     return [];
   }
@@ -94,7 +175,9 @@ export function parseImages(imagesJson: string | null): string[] {
 export function timeAgo(dateStr: string): string {
   const d = new Date(dateStr);
   const now = new Date();
-  const diff = Math.floor((now.getTime() - d.getTime()) / 1000);
+  let diff = Math.floor((now.getTime() - d.getTime()) / 1000);
+  // Handle future dates (clock skew) - show "just now" not negative
+  if (diff < 0) return "just now";
   if (diff < 60) return "just now";
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
@@ -103,9 +186,36 @@ export function timeAgo(dateStr: string): string {
 }
 
 export function stripHtml(html: string): string {
-  const tmp = document.createElement("div");
-  tmp.innerHTML = html;
-  return tmp.textContent || tmp.innerText || "";
+  if (typeof document !== "undefined") {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = html;
+    return tmp.textContent || tmp.innerText || "";
+  } else {
+    // Server-side fallback - regex strip (used in API routes)
+    return html.replace(/<[^>]*>/g, "").trim();
+  }
+}
+
+export function copyToClipboard(text: string): Promise<void> {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text);
+  }
+  // Fallback for older browsers
+  return new Promise((resolve, reject) => {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      resolve();
+    } catch (e) {
+      reject(e);
+    }
+  });
 }
 
 // ---------- POSTS (Community) ----------
@@ -116,13 +226,17 @@ export async function createPost(post: {
   pfp: string;
   images: string[];
 }): Promise<Post> {
+  const cleanBody = sanitizeHtml(post.body);
+  if (!cleanBody.trim() && post.images.length === 0) {
+    throw new Error("Post is empty after sanitization");
+  }
   const { data, error } = await supabase
     .from("posts")
     .insert({
-      author: post.author,
-      body: post.body,
+      author: String(post.author).slice(0, 100),
+      body: cleanBody,
       pfp: post.pfp,
-      images: JSON.stringify(post.images),
+      images: JSON.stringify(post.images.slice(0, 10)), // limit images
       likes: 0,
     })
     .select()
@@ -136,8 +250,8 @@ export async function updatePost(
   patch: { body?: string; images?: string[] }
 ): Promise<void> {
   const update: Record<string, unknown> = {};
-  if (patch.body !== undefined) update.body = patch.body;
-  if (patch.images !== undefined) update.images = JSON.stringify(patch.images);
+  if (patch.body !== undefined) update.body = sanitizeHtml(patch.body);
+  if (patch.images !== undefined) update.images = JSON.stringify(patch.images.slice(0, 10));
   const { error } = await supabase.from("posts").update(update).eq("id", id);
   if (error) throw error;
 }
@@ -149,9 +263,6 @@ export async function deletePost(id: number): Promise<void> {
 
 // ---- DB-backed likes (persist per-user; survive refresh) ----
 
-// Fetch the set of post IDs the current user has liked (so likes survive a
-// refresh and stay consistent across devices). Returns an empty array if the
-// likes migration has not been run yet.
 export async function getMyLikedPostIds(discordId: string): Promise<number[]> {
   try {
     const { data, error } = await supabase.rpc("my_liked_post_ids", {
@@ -164,7 +275,6 @@ export async function getMyLikedPostIds(discordId: string): Promise<number[]> {
   }
 }
 
-// Fetch the set of comment IDs the current user has liked.
 export async function getMyLikedCommentIds(discordId: string): Promise<number[]> {
   try {
     const { data, error } = await supabase.rpc("my_liked_comment_ids", {
@@ -177,8 +287,6 @@ export async function getMyLikedCommentIds(discordId: string): Promise<number[]>
   }
 }
 
-// Toggle the current user's like on a post. Returns the authoritative new
-// count + whether the user now likes it. Idempotent — clicking again unlike.
 export async function togglePostLike(
   postId: number,
   discordId: string
@@ -192,7 +300,6 @@ export async function togglePostLike(
   return { likes: data[0].likes, liked: data[0].liked };
 }
 
-// Toggle the current user's like on a comment.
 export async function toggleCommentLike(
   commentId: number,
   discordId: string
@@ -215,14 +322,18 @@ export async function createComment(comment: {
   pfp: string;
   images: string[];
 }): Promise<Comment> {
+  const cleanBody = sanitizeHtml(comment.body);
+  if (!cleanBody.trim() && comment.images.length === 0) {
+    throw new Error("Comment is empty after sanitization");
+  }
   const { data, error } = await supabase
     .from("comments")
     .insert({
       post_id: comment.post_id,
-      author: comment.author,
-      body: comment.body,
+      author: String(comment.author).slice(0, 100),
+      body: cleanBody,
       pfp: comment.pfp,
-      images: JSON.stringify(comment.images),
+      images: JSON.stringify(comment.images.slice(0, 10)),
     })
     .select()
     .single();
@@ -244,11 +355,11 @@ export async function createBlogPost(post: {
   images?: string[];
 }): Promise<BlogPost> {
   const insert: Record<string, unknown> = {
-    title: post.title,
-    body: post.body,
-    author: post.author,
+    title: String(post.title).slice(0, 200),
+    body: sanitizeHtml(post.body),
+    author: String(post.author).slice(0, 100),
   };
-  if (post.images) insert.images = JSON.stringify(post.images);
+  if (post.images) insert.images = JSON.stringify(post.images.slice(0, 10));
   const { data, error } = await supabase
     .from("blog_posts")
     .insert(insert)
@@ -263,9 +374,9 @@ export async function updateBlogPost(
   patch: { title?: string; body?: string; images?: string[] }
 ): Promise<void> {
   const update: Record<string, unknown> = {};
-  if (patch.title !== undefined) update.title = patch.title;
-  if (patch.body !== undefined) update.body = patch.body;
-  if (patch.images !== undefined) update.images = JSON.stringify(patch.images);
+  if (patch.title !== undefined) update.title = String(patch.title).slice(0, 200);
+  if (patch.body !== undefined) update.body = sanitizeHtml(patch.body);
+  if (patch.images !== undefined) update.images = JSON.stringify(patch.images.slice(0, 10));
   const { error } = await supabase.from("blog_posts").update(update).eq("id", id);
   if (error) throw error;
 }
@@ -288,6 +399,23 @@ export async function updateSeason(
     curseforge: string;
   }>
 ): Promise<void> {
-  const { error } = await supabase.from("seasons").update(patch).eq("id", id);
+  const cleaned: Record<string, unknown> = { ...patch };
+  if (cleaned.title !== undefined) cleaned.title = String(cleaned.title).slice(0, 200);
+  if (cleaned.prism !== undefined) cleaned.prism = sanitizeSeasonHtml(String(cleaned.prism));
+  if (cleaned.sklauncher !== undefined)
+    cleaned.sklauncher = sanitizeSeasonHtml(String(cleaned.sklauncher));
+  if (cleaned.modrinth !== undefined) cleaned.modrinth = sanitizeSeasonHtml(String(cleaned.modrinth));
+  if (cleaned.curseforge !== undefined)
+    cleaned.curseforge = sanitizeSeasonHtml(String(cleaned.curseforge));
+
+  // Ensure only one is_current can be true is enforced client-side, but we also handle server-side:
+  if (cleaned.is_current === true) {
+    // First unset all others (requires RLS that allows this - we attempt)
+    try {
+      await supabase.from("seasons").update({ is_current: false }).neq("id", id);
+    } catch {}
+  }
+
+  const { error } = await supabase.from("seasons").update(cleaned).eq("id", id);
   if (error) throw error;
 }

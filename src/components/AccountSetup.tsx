@@ -37,7 +37,7 @@ export default function AccountSetup() {
     <div className="splash">
       <div className="splash__inner" style={{ maxWidth: 460 }}>
         <img className="splash__logo" src="/img/logo.png" alt="TechSteal" />
-        <h2 style={{ textAlign: "center", margin: "10px 0 20px", fontFamily: "Rajdhani, sans-serif" }}>
+        <h2 style={{ textAlign: "center", margin: "10px 0 20px", fontFamily: "'Barlow Condensed', Impact, sans-serif", textTransform: "uppercase", fontWeight: 800 }}>
           Welcome to TechSteal
         </h2>
         <p style={{ textAlign: "center", opacity: 0.8, marginBottom: 24, fontSize: 14 }}>

@@ -8,11 +8,9 @@ import {
 } from "@/lib/discord";
 import { DISCORD_GUILD_ID } from "@/lib/api";
 import { fetchUserRole, findUser } from "@/lib/supabase";
+import { signSession, getSessionCookieOptions, getSessionCookieName } from "@/lib/session";
 
 // GET /api/auth/callback
-// Discord redirects here with ?code=...&state=...
-// We exchange the code for an access token (server-side, secret stays hidden),
-// fetch the user profile, look up their role, and set a session cookie.
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const code = searchParams.get("code");
@@ -26,17 +24,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL("/?login_error=missing_params", req.url));
   }
 
-  // Verify state matches the cookie we set in /api/auth/discord
   const cookieState = req.cookies.get("discord_oauth_state")?.value;
   if (!cookieState || cookieState !== state) {
     return NextResponse.redirect(new URL("/?login_error=state_mismatch", req.url));
   }
 
-  // Derive the origin from the request so the redirect URI matches what we
-  // sent to Discord in the authorize step.
   const origin = req.nextUrl.origin;
 
-  // Exchange the authorization code for an access token.
   let tokenRes: Response;
   try {
     tokenRes = await fetch(DISCORD_TOKEN_URL, {
@@ -62,7 +56,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL("/?login_error=no_access_token", req.url));
   }
 
-  // Fetch the Discord user profile.
   let userRes: Response;
   try {
     userRes = await fetch(DISCORD_USER_URL, {
@@ -82,44 +75,44 @@ export async function GET(req: NextRequest) {
     ? `https://cdn.discordapp.com/avatars/${discordId}/${discordUser.avatar}.png?size=128`
     : `https://cdn.discordapp.com/embed/avatars/${Number(discordUser.discriminator || 0) % 5}.png`;
 
-  // Verify the user is a member of the TechSteal Discord server.
-  // We use the "guilds" OAuth scope to read the user's guild list and check
-  // for our guild id. This gates server controls (start/stop) on membership.
+  // Verify guild membership with pagination handling (Discord returns max 100 guilds per request)
   let inGuild = false;
   try {
-    const guildsRes = await fetch("https://discord.com/api/users/@me/guilds", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (guildsRes.ok) {
+    let after: string | undefined;
+    let attempts = 0;
+    while (!inGuild && attempts < 5) {
+      attempts++;
+      const url = new URL("https://discord.com/api/users/@me/guilds");
+      url.searchParams.set("limit", "100");
+      if (after) url.searchParams.set("after", after);
+      const guildsRes = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!guildsRes.ok) break;
       const guilds = await guildsRes.json();
-      inGuild = Array.isArray(guilds) && guilds.some((g: any) => String(g.id) === DISCORD_GUILD_ID);
+      if (!Array.isArray(guilds) || guilds.length === 0) break;
+      if (guilds.some((g: any) => String(g.id) === DISCORD_GUILD_ID)) {
+        inGuild = true;
+        break;
+      }
+      // Pagination: continue if we got 100 results (might be more)
+      if (guilds.length < 100) break;
+      after = String(guilds[guilds.length - 1].id);
     }
   } catch {
     inGuild = false;
   }
 
-  // Look up the user's role from the database.
   const role = await fetchUserRole(discordId);
-
-  // Check if this is a brand-new user (not yet in user_roles).
   const existingUser = await findUser(discordId);
   const isNewUser = !existingUser;
 
-  // Build the session payload and store it in an httpOnly cookie.
-  // NOTE: This is a simple unsigned session. For production, sign this JWT
-  // with a secret or use Supabase Auth sessions instead.
-  const session = { discordId, username, avatar, role, isNewUser, inGuild };
-  const res = NextResponse.redirect(
-    new URL(isNewUser ? "/?setup=1" : "/", req.url)
-  );
-  res.cookies.set("ts_session", JSON.stringify(session), {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 7, // 7 days
-    path: "/",
-  });
-  // Clear the state cookie.
+  // Build secure signed JWT session
+  const sessionPayload = { discordId, username, avatar, role, isNewUser, inGuild };
+  const signed = await signSession(sessionPayload as any);
+
+  const res = NextResponse.redirect(new URL(isNewUser ? "/?setup=1" : "/", req.url));
+  res.cookies.set(getSessionCookieName(), signed, getSessionCookieOptions());
   res.cookies.delete("discord_oauth_state");
   return res;
 }

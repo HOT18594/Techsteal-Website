@@ -1,14 +1,30 @@
-﻿import { createClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+if (!supabaseUrl || !supabaseAnonKey) {
+  if (typeof window === "undefined") {
+    console.warn(
+      "[supabase] Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY. Check .env.local"
+    );
+  }
+}
+
+// Fallback to dummy values during build so `next build` doesn't crash when env is missing.
+// At runtime, real env must be present.
+export const supabase = createClient(
+  supabaseUrl || "https://placeholder.supabase.co",
+  supabaseAnonKey || "placeholder-anon-key"
+);
 
 // Server-side admin client using the service role key (for privileged ops).
 // Only use in API routes / server components — never expose to the browser.
 export const supabaseAdmin = process.env.SUPABASE_SERVICE_ROLE_KEY
-  ? createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY)
+  ? createClient(
+      supabaseUrl || "https://placeholder.supabase.co",
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    )
   : null;
 
 export type Post = {

@@ -6,7 +6,6 @@ import {
   loadPosts,
   loadComments,
   createPost,
-  updatePost,
   deletePost,
   getMyLikedPostIds,
   getMyLikedCommentIds,
@@ -26,9 +25,12 @@ import { supabase } from "@/lib/supabase";
 import RichTextEditor from "@/components/RichTextEditor";
 import Lightbox from "@/components/Lightbox";
 import ConfirmModal from "@/components/ConfirmModal";
+import { sanitizeHtml } from "@/lib/sanitize";
+import { useToast } from "@/components/Toast";
 
 export default function Community() {
   const { user, canAdmin } = useAuth();
+  const { showToast } = useToast();
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -52,12 +54,8 @@ export default function Community() {
   const [lightboxImages, setLightboxImages] = useState<string[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
-  // In-app delete confirmation (replaces native confirm())
   const [pendingDelete, setPendingDelete] = useState<null | { kind: "post" | "comment"; id: number }>(null);
 
-  // Which posts/comments THIS user has liked. Restored from the DB on load so
-  // a refresh (or a different browser) cannot re-like. Source of truth stays
-  // server-side in post_likes / comment_likes.
   const [likedPosts, setLikedPosts] = useState<Set<number>>(new Set());
   const [likedComments, setLikedComments] = useState<Set<number>>(new Set());
   const [likesHydrated, setLikesHydrated] = useState(false);
@@ -67,15 +65,12 @@ export default function Community() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const commentFileInputRef = useRef<HTMLInputElement>(null);
 
-  // True only while we are restoring the user's like state from the DB.
-  // Used to suppress the like buttons until we know their real state.
   const restoringLikes = !likesHydrated && !!user?.discordId;
 
   useEffect(() => {
     loadData();
   }, [page, search]);
 
-  // Restore which posts/comments the current user has already liked.
   useEffect(() => {
     if (!user?.discordId) {
       setLikedPosts(new Set());
@@ -99,12 +94,6 @@ export default function Community() {
     };
   }, [user?.discordId]);
 
-  // Live sync: subscribe to Supabase Realtime so posts/comments created or
-  // deleted by anyone (other user, another tab, mobile) show up without a
-  // manual refresh. We only react to INSERT/DELETE here — like toggles are
-  // already handled optimistically + via RPC, so refetching on every UPDATE
-  // would just cause flicker. Requires the REALTIME migration (tables added
-  // to the supabase_realtime publication) to be run once in Supabase.
   useEffect(() => {
     const channel = supabase
       .channel("community-feed")
@@ -145,10 +134,6 @@ export default function Community() {
     };
   }, [selectedPost?.id]);
 
-  // Periodic refresh so posts/comments stay in sync across users, tabs, and
-  // devices even if Supabase Realtime isn't enabled. Gentle 15s poll. The
-  // realtime subscription above enhances this when the REALTIME migration has
-  // been run; the poller is the baseline that always works.
   useEffect(() => {
     const tick = () => {
       loadData();
@@ -163,10 +148,13 @@ export default function Community() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const all = await loadPosts();
-      const filtered = search
-        ? all.filter((p) => stripHtml(p.body).toLowerCase().includes(search.toLowerCase()))
-        : all;
+      // Use server-side filtered load if search exists
+      const all = await loadPosts(search || undefined);
+      let filtered = all;
+      if (search) {
+        const q = search.toLowerCase();
+        filtered = all.filter((p) => stripHtml(p.body).toLowerCase().includes(q) || p.author.toLowerCase().includes(q));
+      }
       setTotal(filtered.length);
       const start = (page - 1) * POSTS_PER_PAGE;
       setPosts(filtered.slice(start, start + POSTS_PER_PAGE));
@@ -189,15 +177,19 @@ export default function Community() {
       const urls: string[] = [];
       for (const file of Array.from(files)) {
         if (file.size > MAX_IMAGE_SIZE) {
-          alert(`"${file.name}" is too large (max 25MB).`);
+          showToast(`"${file.name}" is too large (max ${MAX_IMAGE_SIZE / 1024 / 1024}MB).`, "error");
           continue;
         }
-        const url = await uploadImage(file);
-        urls.push(url);
+        try {
+          const url = await uploadImage(file);
+          urls.push(url);
+        } catch (e: any) {
+          showToast(e?.message || "Image upload failed.", "error");
+        }
       }
-      setComposerImages((prev) => [...prev, ...urls]);
-    } catch (err) {
-      alert("Image upload failed.");
+      if (urls.length) setComposerImages((prev) => [...prev, ...urls]);
+    } catch {
+      showToast("Image upload failed.", "error");
     }
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -209,13 +201,20 @@ export default function Community() {
     try {
       const urls: string[] = [];
       for (const file of Array.from(files)) {
-        if (file.size > MAX_IMAGE_SIZE) continue;
-        const url = await uploadImage(file);
-        urls.push(url);
+        if (file.size > MAX_IMAGE_SIZE) {
+          showToast(`"${file.name}" too large.`, "error");
+          continue;
+        }
+        try {
+          const url = await uploadImage(file);
+          urls.push(url);
+        } catch (e: any) {
+          showToast(e?.message || "Upload failed", "error");
+        }
       }
-      setCommentImages((prev) => [...prev, ...urls]);
+      if (urls.length) setCommentImages((prev) => [...prev, ...urls]);
     } catch {
-      alert("Image upload failed.");
+      showToast("Image upload failed.", "error");
     }
     setCommentUploading(false);
     if (commentFileInputRef.current) commentFileInputRef.current.value = "";
@@ -224,7 +223,7 @@ export default function Community() {
   const submitPost = async () => {
     const text = stripHtml(composerHtml).trim();
     if (!text && composerImages.length === 0) {
-      alert("Write something or add an image.");
+      showToast("Write something or add an image.", "error");
       return;
     }
     try {
@@ -239,20 +238,18 @@ export default function Community() {
       setComposerOpen(false);
       setPage(1);
       setSearch("");
+      showToast("Post created!", "success");
       loadData();
-    } catch {
-      alert("Failed to create post.");
+    } catch (e: any) {
+      showToast(e?.message || "Failed to create post.", "error");
     }
   };
 
-  // Toggle the current user's like on a post. The DB is the source of truth,
-  // so even after a refresh the liked state is restored and cannot be re-liked.
   const togglePostLikeFn = async (post: Post) => {
     if (!user?.discordId || likingPostIds.includes(post.id)) return;
     const wasLiked = likedPosts.has(post.id);
     const optimisticLikes = Math.max(0, (post.likes || 0) + (wasLiked ? -1 : 1));
 
-    // Optimistic UI for both the list card and the open detail view.
     setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, likes: optimisticLikes } : p)));
     setSelectedPost((prev) => (prev?.id === post.id ? { ...prev, likes: optimisticLikes } : prev));
     setLikedPosts((prev) => {
@@ -274,7 +271,6 @@ export default function Community() {
         return next;
       });
     } catch {
-      // Revert on failure.
       setPosts((prev) => prev.map((p) => (p.id === post.id ? post : p)));
       setSelectedPost((prev) => (prev?.id === post.id ? post : prev));
       setLikedPosts((prev) => {
@@ -283,13 +279,12 @@ export default function Community() {
         else next.delete(post.id);
         return next;
       });
-      alert("Could not update like. Please try again.");
+      showToast("Could not update like. Please try again.", "error");
     } finally {
       setLikingPostIds((prev) => prev.filter((id) => id !== post.id));
     }
   };
 
-  // Toggle the current user's like on a comment (persisted, refresh-safe).
   const toggleCommentLikeFn = async (comment: Comment) => {
     if (!user?.discordId || likingCommentIds.includes(comment.id)) return;
     const wasLiked = likedComments.has(comment.id);
@@ -321,7 +316,7 @@ export default function Community() {
         else next.delete(comment.id);
         return next;
       });
-      alert("Could not update like. Please try again.");
+      showToast("Could not update like. Please try again.", "error");
     } finally {
       setLikingCommentIds((prev) => prev.filter((id) => id !== comment.id));
     }
@@ -343,7 +338,7 @@ export default function Community() {
     if (!selectedPost) return;
     const text = stripHtml(commentHtml).trim();
     if (!text && commentImages.length === 0) {
-      alert("Write a comment or add an image.");
+      showToast("Write a comment or add an image.", "error");
       return;
     }
     try {
@@ -356,10 +351,11 @@ export default function Community() {
       });
       setCommentHtml("");
       setCommentImages([]);
+      showToast("Comment posted!", "success");
       const c = await loadComments(selectedPost.id);
       setComments(c);
-    } catch {
-      alert("Failed to post comment.");
+    } catch (e: any) {
+      showToast(e?.message || "Failed to post comment.", "error");
     }
   };
 
@@ -379,16 +375,18 @@ export default function Community() {
       if (target.kind === "post") {
         await deletePost(target.id);
         setSelectedPost(null);
+        showToast("Post deleted", "success");
         loadData();
       } else {
         await deleteComment(target.id);
+        showToast("Comment deleted", "success");
         if (selectedPost) {
           const c = await loadComments(selectedPost.id);
           setComments(c);
         }
       }
     } catch {
-      alert(`Failed to delete ${target.kind}.`);
+      showToast(`Failed to delete ${target.kind}.`, "error");
     }
   };
 
@@ -431,7 +429,7 @@ export default function Community() {
             </div>
           )}
         </div>
-        <div className="post-detail__body" dangerouslySetInnerHTML={{ __html: selectedPost.body }} />
+        <div className="post-detail__body" dangerouslySetInnerHTML={{ __html: sanitizeHtml(selectedPost.body) }} />
         {images.length > 0 && (
           <div className={`post-detail__images post-detail__images--${Math.min(images.length, 4)}`}>
             {images.map((img, i) => (
@@ -467,7 +465,6 @@ export default function Community() {
           </span>
         </div>
 
-        {/* Comments */}
         <div className="comments-section">
           <div className="comments-section__title">
             Comments <span className="comments-section__count">({comments.length})</span>
@@ -481,7 +478,7 @@ export default function Community() {
                 </svg>
                 Add Image
               </button>
-              <span className="add-media-hint">Images are uploaded to Supabase Storage.</span>
+              <span className="add-media-hint">Images are uploaded to Supabase Storage (max {MAX_IMAGE_SIZE / 1024 / 1024}MB).</span>
               <input
                 ref={commentFileInputRef}
                 type="file"
@@ -545,7 +542,7 @@ export default function Community() {
                       </div>
                     )}
                   </div>
-                  <div className="comment__body" dangerouslySetInnerHTML={{ __html: c.body }} />
+                  <div className="comment__body" dangerouslySetInnerHTML={{ __html: sanitizeHtml(c.body) }} />
                   {cImages.length > 0 && (
                     <div className="comment__images">
                       {cImages.map((img, i) => (
@@ -594,7 +591,6 @@ export default function Community() {
     );
   }
 
-  // ---------- LIST VIEW ----------
   return (
     <div>
       <div className="community-toolbar">
@@ -621,7 +617,6 @@ export default function Community() {
         <div className="community-stats">{total} posts</div>
       </div>
 
-      {/* Composer */}
       <div className="card composer-card">
         <div className="composer-header">
           <span className="composer-header__title">Share something</span>
@@ -637,7 +632,7 @@ export default function Community() {
                 </svg>
                 Add Image
               </button>
-              <span className="add-media-hint">Images are uploaded to Supabase Storage.</span>
+              <span className="add-media-hint">Images are uploaded to Supabase Storage (max {MAX_IMAGE_SIZE / 1024 / 1024}MB).</span>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -682,7 +677,6 @@ export default function Community() {
         )}
       </div>
 
-      {/* Posts */}
       {loading ? (
         <div className="status-spinner-wrapper">
           <div className="status-spinner" />
@@ -720,7 +714,7 @@ export default function Community() {
                   <div className="post-card__time">{timeAgo(post.created_at)}</div>
                 </div>
               </div>
-              <div className="post-card__body" dangerouslySetInnerHTML={{ __html: post.body }} />
+              <div className="post-card__body" dangerouslySetInnerHTML={{ __html: sanitizeHtml(post.body) }} />
               {images.length > 0 && (
                 <div className={`post-card__images post-card__images--${Math.min(images.length, 4)}`}>
                   {images.slice(0, 4).map((img, i) => (
@@ -763,7 +757,6 @@ export default function Community() {
         })
       )}
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="pagination">
           <button disabled={page === 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
