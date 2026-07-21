@@ -37,12 +37,14 @@ export async function fetchServerStatus(): Promise<any | null> {
   }
 }
 
-export async function controlServer(action: "start" | "stop"): Promise<{ ok: boolean; error?: string }> {
+export async function controlServer(action: "start" | "stop", code?: string): Promise<{ ok: boolean; error?: string }> {
   try {
+    const body: any = { action };
+    if (code) body.code = code;
     const res = await fetch("/api/server/control", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action }),
+      body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
