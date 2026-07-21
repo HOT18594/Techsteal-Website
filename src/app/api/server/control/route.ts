@@ -21,20 +21,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Must be in Discord guild to control server (as per DESIGN.md)
-  const finalSession = session as any;
-  // If we had legacy session, we check inGuild from parsed legacy
-  let inGuild = finalSession?.inGuild;
-  if (inGuild === undefined) {
-    try {
-      const legacy = JSON.parse(raw);
-      inGuild = legacy?.inGuild;
-    } catch {}
-  }
-  if (!inGuild) {
-    return NextResponse.json({ error: "You must be a member of the Discord server to control the Minecraft server." }, { status: 403 });
-  }
-
   const token = process.env.EXAROTON_TOKEN;
   const serverId = process.env.EXAROTON_SERVER_ID;
 
@@ -45,16 +31,37 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let action: string | undefined;
+  // Parse body early — needed for both SERVER_CONTROL_CODE bypass and action
+  let body: any;
   try {
-    const body = await req.json();
-    action = body?.action;
+    body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
+  const action: string | undefined = body?.action;
   if (action !== "start" && action !== "stop") {
     return NextResponse.json({ error: "action must be 'start' or 'stop'." }, { status: 400 });
+  }
+
+  // Check for SERVER_CONTROL_CODE bypass (allows control without Discord guild membership)
+  const serverControlBypass =
+    Boolean(body?.code) &&
+    Boolean(process.env.SERVER_CONTROL_CODE) &&
+    body.code === process.env.SERVER_CONTROL_CODE;
+
+  // Must be in Discord guild to control server (as per DESIGN.md) — unless bypassed with SERVER_CONTROL_CODE
+  const finalSession = session as any;
+  // If we had legacy session, we check inGuild from parsed legacy
+  let inGuild = finalSession?.inGuild;
+  if (inGuild === undefined) {
+    try {
+      const legacy = JSON.parse(raw);
+      inGuild = legacy?.inGuild;
+    } catch {}
+  }
+  if (!inGuild && !serverControlBypass) {
+    return NextResponse.json({ error: "You must be a member of the Discord server to control the Minecraft server." }, { status: 403 });
   }
 
   // Only admins can stop server (destructive). Members can start.
