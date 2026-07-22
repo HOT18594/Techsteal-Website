@@ -227,6 +227,7 @@ export async function createPost(post: {
   body: string;
   pfp: string;
   images: string[];
+  discordId: string; // required for ownership RLS
 }): Promise<Post> {
   const cleanBody = sanitizeHtml(post.body);
   if (!cleanBody.trim() && post.images.length === 0) {
@@ -240,6 +241,7 @@ export async function createPost(post: {
       pfp: post.pfp,
       images: JSON.stringify(post.images.slice(0, 10)), // limit images
       likes: 0,
+      discord_id: post.discordId,
     })
     .select()
     .single();
@@ -323,6 +325,7 @@ export async function createComment(comment: {
   body: string;
   pfp: string;
   images: string[];
+  discordId: string; // required for ownership RLS
 }): Promise<Comment> {
   const cleanBody = sanitizeHtml(comment.body);
   if (!cleanBody.trim() && comment.images.length === 0) {
@@ -336,6 +339,7 @@ export async function createComment(comment: {
       body: cleanBody,
       pfp: comment.pfp,
       images: JSON.stringify(comment.images.slice(0, 10)),
+      discord_id: comment.discordId,
     })
     .select()
     .single();
@@ -355,11 +359,13 @@ export async function createBlogPost(post: {
   body: string;
   author: string;
   images?: string[];
+  discordId: string; // required for ownership RLS
 }): Promise<BlogPost> {
   const insert: Record<string, unknown> = {
     title: String(post.title).slice(0, 200),
     body: sanitizeHtml(post.body),
     author: String(post.author).slice(0, 100),
+    discord_id: post.discordId,
   };
   if (post.images) insert.images = JSON.stringify(post.images.slice(0, 10));
   const { data, error } = await supabase
@@ -404,11 +410,9 @@ export async function updateSeason(
   const cleaned: Record<string, unknown> = { ...patch };
   if (cleaned.title !== undefined) cleaned.title = String(cleaned.title).slice(0, 200);
   if (cleaned.prism !== undefined) cleaned.prism = sanitizeSeasonHtml(String(cleaned.prism));
-  if (cleaned.sklauncher !== undefined)
-    cleaned.sklauncher = sanitizeSeasonHtml(String(cleaned.sklauncher));
+  if (cleaned.sklauncher !== undefined) cleaned.sklauncher = sanitizeSeasonHtml(String(cleaned.sklauncher));
   if (cleaned.modrinth !== undefined) cleaned.modrinth = sanitizeSeasonHtml(String(cleaned.modrinth));
-  if (cleaned.curseforge !== undefined)
-    cleaned.curseforge = sanitizeSeasonHtml(String(cleaned.curseforge));
+  if (cleaned.curseforge !== undefined) cleaned.curseforge = sanitizeSeasonHtml(String(cleaned.curseforge));
 
   // Ensure only one is_current can be true is enforced client-side, but we also handle server-side:
   if (cleaned.is_current === true) {

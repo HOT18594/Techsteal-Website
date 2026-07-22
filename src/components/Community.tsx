@@ -221,29 +221,30 @@ export default function Community() {
   };
 
   const submitPost = async () => {
-    const text = stripHtml(composerHtml).trim();
-    if (!text && composerImages.length === 0) {
-      showToast("Write something or add an image.", "error");
-      return;
-    }
-    try {
-      await createPost({
-        author: user?.username || "Anonymous",
-        body: composerHtml,
-        pfp: user?.avatar || "",
-        images: composerImages,
-      });
-      setComposerHtml("");
-      setComposerImages([]);
-      setComposerOpen(false);
-      setPage(1);
-      setSearch("");
-      showToast("Post created!", "success");
-      loadData();
-    } catch (e: any) {
-      showToast(e?.message || "Failed to create post.", "error");
-    }
-  };
+      const text = stripHtml(composerHtml).trim();
+      if (!text && composerImages.length === 0) {
+        showToast("Write something or add an image.", "error");
+        return;
+      }
+      try {
+        await createPost({
+          author: user?.username || "Anonymous",
+          body: composerHtml,
+          pfp: user?.avatar || "",
+          images: composerImages,
+          discordId: user?.discordId || "",
+        });
+        setComposerHtml("");
+        setComposerImages([]);
+        setComposerOpen(false);
+        setPage(1);
+        setSearch("");
+        showToast("Post created!", "success");
+        loadData();
+      } catch (e: any) {
+        showToast(e?.message || "Failed to create post.", "error");
+      }
+    };
 
   const togglePostLikeFn = async (post: Post) => {
     if (!user?.discordId || likingPostIds.includes(post.id)) return;
@@ -335,29 +336,30 @@ export default function Community() {
   };
 
   const submitComment = async () => {
-    if (!selectedPost) return;
-    const text = stripHtml(commentHtml).trim();
-    if (!text && commentImages.length === 0) {
-      showToast("Write a comment or add an image.", "error");
-      return;
-    }
-    try {
-      await createComment({
-        post_id: selectedPost.id,
-        author: user?.username || "Anonymous",
-        body: commentHtml,
-        pfp: user?.avatar || "",
-        images: commentImages,
-      });
-      setCommentHtml("");
-      setCommentImages([]);
-      showToast("Comment posted!", "success");
-      const c = await loadComments(selectedPost.id);
-      setComments(c);
-    } catch (e: any) {
-      showToast(e?.message || "Failed to post comment.", "error");
-    }
-  };
+      if (!selectedPost) return;
+      const text = stripHtml(commentHtml).trim();
+      if (!text && commentImages.length === 0) {
+        showToast("Write a comment or add an image.", "error");
+        return;
+      }
+      try {
+        await createComment({
+          post_id: selectedPost.id,
+          author: user?.username || "Anonymous",
+          body: commentHtml,
+          pfp: user?.avatar || "",
+          images: commentImages,
+          discordId: user?.discordId || "",
+        });
+        setCommentHtml("");
+        setCommentImages([]);
+        showToast("Comment posted!", "success");
+        const c = await loadComments(selectedPost.id);
+        setComments(c);
+      } catch (e: any) {
+        showToast(e?.message || "Failed to post comment.", "error");
+      }
+    };
 
   const handleDeletePost = async (id: number) => {
     setPendingDelete({ kind: "post", id });

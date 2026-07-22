@@ -113,28 +113,28 @@ export default function Blog() {
   };
 
   const savePost = async () => {
-    if (!title.trim()) {
-      showToast("Please enter a title.", "error");
-      return;
-    }
-    const text = stripHtml(body).trim();
-    if (!text) {
-      showToast("Please enter some content.", "error");
-      return;
-    }
-    try {
-      if (editingId) {
-        await updateBlogPost(editingId, { title, body, images });
-      } else {
-        await createBlogPost({ title, body, author: user?.username || "Anonymous", images });
+      if (!title.trim()) {
+        showToast("Please enter a title.", "error");
+        return;
       }
-      showToast(editingId ? "Post updated!" : "Post created!", "success");
-      closeEditor();
-      loadData();
-    } catch {
-      showToast("Failed to save blog post.", "error");
-    }
-  };
+      const text = stripHtml(body).trim();
+      if (!text) {
+        showToast("Please enter some content.", "error");
+        return;
+      }
+      try {
+        if (editingId) {
+          await updateBlogPost(editingId, { title, body, images });
+        } else {
+          await createBlogPost({ title, body, author: user?.username || "Anonymous", images, discordId: user?.discordId || "" });
+        }
+        showToast(editingId ? "Post updated!" : "Post created!", "success");
+        closeEditor();
+        loadData();
+      } catch {
+        showToast("Failed to save blog post.", "error");
+      }
+    };
 
   const handleDelete = (id: number) => {
     setPendingDeleteId(id);

@@ -1,5 +1,6 @@
 // Secure session handling - JWT signed with HS256 using jose.
 // Replaces unsigned JSON cookie that allowed privilege escalation.
+// CRITICAL: SESSION_SECRET MUST be set in production. No fallbacks to other secrets.
 
 import { SignJWT, jwtVerify } from "jose";
 import type { AuthUser } from "./auth-context";
@@ -8,11 +9,22 @@ const SESSION_COOKIE_NAME = "ts_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 
 function getSecret(): Uint8Array {
-  const raw =
-    process.env.SESSION_SECRET ||
-    process.env.ADMIN_UNLOCK_CODE ||
-    process.env.DISCORD_CLIENT_SECRET ||
-    "dev-secret-please-set-a-strong-secret-in-prod-32chars";
+  const raw = process.env.SESSION_SECRET;
+  if (!raw) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "SESSION_SECRET environment variable is required in production. Generate with: openssl rand -base64 32"
+      );
+    }
+    // Dev-only fallback - predictable but acceptable for local development
+    console.warn(
+      "[session] WARNING: SESSION_SECRET not set, using dev fallback. DO NOT USE IN PRODUCTION."
+    );
+    return new TextEncoder().encode("dev-secret-please-set-a-strong-secret-in-prod-32chars!!");
+  }
+  if (raw.length < 32) {
+    throw new Error("SESSION_SECRET must be at least 32 characters");
+  }
   return new TextEncoder().encode(raw);
 }
 
