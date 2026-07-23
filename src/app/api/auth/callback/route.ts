@@ -48,7 +48,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(new URL("/?login_error=token_request_failed", req.url));
   }
   if (!tokenRes.ok) {
-    return NextResponse.redirect(new URL("/?login_error=token_exchange_failed", req.url));
+    let tokenError = "unknown";
+    try {
+      const rawError = await tokenRes.text();
+      const parsedError = rawError ? JSON.parse(rawError) : null;
+      tokenError = parsedError?.error || parsedError?.error_description || rawError || "unknown";
+      console.error("Discord token exchange failed", {
+        status: tokenRes.status,
+        error: parsedError?.error,
+        errorDescription: parsedError?.error_description,
+        rawError,
+        redirectUri: getRedirectUri(origin),
+      });
+    } catch {
+      console.error("Discord token exchange failed", {
+        status: tokenRes.status,
+        redirectUri: getRedirectUri(origin),
+      });
+    }
+    return NextResponse.redirect(new URL(`/?login_error=token_exchange_failed&token_error=${encodeURIComponent(tokenError)}`, req.url));
   }
   const tokenData = await tokenRes.json();
   const accessToken = tokenData.access_token;

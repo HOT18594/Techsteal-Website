@@ -13,6 +13,7 @@ export default function Splash() {
       const params = new URLSearchParams(window.location.search);
       const loginError = params.get("login_error");
       if (loginError) {
+        const tokenError = params.get("token_error");
         const messages: Record<string, string> = {
           state_mismatch: "Login failed: session expired. Please try again.",
           missing_params: "Login failed: missing parameters.",
@@ -21,10 +22,11 @@ export default function Splash() {
           no_access_token: "Login failed: no access token.",
           user_fetch_failed: "Login failed: could not fetch your Discord profile.",
         };
-        setError(messages[loginError] || `Login failed: ${loginError}`);
+        setError(tokenError ? `${messages[loginError] || `Login failed: ${loginError}`} (${tokenError})` : messages[loginError] || `Login failed: ${loginError}`);
         // Clean URL
         const url = new URL(window.location.href);
         url.searchParams.delete("login_error");
+        url.searchParams.delete("token_error");
         window.history.replaceState({}, "", url.toString());
       }
       const setup = params.get("setup");
