@@ -27,8 +27,13 @@ export default function AccountSetup() {
     }
 
     setSubmitting(true);
-    await completeSetup(trimmed);
-    setSubmitting(false);
+    try {
+      await completeSetup(trimmed);
+    } catch (e: any) {
+      setError(e?.message || "Failed to create account. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
     // completeSetup updates the user state in context; the app shell will
     // re-render and show the main app because isNewUser becomes false.
   };

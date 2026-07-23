@@ -12,8 +12,6 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [controlling, setControlling] = useState<"start" | "stop" | null>(null);
-  const [unlockCode, setUnlockCode] = useState("");
-  const [showUnlock, setShowUnlock] = useState(false);
   const { user } = useAuth();
   const { showToast } = useToast();
 
@@ -41,7 +39,7 @@ export default function Home() {
   const handleServerAction = async (action: "start" | "stop") => {
     if (controlling) return;
     setControlling(action);
-    const res = await controlServer(action, unlockCode || undefined);
+    const res = await controlServer(action);
     if (res.ok) {
       showToast(action === "start" ? "Server start requested!" : "Server stop requested!", "success");
       // Refresh after a short delay
@@ -175,31 +173,6 @@ export default function Home() {
                     </span>
                   )}
                 </div>
-              ) : showUnlock ? (
-                <div className="server-unlock">
-                  <input
-                    className="server-unlock__input"
-                    type="password"
-                    placeholder="Enter server control code…"
-                    value={unlockCode}
-                    onChange={(e) => setUnlockCode(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleServerAction("start")}
-                  />
-                  <button
-                    className="btn btn--start"
-                    onClick={() => handleServerAction("start")}
-                    disabled={!!controlling || online || !unlockCode.trim()}
-                    title={online ? "Server is already online" : unlockCode.trim() ? "Start the server" : "Enter a code first"}
-                  >
-                    {controlling === "start" ? "Starting…" : "Start Server"}
-                  </button>
-                  <button
-                    className="btn btn--ghost"
-                    onClick={() => { setShowUnlock(false); setUnlockCode(""); }}
-                  >
-                    Cancel
-                  </button>
-                </div>
               ) : (
                 <div className="server-locked-group">
                   <a
@@ -211,13 +184,6 @@ export default function Home() {
                   >
                     🔒 Join Discord to control server
                   </a>
-                  <button
-                    className="btn btn--ghost server-unlock-btn"
-                    onClick={() => setShowUnlock(true)}
-                    title="Use a server control code instead"
-                  >
-                    🔑 Unlock with code
-                  </button>
                 </div>
               )}
             </div>

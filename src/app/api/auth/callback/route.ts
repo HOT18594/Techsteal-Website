@@ -4,9 +4,9 @@ import {
   DISCORD_CLIENT_SECRET,
   DISCORD_TOKEN_URL,
   DISCORD_USER_URL,
+  DISCORD_GUILD_ID,
   getRedirectUri,
 } from "@/lib/discord";
-import { DISCORD_GUILD_ID } from "@/lib/api";
 import { fetchUserRole, findUser } from "@/lib/supabase";
 import { signSession, getSessionCookieOptions, getSessionCookieName } from "@/lib/session";
 
@@ -107,8 +107,11 @@ export async function GET(req: NextRequest) {
   const existingUser = await findUser(discordId);
   const isNewUser = !existingUser;
 
-  // Build secure signed JWT session
-  const sessionPayload = { discordId, username, avatar, role, isNewUser, inGuild };
+  // Build secure signed JWT session.
+  // Store the Discord access token so server-control can revalidate guild
+  // membership at request time (the bot-based member lookup is blocked by
+  // the guild's moderation settings, so we use the user's own token instead).
+  const sessionPayload = { discordId, username, avatar, role, isNewUser, inGuild, discordAccessToken: accessToken };
   const signed = await signSession(sessionPayload as any);
 
   const res = NextResponse.redirect(new URL(isNewUser ? "/?setup=1" : "/", req.url));

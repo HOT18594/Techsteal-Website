@@ -75,46 +75,43 @@ export type UserRole = {
   created_at: string;
 };
 
+export function getServiceRoleClient() {
+  if (!supabaseAdmin) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY is required for server-side auth lookups");
+  }
+  return supabaseAdmin;
+}
+
 // Look up a user's role by Discord ID. Defaults to "member".
 export async function fetchUserRole(discordId: string): Promise<"admin" | "member"> {
-  try {
-    const { data, error } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("discord_id", discordId)
-      .limit(1);
-    if (error) throw error;
-    if (data && data.length > 0 && data[0].role === "admin") return "admin";
-    return "member";
-  } catch (err) {
-    console.error("fetchUserRole error:", err);
-    return "member";
-  }
+  const { data, error } = await getServiceRoleClient()
+    .from("user_roles")
+    .select("role")
+    .eq("discord_id", discordId)
+    .limit(1);
+  if (error) throw error;
+  if (data && data.length > 0 && data[0].role === "admin") return "admin";
+  return "member";
 }
 
 // Check whether a user exists in the user_roles table.
 // Returns the row if found, or null if this is a brand-new user.
 export async function findUser(discordId: string): Promise<UserRole | null> {
-  try {
-    const { data, error } = await supabase
-      .from("user_roles")
-      .select("*")
-      .eq("discord_id", discordId)
-      .limit(1);
-    if (error) throw error;
-    if (data && data.length > 0) return data[0] as UserRole;
-    return null;
-  } catch (err) {
-    console.error("findUser error:", err);
-    return null;
-  }
+  const { data, error } = await getServiceRoleClient()
+    .from("user_roles")
+    .select("*")
+    .eq("discord_id", discordId)
+    .limit(1);
+  if (error) throw error;
+  if (data && data.length > 0) return data[0] as UserRole;
+  return null;
 }
 
 // Create a new user row in user_roles. Called during account setup.
 // Role defaults to "member" — admins are granted manually in the dashboard.
 export async function createUser(discordId: string, username: string): Promise<UserRole | null> {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await getServiceRoleClient()
       .from("user_roles")
       .insert({ discord_id: discordId, role: "member", username })
       .select("*")
@@ -130,7 +127,7 @@ export async function createUser(discordId: string, username: string): Promise<U
 // Update a user's display username (used during account setup).
 export async function updateUserUsername(discordId: string, username: string): Promise<boolean> {
   try {
-    const { error } = await supabase
+    const { error } = await getServiceRoleClient()
       .from("user_roles")
       .update({ username })
       .eq("discord_id", discordId);

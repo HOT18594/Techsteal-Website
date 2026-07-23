@@ -58,6 +58,7 @@ export async function verifySession(token: string): Promise<AuthUser | null> {
       role: payload.role as "admin" | "member",
       isNewUser: Boolean(payload.isNewUser),
       inGuild: Boolean(payload.inGuild),
+      discordAccessToken: payload.discordAccessToken ? String(payload.discordAccessToken) : undefined,
     };
   } catch {
     return null;

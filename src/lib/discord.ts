@@ -5,6 +5,7 @@
 export const DISCORD_CLIENT_ID = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID || "";
 export const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET || "";
 export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+export const DISCORD_GUILD_ID = "1349848075371413515";
 
 // Scopes: "identify" gives username + avatar. "guilds" lets us verify the
 // user is a member of the TechSteal Discord server (to unlock server controls).

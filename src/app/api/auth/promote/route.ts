@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin, supabase } from "@/lib/supabase";
+import { getServiceRoleClient } from "@/lib/supabase";
 import { verifySession, signSession, getSessionCookieName, getSessionCookieOptions } from "@/lib/session";
 
 // In-memory rate limiter for /api/auth/promote (per-IP, per-15min window)
@@ -63,12 +63,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid code." }, { status: 403 });
   }
 
-  // Use service role if available to bypass restrictive RLS
-  const client = supabaseAdmin || supabase;
-  const { error } = await client
-    .from("user_roles")
-    .update({ role: "admin" })
-    .eq("discord_id", session.discordId);
+  let error: { message?: string } | null = null;
+  try {
+    const result = await getServiceRoleClient()
+      .from("user_roles")
+      .update({ role: "admin" })
+      .eq("discord_id", session.discordId);
+    error = result.error;
+  } catch {
+    return NextResponse.json({ error: "Admin role updates are not configured." }, { status: 503 });
+  }
 
   if (error) {
     return NextResponse.json({ error: "Failed to update role." }, { status: 500 });

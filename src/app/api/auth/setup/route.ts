@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createUser, findUser } from "@/lib/supabase";
+import { findUser } from "@/lib/supabase";
 import { verifySession, signSession, getSessionCookieName, getSessionCookieOptions } from "@/lib/session";
+import { requireAdminClient } from "@/lib/server-auth";
 
 // POST /api/auth/setup
 export async function POST(req: NextRequest) {
@@ -9,24 +10,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "not_authenticated" }, { status: 401 });
   }
 
-  let session = await verifySession(raw);
-  // fallback legacy JSON for migration
-  if (!session) {
-    try {
-      const legacy = JSON.parse(raw);
-      if (legacy?.discordId) {
-        session = {
-          discordId: String(legacy.discordId),
-          username: String(legacy.username || ""),
-          avatar: String(legacy.avatar || ""),
-          role: (legacy.role === "admin" ? "admin" : "member") as any,
-          isNewUser: true,
-          inGuild: Boolean(legacy.inGuild),
-        };
-      }
-    } catch {}
-  }
-
+  const session = await verifySession(raw);
   if (!session) {
     return NextResponse.json({ error: "invalid_session" }, { status: 401 });
   }
@@ -43,15 +27,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "username_invalid" }, { status: 400 });
   }
 
-  // Sanitize username - strip html
   const cleanUsername = username.replace(/[<>]/g, "").slice(0, 32);
 
-  const existing = await findUser(session.discordId);
-  if (!existing) {
-    const created = await createUser(session.discordId, cleanUsername);
-    if (!created) {
-      return NextResponse.json({ error: "create_failed" }, { status: 500 });
+  try {
+    const existing = await findUser(session.discordId);
+    if (!existing) {
+      const { error } = await requireAdminClient()
+        .from("user_roles")
+        .insert({ discord_id: session.discordId, role: "member", username: cleanUsername });
+      if (error) throw error;
     }
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || "create_failed" }, { status: 500 });
   }
 
   const updatedSession = {

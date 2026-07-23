@@ -1,10 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DISCORD_GUILD_ID } from "@/lib/discord";
+import { fetchUserRole } from "@/lib/supabase";
 import { verifySession, getSessionCookieName } from "@/lib/session";
 
 const EXAROTON_API = "https://api.exaroton.com/v1";
 
-// POST /api/server/control - secured: requires valid session + inGuild + admin/member check
-// SERVER_CONTROL_CODE bypass REMOVED - all control requires Discord guild membership
+// Revalidate guild membership using the user's own Discord OAuth access token
+// (stored in the signed session JWT at login time). This avoids the bot-based
+// member lookup, which is blocked by the guild's moderation settings.
+async function isLiveGuildMember(accessToken: string): Promise<boolean> {
+  let after: string | undefined;
+  let attempts = 0;
+  while (attempts < 5) {
+    attempts++;
+    const url = new URL("https://discord.com/api/users/@me/guilds");
+    url.searchParams.set("limit", "100");
+    if (after) url.searchParams.set("after", after);
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`Discord guild check failed with ${res.status}`);
+    const guilds = await res.json();
+    if (!Array.isArray(guilds) || guilds.length === 0) return false;
+    if (guilds.some((g: any) => String(g.id) === DISCORD_GUILD_ID)) return true;
+    if (guilds.length < 100) return false;
+    after = String(guilds[guilds.length - 1].id);
+  }
+  return false;
+}
+
+// POST /api/server/control - secured: requires a valid session and Discord guild membership.
 export async function POST(req: NextRequest) {
   // Auth check
   const raw = req.cookies.get(getSessionCookieName())?.value;
@@ -26,7 +52,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Parse body early — needed for both SERVER_CONTROL_CODE bypass and action
+  // Parse body early — needed for action validation and request parsing
   let body: any;
   try {
     body = await req.json();
@@ -39,17 +65,40 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "action must be 'start' or 'stop'." }, { status: 400 });
   }
 
-  // Must be in Discord guild to control server (SERVER_CONTROL_CODE bypass REMOVED)
-  if (!session.inGuild) {
+  // Revalidate guild membership using the user's OAuth token (fail closed if
+  // the token is missing — means they logged in before this change and need
+  // to re-login, or the token was revoked).
+  if (!session.discordAccessToken) {
     return NextResponse.json(
-      { error: "You must be a member of the Discord server to control the Minecraft server." },
-      { status: 403 }
+      { error: "Your session is stale. Please re-login via Discord to use server controls." },
+      { status: 401 }
     );
   }
 
+  try {
+    if (!(await isLiveGuildMember(session.discordAccessToken))) {
+      return NextResponse.json(
+        { error: "You must be a member of the Discord server to control the Minecraft server." },
+        { status: 403 }
+      );
+    }
+  } catch {
+    return NextResponse.json({ error: "Unable to verify Discord server membership." }, { status: 503 });
+  }
+
+  let liveRole: "admin" | "member";
+  try {
+    liveRole = await fetchUserRole(session.discordId);
+  } catch {
+    return NextResponse.json({ error: "Unable to verify role." }, { status: 503 });
+  }
+
   // Only admins can stop server (destructive). Members can start.
-  if (action === "stop" && session.role !== "admin") {
-    return NextResponse.json({ error: "Only admins can stop the server." }, { status: 403 });
+  if (action === "stop" && liveRole !== "admin") {
+    return NextResponse.json(
+      { error: "Only admins can stop the server." },
+      { status: 403 }
+    );
   }
 
   const endpoint = action === "start" ? "start" : "stop";

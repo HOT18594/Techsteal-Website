@@ -9,6 +9,9 @@ export type AuthUser = {
   role: "admin" | "member";
   isNewUser?: boolean;
   inGuild?: boolean;
+  // Discord OAuth access token (server-side only, used to revalidate guild
+  // membership at request time). Never exposed to the browser.
+  discordAccessToken?: string;
 };
 
 // Global UI view mode. An admin can switch to "member" to preview the site as
@@ -82,15 +85,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Called when a new user finishes account setup. Creates their row in
   // user_roles and clears the isNewUser flag from the session.
   const completeSetup = async (username: string) => {
-    if (!user) return;
+    if (!user) throw new Error("not_authenticated");
     const res = await fetch("/api/auth/setup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username }),
     });
-    if (res.ok) {
-      setUser({ ...user, username, isNewUser: false });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || "setup_failed");
     }
+    setUser({ ...user, username, isNewUser: false });
   };
 
   const isAdmin = user?.role === "admin";
