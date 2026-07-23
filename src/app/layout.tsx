@@ -4,8 +4,8 @@ import { AuthProvider } from "@/lib/auth-context";
 import { ToastProvider } from "@/components/Toast";
 
 export const metadata: Metadata = {
-  title: "TechSteal",
-  description: "TechSteal Minecraft community dashboard, blog, and join guide",
+  title: "Techsteal",
+  description: "Techsteal Minecraft community dashboard, blog, and join guide",
 };
 
 export default function RootLayout({

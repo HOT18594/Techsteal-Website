@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { fetchServerStatus, controlServer, DISCORD_INVITE_API, DISCORD_WIDGET_API, DISCORD_GUILD_ID, SERVER_ADDRESS, copyToClipboard } from "@/lib/api";
+import { fetchServerStatus, DISCORD_INVITE_API, DISCORD_WIDGET_API, DISCORD_GUILD_ID, SERVER_ADDRESS, copyToClipboard } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/components/Toast";
 
@@ -11,7 +11,6 @@ export default function Home() {
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [controlling, setControlling] = useState<"start" | "stop" | null>(null);
   const { user } = useAuth();
   const { showToast } = useToast();
 
@@ -34,20 +33,6 @@ export default function Home() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
-
-  const handleServerAction = async (action: "start" | "stop") => {
-    if (controlling) return;
-    setControlling(action);
-    const res = await controlServer(action);
-    if (res.ok) {
-      showToast(action === "start" ? "Server start requested!" : "Server stop requested!", "success");
-      // Refresh after a short delay
-      setTimeout(() => refreshServerStatus(), 2000);
-    } else {
-      showToast(res.error || `Failed to ${action} server`, "error");
-    }
-    setControlling(null);
   };
 
   const handleCopyIp = async () => {
@@ -84,8 +69,6 @@ export default function Home() {
 
   const online = Boolean(serverData?.online);
   const players = online && serverData?.players ? serverData.players : null;
-  const canControl = user?.inGuild;
-  const isAdmin = user?.role === "admin";
 
   return (
     <div className="home-grid">
@@ -106,7 +89,7 @@ export default function Home() {
                   <span className="server-dashboard__value">{online ? "Online" : "Offline"}</span>
                 </div>
                 <span className="server-dashboard__hint">
-                  {online ? "Join with the IP below" : "Start it from in-game after joining"}
+                  {online ? "Join with the IP below" : "Join our Discord server to gain start/stop permissions"}
                 </span>
               </div>
               <div className="server-dashboard__card">
@@ -145,47 +128,8 @@ export default function Home() {
               </a>
             </div>
 
-            {/* Server controls - gated by inGuild, stop restricted to admin in API */}
-            <div className="server-dashboard__actions" style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #2a3236" }}>
-              {canControl ? (
-                <div className="server-dashboard__actions-group">
-                  <button
-                    className="btn btn--start"
-                    onClick={() => handleServerAction("start")}
-                    disabled={!!controlling || online}
-                    title={online ? "Server is already online" : "Start the server"}
-                  >
-                    {controlling === "start" ? "Starting…" : "Start Server"}
-                  </button>
-                  {isAdmin && (
-                    <button
-                      className="btn btn--stop"
-                      onClick={() => handleServerAction("stop")}
-                      disabled={!!controlling || !online}
-                      title={!online ? "Server is offline" : "Stop the server (admin only)"}
-                    >
-                      {controlling === "stop" ? "Stopping…" : "Stop Server"}
-                    </button>
-                  )}
-                  {!isAdmin && (
-                    <span style={{ fontSize: 12, color: "var(--text-dim)", alignSelf: "center" }}>
-                      Stop restricted to admins
-                    </span>
-                  )}
-                </div>
-              ) : (
-                <div className="server-locked-group">
-                  <a
-                    href="https://discord.gg/bEZ5M5jBvz"
-                    target="_blank"
-                    rel="noopener"
-                    className="server-locked"
-                    title="Join Discord to unlock server controls"
-                  >
-                    🔒 Join Discord to control server
-                  </a>
-                </div>
-              )}
+            <div className="server-dashboard__notice">
+              Join our Discord server to gain start/stop permissions.
             </div>
 
             {refreshing && (
