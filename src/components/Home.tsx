@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { fetchServerStatus, DISCORD_INVITE_API, DISCORD_WIDGET_API, DISCORD_GUILD_ID, SERVER_ADDRESS, copyToClipboard } from "@/lib/api";
+import { fetchServerStatus, controlServer, DISCORD_INVITE_API, DISCORD_WIDGET_API, DISCORD_GUILD_ID, SERVER_ADDRESS, copyToClipboard } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useToast } from "@/components/Toast";
 
@@ -11,6 +11,7 @@ export default function Home() {
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [controllingAction, setControllingAction] = useState<"start" | "stop" | null>(null);
   const { user } = useAuth();
   const { showToast } = useToast();
 
@@ -28,10 +29,31 @@ export default function Home() {
       setServerData(data);
       return data;
     } catch {
-      // keep previous data, but ensure loading is cleared
+      // keep previous data
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  const handleControlServer = async (action: "start" | "stop") => {
+    if (controllingAction) return;
+    setControllingAction(action);
+    try {
+      const res = await controlServer(action);
+      if (res.ok) {
+        showToast(
+          action === "start" ? "Server start command sent successfully!" : "Server stop command sent successfully!",
+          "success"
+        );
+        setTimeout(refreshServerStatus, 3000);
+      } else {
+        showToast(res.error || `Failed to ${action} server.`, "error");
+      }
+    } catch {
+      showToast(`Failed to ${action} server.`, "error");
+    } finally {
+      setControllingAction(null);
     }
   };
 
@@ -69,6 +91,9 @@ export default function Home() {
 
   const online = Boolean(serverData?.online);
   const players = online && serverData?.players ? serverData.players : null;
+
+  const canStart = Boolean(user && (user.inGuild || user.role === "admin"));
+  const canStop = Boolean(user && user.role === "admin");
 
   return (
     <div className="home-grid">
@@ -113,24 +138,60 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="server-dashboard__actions">
+            <div className="server-dashboard__actions" style={{ flexWrap: "wrap" }}>
+              <button
+                className="btn btn--start"
+                onClick={() => handleControlServer("start")}
+                disabled={!canStart || controllingAction !== null}
+                title={
+                  !user
+                    ? "Log in with Discord to start the server"
+                    : !canStart
+                    ? "You must be a member of the Techsteal Discord server to start"
+                    : "Start Minecraft Server"
+                }
+              >
+                {controllingAction === "start" ? "Starting…" : "Start Server"}
+              </button>
+
+              <button
+                className="btn btn--stop"
+                onClick={() => handleControlServer("stop")}
+                disabled={!canStop || controllingAction !== null}
+                title={
+                  !user
+                    ? "Log in as Admin to stop the server"
+                    : !canStop
+                    ? "Only Admins can stop the server"
+                    : "Stop Minecraft Server"
+                }
+              >
+                {controllingAction === "stop" ? "Stopping…" : "Stop Server"}
+              </button>
+
               <button className="btn btn--ghost" onClick={refreshServerStatus} disabled={refreshing}>
                 <span className={`btn__refresh-icon ${refreshing ? "spinning" : ""}`}>↻</span>
                 {refreshing ? "Checking…" : "Refresh"}
               </button>
               <a
                 className="server-join"
-                href={`https://discord.gg/${DISCORD_INVITE_API.split("/invites/")[1]?.split("?")[0] || "bEZ5M5jBvz"}`}
+                href="https://discord.gg/bEZ5M5jBvz"
                 target="_blank"
                 rel="noopener"
               >
-                Join Discord to play
+                Join Discord
               </a>
             </div>
 
-            <div className="server-dashboard__notice">
-              Join our Discord server to gain start/stop permissions.
-            </div>
+            {!user ? (
+              <div className="server-dashboard__notice">
+                Log in with Discord to gain server start/stop controls.
+              </div>
+            ) : !user.inGuild && user.role !== "admin" ? (
+              <div className="server-dashboard__notice" style={{ color: "var(--cyan)" }}>
+                Must be a member of the Techsteal Discord server to unlock server controls.
+              </div>
+            ) : null}
 
             {refreshing && (
               <div className="server-dashboard__checking">
