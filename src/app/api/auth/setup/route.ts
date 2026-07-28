@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findUser } from "@/lib/supabase";
 import { verifySession, signSession, getSessionCookieName, getSessionCookieOptions } from "@/lib/session";
-import { requireAdminClient } from "@/lib/server-auth";
+import { requireAdminClient, serverError } from "@/lib/server-auth";
 
 // POST /api/auth/setup
 export async function POST(req: NextRequest) {
@@ -37,8 +37,8 @@ export async function POST(req: NextRequest) {
         .insert({ discord_id: session.discordId, role: "member", username: cleanUsername });
       if (error) throw error;
     }
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "create_failed" }, { status: 500 });
+  } catch (e) {
+    return serverError(e, "create_failed");
   }
 
   const updatedSession = {

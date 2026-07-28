@@ -10,11 +10,14 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   try {
     const client = requireAdminClient();
     // Re-validate role from the DB — the JWT role can be stale for up to 7d
-    // after a demotion, so don't trust ctx.session.role for the admin bypass.
-    let role = ctx.session.role;
+    // after a demotion. Fail closed (503) if the lookup throws, mirroring
+    // requireAdmin; never fall back to the stale JWT role.
+    let role: "admin" | "member";
     try {
       role = await liveRole(ctx.session.discordId);
-    } catch {}
+    } catch {
+      return NextResponse.json({ error: "role_check_failed" }, { status: 503 });
+    }
     if (role !== "admin") {
       const { data, error } = await client.from("comments").select("discord_id").eq("id", id).single();
       if (error || data?.discord_id !== ctx.session.discordId) return NextResponse.json({ error: "forbidden" }, { status: 403 });

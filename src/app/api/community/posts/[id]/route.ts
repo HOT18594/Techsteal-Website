@@ -25,10 +25,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   try {
     const body = await req.json();
     const client = requireAdminClient();
-    let role = ctx.session.role;
+    // Re-validate role from the DB — the JWT role can be stale for up to 7d
+    // after a demotion. Fail closed (503) if the lookup throws, mirroring
+    // requireAdmin; never fall back to the stale JWT role.
+    let role: "admin" | "member";
     try {
       role = await liveRole(ctx.session.discordId);
-    } catch {}
+    } catch {
+      return NextResponse.json({ error: "role_check_failed" }, { status: 503 });
+    }
     if (!(await canModifyPost(client, id, ctx.session.discordId, role))) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
@@ -51,10 +56,12 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (isNextResponse(ctx)) return ctx;
   try {
     const client = requireAdminClient();
-    let role = ctx.session.role;
+    let role: "admin" | "member";
     try {
       role = await liveRole(ctx.session.discordId);
-    } catch {}
+    } catch {
+      return NextResponse.json({ error: "role_check_failed" }, { status: 503 });
+    }
     if (!(await canModifyPost(client, id, ctx.session.discordId, role))) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }

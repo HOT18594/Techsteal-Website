@@ -86,7 +86,10 @@ export default function Community() {
       const start = (page - 1) * POSTS_PER_PAGE;
       setPosts(filtered.slice(start, start + POSTS_PER_PAGE));
     } catch {
-      if (reqId === loadDataReqId.current) setPosts([]);
+      // Only clear the list on an explicit (non-silent) load. Background
+      // refreshes (poll/realtime) should preserve the existing posts on error
+      // rather than blanking the feed to "No posts yet".
+      if (!silent && reqId === loadDataReqId.current) setPosts([]);
     } finally {
       if (reqId === loadDataReqId.current) setLoading(false);
     }
