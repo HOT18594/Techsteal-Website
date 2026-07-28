@@ -153,11 +153,15 @@ CREATE POLICY "seasons_read" ON seasons FOR SELECT USING (true);
 -- ---------- 6. ALSO RESTRICT STORAGE UPLOADS TO posts/ FOLDER ----------
 -- (Already done in SUPABASE_SECURITY_FIX.sql but repeating for completeness)
 DROP POLICY IF EXISTS "uploads_insert" ON storage.objects;
+-- Restrict to service_role only: the app uploads server-side via
+-- /api/uploads (requireAdminClient, which bypasses RLS). A previous check
+-- of `auth.jwt() IS NOT NULL` was insecure because the public anon key is
+-- itself a valid JWT, so it let anyone upload arbitrary files directly to
+-- the Storage REST API, bypassing the session/type/size checks in the route.
 CREATE POLICY "uploads_insert" ON storage.objects
-  FOR INSERT WITH CHECK (
+  FOR INSERT TO service_role WITH CHECK (
     bucket_id = 'uploads'
     AND (storage.foldername(name))[1] = 'posts'
-    AND auth.jwt() IS NOT NULL
   );
 
 DROP POLICY IF EXISTS "uploads_delete" ON storage.objects;

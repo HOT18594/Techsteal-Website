@@ -21,7 +21,11 @@ export async function GET(req: NextRequest) {
         verified.role = liveRole;
       }
     } catch {}
-    return NextResponse.json({ user: verified });
+    // Never expose the Discord OAuth access token to the browser — it's
+    // server-side only (used by /api/server/control to revalidate guild
+    // membership). Strip it from the client-facing response.
+    const { discordAccessToken, ...safeUser } = verified;
+    return NextResponse.json({ user: safeUser });
   }
 
   // Invalid/expired/legacy cookie - force re-login

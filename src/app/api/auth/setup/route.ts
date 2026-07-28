@@ -48,7 +48,9 @@ export async function POST(req: NextRequest) {
   };
 
   const signed = await signSession(updatedSession as any);
-  const res = NextResponse.json({ ok: true, user: updatedSession });
+  // Strip the server-only Discord access token before returning to the client.
+  const { discordAccessToken, ...safeUser } = updatedSession;
+  const res = NextResponse.json({ ok: true, user: safeUser });
   res.cookies.set(getSessionCookieName(), signed, getSessionCookieOptions());
   return res;
 }

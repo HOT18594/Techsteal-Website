@@ -64,8 +64,39 @@ export default function Community() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const commentFileInputRef = useRef<HTMLInputElement>(null);
+  const loadDataReqId = useRef(0);
 
   const restoringLikes = !likesHydrated && !!user?.discordId;
+
+  const loadData = async (silent = false) => {
+    // Cancel any in-flight load: rapid search typing fires overlapping
+    // fetches; only the most recent should commit state.
+    const reqId = ++loadDataReqId.current;
+    if (!silent) setLoading(true);
+    try {
+      // Use server-side filtered load if search exists
+      const all = await loadPosts(search || undefined);
+      if (reqId !== loadDataReqId.current) return; // superseded by a newer load
+      let filtered = all;
+      if (search) {
+        const q = search.toLowerCase();
+        filtered = all.filter((p) => stripHtml(p.body).toLowerCase().includes(q) || p.author.toLowerCase().includes(q));
+      }
+      setTotal(filtered.length);
+      const start = (page - 1) * POSTS_PER_PAGE;
+      setPosts(filtered.slice(start, start + POSTS_PER_PAGE));
+    } catch {
+      if (reqId === loadDataReqId.current) setPosts([]);
+    } finally {
+      if (reqId === loadDataReqId.current) setLoading(false);
+    }
+  };
+
+  // Keep a ref to the latest loadData so long-lived subscriptions (realtime
+  // channel, 15s polling interval) always invoke the closure with the current
+  // search/page — instead of a stale snapshot from when they were created.
+  const loadDataRef = useRef(loadData);
+  loadDataRef.current = loadData;
 
   useEffect(() => {
     loadData();
@@ -100,12 +131,12 @@ export default function Community() {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "posts" },
-        () => loadData()
+        () => loadDataRef.current(true)
       )
       .on(
         "postgres_changes",
         { event: "DELETE", schema: "public", table: "posts" },
-        () => loadData()
+        () => loadDataRef.current(true)
       )
       .on(
         "postgres_changes",
@@ -114,7 +145,7 @@ export default function Community() {
           if (selectedPost && payload?.new?.post_id === selectedPost.id) {
             loadComments(selectedPost.id).then(setComments).catch(() => {});
           }
-          loadData();
+          loadDataRef.current(true);
         }
       )
       .on(
@@ -124,7 +155,7 @@ export default function Community() {
           if (selectedPost && payload?.old?.post_id === selectedPost.id) {
             loadComments(selectedPost.id).then(setComments).catch(() => {});
           }
-          loadData();
+          loadDataRef.current(true);
         }
       )
       .subscribe();
@@ -136,7 +167,7 @@ export default function Community() {
 
   useEffect(() => {
     const tick = () => {
-      loadData();
+      loadDataRef.current(true);
       if (selectedPost) {
         loadComments(selectedPost.id).then(setComments).catch(() => {});
       }
@@ -144,26 +175,6 @@ export default function Community() {
     const id = setInterval(tick, 15000);
     return () => clearInterval(id);
   }, [selectedPost?.id]);
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      // Use server-side filtered load if search exists
-      const all = await loadPosts(search || undefined);
-      let filtered = all;
-      if (search) {
-        const q = search.toLowerCase();
-        filtered = all.filter((p) => stripHtml(p.body).toLowerCase().includes(q) || p.author.toLowerCase().includes(q));
-      }
-      setTotal(filtered.length);
-      const start = (page - 1) * POSTS_PER_PAGE;
-      setPosts(filtered.slice(start, start + POSTS_PER_PAGE));
-    } catch {
-      setPosts([]);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const openLightbox = (images: string[], index: number) => {
     setLightboxImages(images);
