@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, requireAdminClient, isNextResponse, serverError } from "@/lib/server-auth";
-import { sanitizeSeasonHtml } from "@/lib/sanitize";
+import { sanitizeSeasonHtmlAsync } from "@/lib/sanitize.server";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: rawId } = await params;
@@ -14,7 +14,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.title !== undefined) update.title = String(body.title).slice(0, 200);
     if (body.is_current !== undefined) update.is_current = Boolean(body.is_current);
     for (const key of ["prism", "sklauncher", "modrinth", "curseforge"] as const) {
-      if (body[key] !== undefined) update[key] = sanitizeSeasonHtml(String(body[key]));
+      if (body[key] !== undefined) update[key] = await sanitizeSeasonHtmlAsync(String(body[key]));
     }
     const client = requireAdminClient();
     if (update.is_current === true) {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, requireAdminClient, isNextResponse, parseJsonBody, clampString, serverError } from "@/lib/server-auth";
-import { sanitizeHtml } from "@/lib/sanitize";
+import { sanitizeHtmlAsync } from "@/lib/sanitize.server";
 
 export async function POST(req: NextRequest) {
   const ctx = await requireAdmin(req);
@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
   const body = await parseJsonBody<{ title?: string; body?: string; images?: string[] }>(req);
   if (isNextResponse(body)) return body;
   const title = clampString(body.title, 200).trim();
-  const cleanBody = sanitizeHtml(body.body || "");
+  const cleanBody = await sanitizeHtmlAsync(body.body || "");
   if (!title || !cleanBody.trim()) return NextResponse.json({ error: "invalid_blog_post" }, { status: 400 });
   const images = Array.isArray(body.images) ? body.images.filter((u) => typeof u === "string" && /^https?:\/\//.test(u)).slice(0, 10) : [];
   try {

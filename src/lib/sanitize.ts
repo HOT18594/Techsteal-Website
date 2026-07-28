@@ -1,89 +1,46 @@
-// Centralized HTML sanitization using DOMPurify (isomorphic).
+// Centralized HTML sanitization using DOMPurify.
 // Used to prevent XSS from user-generated rich text (posts, comments, blog, seasons).
 // Keep normal user content and season instructions on separate configs so contextual
 // attributes such as href/src are not accidentally forbidden everywhere.
+//
+// This module is imported by BOTH client components and server routes. On the
+// client (and in the vitest jsdom env) a global `window` exists, so DOMPurify
+// is initialized synchronously from it. Server routes instead use the async
+// `sanitizeHtmlAsync` / `sanitizeSeasonHtmlAsync` from `@/lib/sanitize.server`
+// (which lazily creates a JSDOM window) — see that file for why we don't import
+// jsdom here (it crashed Next.js API routes at module load via ERR_REQUIRE_ESM,
+// which was the root cause of the 500s on post/blog creation).
 
-import DOMPurify from "isomorphic-dompurify";
+import DOMPurify from "dompurify";
+import {
+  BASE_ALLOWED_TAGS,
+  BASE_ALLOWED_ATTR,
+  SEASON_ALLOWED_TAGS,
+  SEASON_ALLOWED_ATTR,
+  hardenLinks,
+} from "./sanitize-shared";
 
-const BASE_ALLOWED_TAGS = [
-  "p",
-  "br",
-  "strong",
-  "b",
-  "em",
-  "i",
-  "u",
-  "ul",
-  "ol",
-  "li",
-  "blockquote",
-  "a",
-  "code",
-  "pre",
-  "span",
-  "div",
-  "h1",
-  "h2",
-  "h3",
-];
+let purify: typeof DOMPurify | null = null;
 
-const BASE_ALLOWED_ATTR = ["href", "target", "rel", "class"];
-
-const NORMAL_FORBID_TAGS = [
-  "script",
-  "style",
-  "iframe",
-  "object",
-  "embed",
-  "form",
-  "img",
-  "video",
-  "audio",
-  "source",
-  "track",
-  "picture",
-  "svg",
-  "math",
-];
-
-const SEASON_FORBID_TAGS = NORMAL_FORBID_TAGS.filter((tag) => tag !== "img");
-
-const COMMON_FORBID_ATTR = [
-  "onerror",
-  "onload",
-  "onclick",
-  "onmouseover",
-  "onmouseout",
-  "onfocus",
-  "onblur",
-  "onchange",
-  "onsubmit",
-  "onkeydown",
-  "onkeyup",
-  "onkeypress",
-  "style",
-  "data-*",
-  "x-*",
-];
-
-function hardenLinks(html: string): string {
-  return html.replace(/<a\b([^>]*)>/gi, (match) => {
-    if (/\btarget\s*=\s*["']?_blank/i.test(match) && !/\brel\s*=/i.test(match)) {
-      return match.replace(/>$/, ' rel="noopener noreferrer">');
-    }
-    return match;
-  });
+function getPurify(): typeof DOMPurify {
+  if (purify) return purify;
+  if (typeof window === "undefined") {
+    // Server context without a window: fall back to a tag-stripping regex so
+    // a synchronous call never throws. Server routes should use the async
+    // variants in sanitize.server.ts for real DOMPurify sanitization.
+    throw new Error("sanitize: no window available — use sanitize.server.ts on the server");
+  }
+  purify = DOMPurify(window);
+  return purify;
 }
 
 export function sanitizeHtml(dirty: string): string {
   if (!dirty) return "";
   try {
-    const clean = DOMPurify.sanitize(dirty, {
+    const clean = getPurify().sanitize(dirty, {
       ALLOWED_TAGS: BASE_ALLOWED_TAGS,
       ALLOWED_ATTR: BASE_ALLOWED_ATTR,
       ALLOW_DATA_ATTR: false,
-      FORBID_TAGS: NORMAL_FORBID_TAGS,
-      FORBID_ATTR: COMMON_FORBID_ATTR,
       SANITIZE_DOM: true,
     }) as string;
     return hardenLinks(clean);
@@ -92,17 +49,16 @@ export function sanitizeHtml(dirty: string): string {
   }
 }
 
-// For seasons only: allows <img> with safe src/alt/size attributes but still forbids
-// styles, scripts, SVG/math, and all event/data attributes.
+// For seasons only: allows <img> with safe src/alt/size attributes but still
+// forbids styles, scripts, SVG/math, and all event/data attributes (anything
+// not in the allowlist is removed).
 export function sanitizeSeasonHtml(dirty: string): string {
   if (!dirty) return "";
   try {
-    const clean = DOMPurify.sanitize(dirty, {
-      ALLOWED_TAGS: [...BASE_ALLOWED_TAGS, "img"],
-      ALLOWED_ATTR: [...BASE_ALLOWED_ATTR, "src", "alt", "width", "height", "loading"],
+    const clean = getPurify().sanitize(dirty, {
+      ALLOWED_TAGS: SEASON_ALLOWED_TAGS,
+      ALLOWED_ATTR: SEASON_ALLOWED_ATTR,
       ALLOW_DATA_ATTR: false,
-      FORBID_TAGS: SEASON_FORBID_TAGS,
-      FORBID_ATTR: COMMON_FORBID_ATTR,
       SANITIZE_DOM: true,
     }) as string;
     return hardenLinks(clean);

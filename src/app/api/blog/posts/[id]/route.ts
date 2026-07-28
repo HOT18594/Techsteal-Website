@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin, requireAdminClient, isNextResponse, serverError } from "@/lib/server-auth";
-import { sanitizeHtml } from "@/lib/sanitize";
+import { sanitizeHtmlAsync } from "@/lib/sanitize.server";
 
 function parseId(value: string) {
   const id = Number(value);
@@ -21,7 +21,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (!title) return NextResponse.json({ error: "invalid_title" }, { status: 400 });
       update.title = title;
     }
-    if (body.body !== undefined) update.body = sanitizeHtml(String(body.body));
+    if (body.body !== undefined) update.body = await sanitizeHtmlAsync(String(body.body));
     if (Array.isArray(body.images)) update.images = JSON.stringify(body.images.filter((u: unknown) => typeof u === "string" && /^https?:\/\//.test(u)).slice(0, 10));
     const { error } = await requireAdminClient().from("blog_posts").update(update).eq("id", id);
     if (error) throw error;

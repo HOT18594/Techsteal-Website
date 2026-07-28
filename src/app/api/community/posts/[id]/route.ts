@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminClient, requireSession, isNextResponse, liveRole, serverError } from "@/lib/server-auth";
-import { sanitizeHtml } from "@/lib/sanitize";
+import { sanitizeHtmlAsync } from "@/lib/sanitize.server";
 
 function postId(params: { id: string }) {
   const id = Number(params.id);
@@ -38,7 +38,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
     const update: Record<string, unknown> = {};
-    if (body.body !== undefined) update.body = sanitizeHtml(String(body.body));
+    if (body.body !== undefined) update.body = await sanitizeHtmlAsync(String(body.body));
     if (Array.isArray(body.images)) update.images = JSON.stringify(body.images.filter((u: unknown) => typeof u === "string" && /^https?:\/\//.test(u)).slice(0, 10));
     const { error } = await client.from("posts").update(update).eq("id", id);
     if (error) throw error;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminClient, requireSession, isNextResponse, parseJsonBody, clampString, serverError } from "@/lib/server-auth";
-import { sanitizeHtml } from "@/lib/sanitize";
+import { sanitizeHtmlAsync } from "@/lib/sanitize.server";
 
 export async function POST(req: NextRequest) {
   const ctx = await requireSession(req);
@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   const postId = Number(body.post_id);
   if (!Number.isInteger(postId) || postId <= 0) return NextResponse.json({ error: "invalid_post" }, { status: 400 });
   const images = Array.isArray(body.images) ? body.images.filter((u) => typeof u === "string" && /^https?:\/\//.test(u)).slice(0, 10) : [];
-  const cleanBody = sanitizeHtml(body.body || "");
+  const cleanBody = await sanitizeHtmlAsync(body.body || "");
   if (!cleanBody.trim() && images.length === 0) return NextResponse.json({ error: "empty_comment" }, { status: 400 });
   try {
     const client = requireAdminClient();
