@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminClient, requireSession, isNextResponse } from "@/lib/server-auth";
+import { requireAdminClient, requireSession, isNextResponse, serverError } from "@/lib/server-auth";
 import { MAX_IMAGE_SIZE } from "@/lib/api";
 
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp", "image/avif"]);
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     if (error) throw error;
     const { data: urlData } = client.storage.from("uploads").getPublicUrl(data.path);
     return NextResponse.json({ url: urlData.publicUrl });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "upload_failed" }, { status: 500 });
+  } catch (e) {
+    return serverError(e, "upload_failed");
   }
 }

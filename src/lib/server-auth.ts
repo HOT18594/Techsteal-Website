@@ -56,3 +56,17 @@ export function isNextResponse(value: unknown): value is NextResponse {
 export function clampString(value: unknown, max: number): string {
   return String(value ?? "").slice(0, max);
 }
+
+// Log the full error server-side but return a generic message to the client,
+// so Postgres/Supabase internals (table/constraint/column names) aren't leaked.
+export function serverError(e: unknown, fallback: string, status = 500) {
+  console.error(`[api] ${fallback}:`, e);
+  return NextResponse.json({ error: fallback }, { status });
+}
+
+// Re-validate the caller's role from the DB. The JWT role may be stale for up
+// to SESSION_MAX_AGE (7d) after a demotion, so any admin short-circuit must
+// check the live role rather than trusting ctx.session.role.
+export async function liveRole(discordId: string): Promise<"admin" | "member"> {
+  return fetchUserRole(discordId);
+}

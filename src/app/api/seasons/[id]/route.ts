@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, requireAdminClient, isNextResponse } from "@/lib/server-auth";
+import { requireAdmin, requireAdminClient, isNextResponse, serverError } from "@/lib/server-auth";
 import { sanitizeSeasonHtml } from "@/lib/sanitize";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -24,7 +24,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const { error } = await client.from("seasons").update(update).eq("id", id);
     if (error) throw error;
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "update_failed" }, { status: 500 });
+  } catch (e) {
+    return serverError(e, "update_failed");
   }
 }

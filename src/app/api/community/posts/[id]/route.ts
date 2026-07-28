@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminClient, requireSession, isNextResponse } from "@/lib/server-auth";
+import { requireAdminClient, requireSession, isNextResponse, liveRole, serverError } from "@/lib/server-auth";
 import { sanitizeHtml } from "@/lib/sanitize";
 
 function postId(params: { id: string }) {
@@ -7,6 +7,8 @@ function postId(params: { id: string }) {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
+// role is the DB-validated live role (not the stale JWT role), so the admin
+// short-circuit is safe against demotion.
 async function canModifyPost(client: ReturnType<typeof requireAdminClient>, id: number, discordId: string, role: string) {
   if (role === "admin") return true;
   const { data, error } = await client.from("posts").select("discord_id").eq("id", id).single();
@@ -23,7 +25,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   try {
     const body = await req.json();
     const client = requireAdminClient();
-    if (!(await canModifyPost(client, id, ctx.session.discordId, ctx.session.role))) {
+    let role = ctx.session.role;
+    try {
+      role = await liveRole(ctx.session.discordId);
+    } catch {}
+    if (!(await canModifyPost(client, id, ctx.session.discordId, role))) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
     const update: Record<string, unknown> = {};
@@ -32,8 +38,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const { error } = await client.from("posts").update(update).eq("id", id);
     if (error) throw error;
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "update_failed" }, { status: 500 });
+  } catch (e) {
+    return serverError(e, "update_failed");
   }
 }
 
@@ -45,13 +51,17 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (isNextResponse(ctx)) return ctx;
   try {
     const client = requireAdminClient();
-    if (!(await canModifyPost(client, id, ctx.session.discordId, ctx.session.role))) {
+    let role = ctx.session.role;
+    try {
+      role = await liveRole(ctx.session.discordId);
+    } catch {}
+    if (!(await canModifyPost(client, id, ctx.session.discordId, role))) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
     const { error } = await client.from("posts").delete().eq("id", id);
     if (error) throw error;
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "delete_failed" }, { status: 500 });
+  } catch (e) {
+    return serverError(e, "delete_failed");
   }
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminClient, requireSession, isNextResponse, parseJsonBody, clampString } from "@/lib/server-auth";
+import { requireAdminClient, requireSession, isNextResponse, parseJsonBody, clampString, serverError } from "@/lib/server-auth";
 import { sanitizeHtml } from "@/lib/sanitize";
 
 export async function POST(req: NextRequest) {
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       .single();
     if (error) throw error;
     return NextResponse.json({ post: data });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "create_failed" }, { status: 500 });
+  } catch (e) {
+    return serverError(e, "create_failed");
   }
 }

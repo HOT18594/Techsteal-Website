@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdminClient, requireSession, isNextResponse, parseJsonBody } from "@/lib/server-auth";
+import { requireAdminClient, requireSession, isNextResponse, parseJsonBody, serverError } from "@/lib/server-auth";
 
 type LikeBody = { kind?: "post" | "comment"; id?: number };
 
@@ -18,8 +18,8 @@ export async function GET(req: NextRequest) {
       posts: (posts.data || []).map((r) => r.post_id),
       comments: (comments.data || []).map((r) => r.comment_id),
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "likes_failed" }, { status: 500 });
+  } catch (e) {
+    return serverError(e, "likes_failed");
   }
 }
 
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
     const count = await client.from("comment_likes").select("comment_id", { count: "exact", head: true }).eq("comment_id", id);
     if (count.error) throw count.error;
     return NextResponse.json({ likes: count.count || 0, liked });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "like_failed" }, { status: 500 });
+  } catch (e) {
+    return serverError(e, "like_failed");
   }
 }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin, requireAdminClient, isNextResponse } from "@/lib/server-auth";
+import { requireAdmin, requireAdminClient, isNextResponse, serverError } from "@/lib/server-auth";
 import { sanitizeHtml } from "@/lib/sanitize";
 
 function parseId(value: string) {
@@ -16,14 +16,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   try {
     const body = await req.json();
     const update: Record<string, unknown> = {};
-    if (body.title !== undefined) update.title = String(body.title).slice(0, 200).trim();
+    if (body.title !== undefined) {
+      const title = String(body.title).slice(0, 200).trim();
+      if (!title) return NextResponse.json({ error: "invalid_title" }, { status: 400 });
+      update.title = title;
+    }
     if (body.body !== undefined) update.body = sanitizeHtml(String(body.body));
     if (Array.isArray(body.images)) update.images = JSON.stringify(body.images.filter((u: unknown) => typeof u === "string" && /^https?:\/\//.test(u)).slice(0, 10));
     const { error } = await requireAdminClient().from("blog_posts").update(update).eq("id", id);
     if (error) throw error;
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "update_failed" }, { status: 500 });
+  } catch (e) {
+    return serverError(e, "update_failed");
   }
 }
 
@@ -37,7 +41,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     const { error } = await requireAdminClient().from("blog_posts").delete().eq("id", id);
     if (error) throw error;
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "delete_failed" }, { status: 500 });
+  } catch (e) {
+    return serverError(e, "delete_failed");
   }
 }
