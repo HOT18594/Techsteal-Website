@@ -18,12 +18,13 @@ export default function Home() {
   useEffect(() => {
     refreshServerStatus();
     loadDiscord();
-    const timer = setInterval(refreshServerStatus, 60000);
+    // Background refresh: silent (no spinner flicker every 60s).
+    const timer = setInterval(() => refreshServerStatus(true), 60000);
     return () => clearInterval(timer);
   }, []);
 
-  const refreshServerStatus = async () => {
-    setRefreshing(true);
+  const refreshServerStatus = async (silent = false) => {
+    if (!silent) setRefreshing(true);
     try {
       const data = await fetchServerStatus();
       setServerData(data);
@@ -92,8 +93,13 @@ export default function Home() {
   const online = Boolean(serverData?.online);
   const players = online && serverData?.players ? serverData.players : null;
 
-  const canStart = Boolean(user && (user.inGuild || user.role === "admin"));
-  const canStop = Boolean(user && user.role === "admin");
+  // Server control is gated by: guild membership (checked live server-side),
+  // the per-user can_control_server flag (admin-controlled), and admin role
+  // for the destructive stop action. canControlServer defaults to allowed
+  // when unset (e.g. a stale session before the permission shipped).
+  const canControl = Boolean(user && (user.role === "admin" || user.canControlServer !== false));
+  const canStart = Boolean(user && user.inGuild && canControl);
+  const canStop = Boolean(user && user.inGuild && user.role === "admin");
 
   return (
     <div className="home-grid">
@@ -146,8 +152,10 @@ export default function Home() {
                 title={
                   !user
                     ? "Log in with Discord to start the server"
-                    : !canStart
+                    : !user.inGuild
                     ? "You must be a member of the Techsteal Discord server to start"
+                    : !canControl
+                    ? "An admin has not granted you server control permission"
                     : "Start Minecraft Server"
                 }
               >
@@ -169,7 +177,7 @@ export default function Home() {
                 {controllingAction === "stop" ? "Stopping…" : "Stop Server"}
               </button>
 
-              <button className="btn btn--ghost" onClick={refreshServerStatus} disabled={refreshing}>
+              <button className="btn btn--ghost" onClick={() => refreshServerStatus()} disabled={refreshing}>
                 <span className={`btn__refresh-icon ${refreshing ? "spinning" : ""}`}>↻</span>
                 {refreshing ? "Checking…" : "Refresh"}
               </button>
@@ -190,6 +198,10 @@ export default function Home() {
             ) : !user.inGuild && user.role !== "admin" ? (
               <div className="server-dashboard__notice" style={{ color: "var(--cyan)" }}>
                 Must be a member of the Techsteal Discord server to unlock server controls.
+              </div>
+            ) : !canControl ? (
+              <div className="server-dashboard__notice" style={{ color: "var(--cyan)" }}>
+                Server control is currently disabled for your account. Ask an admin to enable it.
               </div>
             ) : null}
 

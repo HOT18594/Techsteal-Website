@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
   try {
     const { data, error } = await getServiceRoleClient()
       .from("user_roles")
-      .select("id, discord_id, role, username, created_at")
+      .select("id, discord_id, role, username, can_control_server, created_at")
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -56,25 +56,36 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  const { discordId, role } = body || {};
+  const { discordId, role, canControlServer } = body || {};
   if (!discordId || typeof discordId !== "string") {
     return NextResponse.json({ error: "Missing or invalid discordId." }, { status: 400 });
   }
 
-  if (role !== "admin" && role !== "member") {
-    return NextResponse.json({ error: "Role must be 'admin' or 'member'." }, { status: 400 });
+  // Build the update payload from whichever field(s) were provided.
+  const update: Record<string, unknown> = {};
+  if (role !== undefined) {
+    if (role !== "admin" && role !== "member") {
+      return NextResponse.json({ error: "Role must be 'admin' or 'member'." }, { status: 400 });
+    }
+    update.role = role;
+  }
+  if (canControlServer !== undefined) {
+    update.can_control_server = Boolean(canControlServer);
+  }
+  if (Object.keys(update).length === 0) {
+    return NextResponse.json({ error: "No valid fields to update." }, { status: 400 });
   }
 
   try {
     const { data, error } = await getServiceRoleClient()
       .from("user_roles")
-      .update({ role })
+      .update(update)
       .eq("discord_id", discordId)
-      .select("id, discord_id, role, username, created_at")
+      .select("id, discord_id, role, username, can_control_server, created_at")
       .single();
 
     if (error) {
-      return NextResponse.json({ error: "Failed to update user role." }, { status: 500 });
+      return NextResponse.json({ error: "Failed to update user." }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true, user: data });

@@ -9,6 +9,8 @@ export type AuthUser = {
   role: "admin" | "member";
   isNewUser?: boolean;
   inGuild?: boolean;
+  // Whether this user may start/stop the Minecraft server (admin-controlled).
+  canControlServer?: boolean;
   // Discord OAuth access token (server-side only, used to revalidate guild
   // membership at request time). Never exposed to the browser.
   discordAccessToken?: string;

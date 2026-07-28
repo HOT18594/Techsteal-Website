@@ -34,6 +34,7 @@ export default function Community() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
 
@@ -75,11 +76,11 @@ export default function Community() {
     if (!silent) setLoading(true);
     try {
       // Use server-side filtered load if search exists
-      const all = await loadPosts(search || undefined);
+      const all = await loadPosts(debouncedSearch || undefined);
       if (reqId !== loadDataReqId.current) return; // superseded by a newer load
       let filtered = all;
-      if (search) {
-        const q = search.toLowerCase();
+      if (debouncedSearch) {
+        const q = debouncedSearch.toLowerCase();
         filtered = all.filter((p) => stripHtml(p.body).toLowerCase().includes(q) || p.author.toLowerCase().includes(q));
       }
       setTotal(filtered.length);
@@ -101,9 +102,15 @@ export default function Community() {
   const loadDataRef = useRef(loadData);
   loadDataRef.current = loadData;
 
+  // Debounce the search term so we don't fire a fetch on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 250);
+    return () => clearTimeout(t);
+  }, [search]);
+
   useEffect(() => {
     loadData();
-  }, [page, search]);
+  }, [page, debouncedSearch]);
 
   useEffect(() => {
     if (!user?.discordId) {
@@ -630,7 +637,9 @@ export default function Community() {
             </button>
           )}
         </div>
-        <div className="community-stats">{total} posts</div>
+        <div className="community-stats">
+          {search !== debouncedSearch ? "searching…" : `${total} posts`}
+        </div>
       </div>
 
       <div className="card composer-card">

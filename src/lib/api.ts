@@ -264,7 +264,7 @@ export async function updateSeason(
   await apiJson<{ ok: true }>(`/api/seasons/${id}`, { method: "PATCH", body: JSON.stringify(cleaned) });
 }
 
-export async function fetchAdminUsers(): Promise<{ id: number; discord_id: string; role: "admin" | "member"; username: string; created_at: string }[]> {
+export async function fetchAdminUsers(): Promise<{ id: number; discord_id: string; role: "admin" | "member"; username: string; can_control_server: boolean; created_at: string }[]> {
   const data = await apiJson<{ users: any[] }>("/api/admin/users", { method: "GET" });
   return data.users || [];
 }
@@ -273,6 +273,13 @@ export async function updateUserRoleAdmin(discordId: string, role: "admin" | "me
   await apiJson<{ ok: true }>("/api/admin/users", {
     method: "PATCH",
     body: JSON.stringify({ discordId, role }),
+  });
+}
+
+export async function updateUserServerControl(discordId: string, canControlServer: boolean): Promise<void> {
+  await apiJson<{ ok: true }>("/api/admin/users", {
+    method: "PATCH",
+    body: JSON.stringify({ discordId, canControlServer }),
   });
 }
 

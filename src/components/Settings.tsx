@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { SITE_VERSION } from "@/lib/version";
-import { fetchAdminUsers, updateUserRoleAdmin } from "@/lib/api";
+import { fetchAdminUsers, updateUserRoleAdmin, updateUserServerControl } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 
 type AdminUser = {
@@ -11,6 +11,7 @@ type AdminUser = {
   discord_id: string;
   role: "admin" | "member";
   username: string;
+  can_control_server: boolean;
   created_at: string;
 };
 
@@ -57,6 +58,22 @@ export default function Settings() {
       showToast(`Updated ${targetUser.username}'s role to ${newRole}.`, "success");
     } catch (e: any) {
       showToast(e?.message || "Failed to update role.", "error");
+    } finally {
+      setUpdatingDiscordId(null);
+    }
+  };
+
+  const handleToggleServerControl = async (targetUser: AdminUser) => {
+    const next = !targetUser.can_control_server;
+    setUpdatingDiscordId(targetUser.discord_id);
+    try {
+      await updateUserServerControl(targetUser.discord_id, next);
+      setAdminUsers((prev) =>
+        prev.map((u) => (u.discord_id === targetUser.discord_id ? { ...u, can_control_server: next } : u))
+      );
+      showToast(`${next ? "Enabled" : "Disabled"} server control for ${targetUser.username}.`, "success");
+    } catch (e: any) {
+      showToast(e?.message || "Failed to update server control.", "error");
     } finally {
       setUpdatingDiscordId(null);
     }
@@ -238,10 +255,39 @@ export default function Settings() {
                       </div>
                     </div>
 
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
                       <span className={`role-pill ${u.role === "admin" ? "role-pill--admin" : ""}`}>
                         {u.role === "admin" ? "Admin" : "Member"}
                       </span>
+
+                      {/* Server control permission toggle */}
+                      {u.role === "admin" ? (
+                        <span
+                          className="role-pill"
+                          title="Admins can always control the server"
+                          style={{ opacity: 0.7 }}
+                        >
+                          Server: Always
+                        </span>
+                      ) : (
+                        <button
+                          className={`btn ${u.can_control_server ? "btn--start" : "btn--ghost"}`}
+                          style={{ padding: "6px 12px", fontSize: "0.85rem" }}
+                          disabled={isUpdating}
+                          onClick={() => handleToggleServerControl(u)}
+                          title={
+                            u.can_control_server
+                              ? "Disallow this member from starting/stopping the server"
+                              : "Allow this member to start the server"
+                          }
+                        >
+                          {isUpdating
+                            ? "Updating..."
+                            : u.can_control_server
+                            ? "Server: Allowed"
+                            : "Server: Blocked"}
+                        </button>
+                      )}
 
                       {!isSelf && (
                         <button

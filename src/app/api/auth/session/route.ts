@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession, getSessionCookieName } from "@/lib/session";
-import { fetchUserRole } from "@/lib/supabase";
+import { fetchUserRole, fetchCanControlServer } from "@/lib/supabase";
 
 // GET /api/auth/session
 // Verifies signed JWT and re-validates role from DB to prevent tampering and
@@ -21,6 +21,14 @@ export async function GET(req: NextRequest) {
         verified.role = liveRole;
       }
     } catch {}
+    // Surface the per-user server-control permission so the UI can gate the
+    // start/stop buttons accurately. Defaults to true if the migration is
+    // not yet applied (preserves prior behavior).
+    try {
+      (verified as any).canControlServer = await fetchCanControlServer(verified.discordId);
+    } catch {
+      (verified as any).canControlServer = true;
+    }
     // Never expose the Discord OAuth access token to the browser — it's
     // server-side only (used by /api/server/control to revalidate guild
     // membership). Strip it from the client-facing response.

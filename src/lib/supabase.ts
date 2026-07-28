@@ -72,6 +72,7 @@ export type UserRole = {
   discord_id: string;
   role: "admin" | "member";
   username: string;
+  can_control_server: boolean;
   created_at: string;
 };
 
@@ -92,6 +93,28 @@ export async function fetchUserRole(discordId: string): Promise<"admin" | "membe
   if (error) throw error;
   if (data && data.length > 0 && data[0].role === "admin") return "admin";
   return "member";
+}
+
+// Whether a user may start/stop the Minecraft server. Defaults to TRUE when
+// the row or column is missing, so behavior is preserved if the permission
+// migration hasn't been applied yet. Admins are always allowed (enforced in
+// the control route) regardless of this value.
+export async function fetchCanControlServer(discordId: string): Promise<boolean> {
+  try {
+    const { data, error } = await getServiceRoleClient()
+      .from("user_roles")
+      .select("can_control_server")
+      .eq("discord_id", discordId)
+      .limit(1);
+    if (error) {
+      // Column missing (migration not applied) — preserve old behavior.
+      return true;
+    }
+    if (!data || data.length === 0) return true;
+    return data[0].can_control_server !== false;
+  } catch {
+    return true;
+  }
 }
 
 // Check whether a user exists in the user_roles table.

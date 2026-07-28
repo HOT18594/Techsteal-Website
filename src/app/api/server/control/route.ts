@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DISCORD_GUILD_ID } from "@/lib/discord";
-import { fetchUserRole } from "@/lib/supabase";
+import { fetchUserRole, fetchCanControlServer } from "@/lib/supabase";
 import { verifySession, getSessionCookieName } from "@/lib/session";
 
 const EXAROTON_API = "https://api.exaroton.com/v1";
@@ -93,8 +93,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unable to verify role." }, { status: 503 });
   }
 
-  // Only admins can stop server (destructive). Members can start.
-  if (action === "stop" && liveRole !== "admin") {
+  // Per-user server control permission. Admins are always allowed; members
+  // must be explicitly allowed (can_control_server flag in user_roles).
+  // Defaults to allowed if the permission migration hasn't been applied.
+  const isAdmin = liveRole === "admin";
+  let canControl = isAdmin;
+  if (!isAdmin) {
+    try {
+      canControl = await fetchCanControlServer(session.discordId);
+    } catch {
+      canControl = false;
+    }
+  }
+  if (!canControl) {
+    return NextResponse.json(
+      { error: "You do not have permission to control the server. Ask an admin to enable it." },
+      { status: 403 }
+    );
+  }
+
+  // Only admins can stop server (destructive). Allowed members can start.
+  if (action === "stop" && !isAdmin) {
     return NextResponse.json(
       { error: "Only admins can stop the server." },
       { status: 403 }
