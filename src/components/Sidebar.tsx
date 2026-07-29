@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
 import type { AppPage } from "@/components/AppShell";
-import { PixelIcon, type IconName } from "@/components/icons";
+import { NavIcon, type IconName } from "@/components/icons";
 
 interface SidebarProps {
   activePage: AppPage;
@@ -40,7 +40,7 @@ export default function Sidebar({ activePage, collapsed, onToggle }: SidebarProp
           aria-expanded={!collapsed}
           title={collapsed ? "Expand" : "Collapse"}
         >
-          <PixelIcon name="chevron" className={collapsed ? "rot-180" : ""} />
+          <NavIcon name="chevron" className={collapsed ? "rot-180" : ""} />
         </button>
       </div>
 
@@ -55,7 +55,7 @@ export default function Sidebar({ activePage, collapsed, onToggle }: SidebarProp
               title={collapsed ? item.label : undefined}
             >
               <span className="nav-item__icon">
-                <PixelIcon name={item.icon} />
+                <NavIcon name={item.icon} />
               </span>
               <span className="nav-item__copy">
                 <span>{item.label}</span>

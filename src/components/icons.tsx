@@ -1,113 +1,45 @@
-// Pixel-art icons for the Techsteal nav rail.
-// Each icon is a set of filled rectangles on a 16x16 grid: [x, y, w, h].
-// Pixel art = rects (no strokes); shapeRendering="crispEdges" keeps them blocky
-// and Minecraft-styled at any size. fill="currentColor" inherits the nav color.
+// Feather-style line icons for the Techsteal nav rail.
+// Each icon is an array of SVG path 'd' strings rendered as <path> elements
+// in a 24x24 viewBox with stroke=currentColor (no fill), matching the
+// original nav icon style.
 
-export type PixelIconDef = [number, number, number, number][]; // [x, y, w, h]
+export type LineIconDef = string[]; // path 'd' strings
 
 export const navIcons = {
-  // House: peaked roof + walls + door
-  home: [
-    [7, 1, 2, 1],
-    [6, 2, 4, 1],
-    [5, 3, 6, 1],
-    [4, 4, 8, 1],
-    [3, 5, 10, 1],
-    [3, 6, 1, 7],
-    [12, 6, 1, 7],
-    [3, 13, 10, 1],
-    [7, 9, 2, 4],
-  ],
-  // Plus in a rounded square (How to Join / setup)
-  join: [
-    [2, 2, 12, 1],
-    [2, 13, 12, 1],
-    [2, 2, 1, 12],
-    [13, 2, 1, 12],
-    [7, 4, 2, 8],
-    [4, 7, 8, 2],
-  ],
-  // Speech bubble (Community / posts)
+  home: ["M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z", "M9 22V12h6v10"],
+  join: ["M12 5v14M5 12h14"],
   community: [
-    [3, 2, 10, 1],
-    [2, 3, 12, 7],
-    [3, 10, 3, 1],
-    [4, 11, 2, 1],
-    [5, 12, 2, 1],
-    [6, 13, 2, 1],
-    [5, 5, 6, 1],
-    [5, 8, 4, 1],
+    "M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2",
+    "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
+    "M23 21v-2a4 4 0 0 0-3-3.87",
+    "M16 3.13a4 4 0 0 1 0 7.75",
   ],
-  // Document / page with lines (Blog / news)
-  blog: [
-    [3, 1, 8, 1],
-    [3, 14, 8, 1],
-    [3, 1, 1, 14],
-    [10, 1, 1, 14],
-    [11, 2, 2, 1],
-    [11, 3, 2, 1],
-    [11, 4, 2, 1],
-    [5, 4, 4, 1],
-    [5, 6, 4, 1],
-    [5, 8, 4, 1],
-    [5, 10, 3, 1],
-  ],
-  // Gear (Settings)
+  blog: ["M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1", "M23 14l-3 3-3-3", "M20 17v-6"],
   settings: [
-    [7, 1, 2, 2],
-    [7, 13, 2, 2],
-    [1, 7, 2, 2],
-    [13, 7, 2, 2],
-    [3, 3, 2, 1],
-    [11, 3, 2, 1],
-    [3, 12, 2, 1],
-    [11, 12, 2, 1],
-    [3, 3, 1, 2],
-    [12, 3, 1, 2],
-    [3, 11, 1, 2],
-    [12, 11, 1, 2],
-    [5, 5, 6, 1],
-    [5, 10, 6, 1],
-    [5, 5, 1, 6],
-    [10, 5, 1, 6],
-    [7, 7, 2, 2],
+    "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+    "M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z",
   ],
-  // Left-pointing chevron (rotates 180deg to point right when collapsed)
-  chevron: [
-    [4, 3, 2, 1],
-    [5, 4, 2, 1],
-    [6, 5, 2, 1],
-    [7, 6, 2, 1],
-    [8, 7, 2, 1],
-    [7, 8, 2, 1],
-    [6, 9, 2, 1],
-    [5, 10, 2, 1],
-    [4, 11, 2, 1],
-  ],
-} satisfies Record<string, PixelIconDef>;
+  // Left-pointing chevron; rotates 180deg to point right when collapsed.
+  chevron: ["M15 18l-6-6 6-6"],
+} satisfies Record<string, LineIconDef>;
 
 export type IconName = keyof typeof navIcons;
 
-export function PixelIcon({
-  name,
-  className,
-}: {
-  name: IconName;
-  className?: string;
-}) {
-  const rects = navIcons[name];
+export function NavIcon({ name, className }: { name: IconName; className?: string }) {
+  const paths = navIcons[name];
   return (
     <svg
-      viewBox="0 0 16 16"
-      width="16"
-      height="16"
-      fill="currentColor"
-      shapeRendering="crispEdges"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
       className={className}
       aria-hidden="true"
     >
-      {rects.map(([x, y, w, h], i) => (
-        <rect key={i} x={x} y={y} width={w} height={h} />
+      {paths.map((d, i) => (
+        <path key={i} d={d} />
       ))}
     </svg>
   );
