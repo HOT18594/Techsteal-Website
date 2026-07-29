@@ -94,10 +94,9 @@ export default function Home() {
   const players = online && serverData?.players ? serverData.players : null;
 
   // Server control is gated by: guild membership (checked live server-side),
-  // the per-user can_control_server flag (admin-controlled), and admin role
-  // for the destructive stop action. canControlServer defaults to allowed
-  // when unset (e.g. a stale session before the permission shipped).
-  const canControl = Boolean(user && (user.role === "admin" || user.canControlServer !== false));
+  // the per-user can_control_server flag (admin-controlled; members are blocked
+  // by default), and admin role for the destructive stop action.
+  const canControl = Boolean(user && (user.role === "admin" || user.canControlServer === true));
   const canStart = Boolean(user && user.inGuild && canControl);
   const canStop = Boolean(user && user.inGuild && user.role === "admin");
 

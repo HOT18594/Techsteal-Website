@@ -22,12 +22,12 @@ export async function GET(req: NextRequest) {
       }
     } catch {}
     // Surface the per-user server-control permission so the UI can gate the
-    // start/stop buttons accurately. Defaults to true if the migration is
-    // not yet applied (preserves prior behavior).
+    // start/stop buttons accurately. Members are blocked by default; fail
+    // closed if the lookup throws.
     try {
       (verified as any).canControlServer = await fetchCanControlServer(verified.discordId);
     } catch {
-      (verified as any).canControlServer = true;
+      (verified as any).canControlServer = false;
     }
     // Never expose the Discord OAuth access token to the browser — it's
     // server-side only (used by /api/server/control to revalidate guild

@@ -2,21 +2,24 @@
 --  TechSteal — Per-user server control permission
 --  Paste into Supabase → SQL Editor → Run (ONE TIME). Safe to re-run.
 --
---  Adds a `can_control_server` flag to user_roles so admins can
---  allow/disallow individual members from starting/stopping the
---  Minecraft server via the admin panel. Defaults to TRUE for
---  existing members so current behavior is preserved; admins can
---  then disallow specific members.
+--  Adds a `can_control_server` flag to user_roles. Members are BLOCKED by
+--  default — an admin must explicitly allow each member in the admin panel
+--  before they can start/stop the Minecraft server. Admins are always
+--  allowed regardless of this flag (enforced in the control route).
 -- ═══════════════════════════════════════════════════════════
 
 ALTER TABLE public.user_roles
-  ADD COLUMN IF NOT EXISTS can_control_server BOOLEAN NOT NULL DEFAULT TRUE;
+  ADD COLUMN IF NOT EXISTS can_control_server BOOLEAN NOT NULL DEFAULT FALSE;
 
--- Preserve existing behavior: every current member can control the server
--- until an admin explicitly disallows them.
+-- Default is BLOCKED for everyone (including existing members). Admins are
+-- unaffected (the control route allows admins regardless of this flag), so
+-- re-running this safely re-blocks members an admin has not explicitly allowed.
+ALTER TABLE public.user_roles
+  ALTER COLUMN can_control_server SET DEFAULT FALSE;
+
 UPDATE public.user_roles
-  SET can_control_server = TRUE
-  WHERE can_control_server IS NULL OR can_control_server = FALSE;
+  SET can_control_server = FALSE
+  WHERE role = 'member';
 
 COMMENT ON COLUMN public.user_roles.can_control_server IS
-  'Whether this user may start/stop the Minecraft server. Admins are always allowed regardless of this flag.';
+  'Whether this user may start/stop the Minecraft server. Defaults to FALSE (blocked); admins are always allowed regardless of this flag.';

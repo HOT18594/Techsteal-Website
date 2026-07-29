@@ -95,10 +95,11 @@ export async function fetchUserRole(discordId: string): Promise<"admin" | "membe
   return "member";
 }
 
-// Whether a user may start/stop the Minecraft server. Defaults to TRUE when
-// the row or column is missing, so behavior is preserved if the permission
-// migration hasn't been applied yet. Admins are always allowed (enforced in
-// the control route) regardless of this value.
+// Whether a user may start/stop the Minecraft server. Members are BLOCKED by
+// default — an admin must explicitly allow them. Fail closed (return false)
+// when the row or column is missing, so a missing migration or a brand-new
+// user cannot control the server. Admins are always allowed (enforced in the
+// control route) regardless of this value.
 export async function fetchCanControlServer(discordId: string): Promise<boolean> {
   try {
     const { data, error } = await getServiceRoleClient()
@@ -107,13 +108,13 @@ export async function fetchCanControlServer(discordId: string): Promise<boolean>
       .eq("discord_id", discordId)
       .limit(1);
     if (error) {
-      // Column missing (migration not applied) — preserve old behavior.
-      return true;
+      // Column missing (migration not applied) — fail closed.
+      return false;
     }
-    if (!data || data.length === 0) return true;
-    return data[0].can_control_server !== false;
+    if (!data || data.length === 0) return false;
+    return data[0].can_control_server === true;
   } catch {
-    return true;
+    return false;
   }
 }
 
