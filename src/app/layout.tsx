@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { ToastProvider } from "@/components/Toast";
+import Shell from "@/components/Shell";
 
 export const metadata: Metadata = {
   title: "Techsteal",
@@ -25,7 +26,9 @@ export default function RootLayout({
       </head>
       <body>
         <ToastProvider>
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            <Shell>{children}</Shell>
+          </AuthProvider>
         </ToastProvider>
       </body>
     </html>

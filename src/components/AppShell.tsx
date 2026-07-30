@@ -1,15 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useLayoutEffect } from "react";
+import type { ReactNode } from "react";
 import { useAuth } from "@/lib/auth-context";
 import Splash from "@/components/Splash";
 import AccountSetup from "@/components/AccountSetup";
 import Sidebar from "@/components/Sidebar";
-import Home from "@/components/Home";
-import Join from "@/components/Join";
-import Community from "@/components/Community";
-import Blog from "@/components/Blog";
-import Settings from "@/components/Settings";
 
 export type AppPage = "home" | "join" | "community" | "blog" | "settings";
 
@@ -21,33 +17,33 @@ const PAGE_META: Record<AppPage, { label: string; kicker: string }> = {
   settings: { label: "Settings", kicker: "Account & permissions" },
 };
 
-function renderPage(page: AppPage) {
-  switch (page) {
-    case "join":
-      return <Join />;
-    case "community":
-      return <Community />;
-    case "blog":
-      return <Blog />;
-    case "settings":
-      return <Settings />;
-    case "home":
-    default:
-      return <Home />;
-  }
-}
-
 const COLLAPSE_KEY = "techsteal:sidebar-collapsed";
 
+// useLayoutEffect on the client (reads localStorage before paint so the
+// sidebar renders at the correct width immediately), useEffect on the server
+// (where it's a no-op and avoids the SSR layout-effect warning).
+const useIsomorphicLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
 // SSR-safe: defaults to expanded so the first paint matches the server render;
-// reads the persisted choice in an effect (effects don't run on the server).
+// the persisted choice is applied synchronously before paint (layout effect),
+// and transitions stay disabled until `ready` flips on the next frame — so the
+// initial mount never animates (no "slide out then back" on refresh/nav).
 function useSidebarCollapsed() {
   const [collapsed, setCollapsed] = useState(false);
-  useEffect(() => {
+  const [ready, setReady] = useState(false);
+
+  useIsomorphicLayoutEffect(() => {
     try {
       if (localStorage.getItem(COLLAPSE_KEY) === "1") setCollapsed(true);
     } catch {}
   }, []);
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setReady(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
   const toggle = () => {
     setCollapsed((prev) => {
       const next = !prev;
@@ -57,7 +53,7 @@ function useSidebarCollapsed() {
       return next;
     });
   };
-  return { collapsed, toggle };
+  return { collapsed, toggle, ready };
 }
 
 function ViewToggle() {
@@ -135,9 +131,9 @@ function ProfileButton() {
   );
 }
 
-export default function AppShell({ page }: { page: AppPage }) {
+export default function AppShell({ page, children }: { page: AppPage; children: ReactNode }) {
   const { user, loading, isAdmin } = useAuth();
-  const { collapsed, toggle } = useSidebarCollapsed();
+  const { collapsed, toggle, ready } = useSidebarCollapsed();
 
   if (loading) {
     return (
@@ -163,7 +159,7 @@ export default function AppShell({ page }: { page: AppPage }) {
   const meta = PAGE_META[page];
 
   return (
-    <div className="app show" data-collapsed={collapsed} suppressHydrationWarning>
+    <div className={`app show ${ready ? "is-ready" : ""}`} data-collapsed={collapsed} suppressHydrationWarning>
       <Sidebar activePage={page} collapsed={collapsed} onToggle={toggle} />
       <div className="main">
         <header className="header">
@@ -178,7 +174,7 @@ export default function AppShell({ page }: { page: AppPage }) {
             </div>
           </div>
         </header>
-        <main className="content">{renderPage(page)}</main>
+        <main className="content">{children}</main>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
-import AppShell from "@/components/AppShell";
+import Join from "@/components/Join";
 
 export default function JoinPage() {
-  return <AppShell page="join" />;
+  return <Join />;
 }

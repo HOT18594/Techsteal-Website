@@ -1,5 +1,5 @@
-import AppShell from "@/components/AppShell";
+import Blog from "@/components/Blog";
 
 export default function BlogPage() {
-  return <AppShell page="blog" />;
+  return <Blog />;
 }

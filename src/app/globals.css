@@ -48,6 +48,15 @@ img { max-width: 100%; display: block; }
 .app { min-height: 100vh; display: grid; grid-template-columns: var(--rail-width) minmax(0, 1fr); opacity: 0; transform: translateY(6px); transition: opacity .3s ease, transform .3s cubic-bezier(0.4, 0, 0.2, 1); }
 .app.show { opacity: 1; transform: translateY(0); }
 .app[data-collapsed="true"] { --rail-width: var(--rail-collapsed); }
+/* Until the shell is "ready" (one frame after mount), suppress every sidebar
+   transition so the persisted collapsed state snaps into place instead of
+   animating on refresh or route change. */
+.app:not(.is-ready) .sidebar,
+.app:not(.is-ready) .sidebar__logo,
+.app:not(.is-ready) .sidebar__brand,
+.app:not(.is-ready) .nav-item,
+.app:not(.is-ready) .nav-item__icon,
+.app:not(.is-ready) .nav-item__copy { transition: none !important; }
 .sidebar {
   position: sticky;
   top: 0;
@@ -85,10 +94,19 @@ img { max-width: 100%; display: block; }
 .nav-item__copy span { display: block; font-weight: 900; font-size: 14px; }
 .nav-item__copy small { display: block; margin-top: 1px; font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .05em; }
 .nav-item.active small { color: rgba(8,17,10,.68); }
-/* Collapsed rail: collapse labels (fade + width), center icons, show tooltip on hover/focus */
-.app[data-collapsed="true"] .nav-item { justify-content: center; gap: 0; padding: 8px 0; }
-.app[data-collapsed="true"] .nav-item__icon { transform: scale(1.04); }
+/* Collapsed rail: square icon buttons centered in rows that match the
+   expanded height (52px) so items stay vertically aligned when toggling. */
+.app[data-collapsed="true"] .sidebar { padding-left: 12px; padding-right: 12px; }
+.app[data-collapsed="true"] .sidebar__nav li { align-items: center; min-height: 52px; }
+.app[data-collapsed="true"] .nav-item { width: 44px; height: 44px; min-height: 0; padding: 0; justify-content: center; gap: 0; }
+.app[data-collapsed="true"] .nav-item__icon { background: transparent; border-color: transparent; transform: none; }
+.app[data-collapsed="true"] .nav-item__icon svg { width: 20px; height: 20px; }
 .app[data-collapsed="true"] .nav-item__copy { max-width: 0; opacity: 0; transition: opacity .12s ease, max-width .26s cubic-bezier(0.4, 0, 0.2, 1); }
+/* Clean active state for the collapsed square: tinted bg + green icon.
+   The full gradient + heavy glow (used on the expanded bar) looks wrong on a
+   44px tile, so override it here. */
+.app[data-collapsed="true"] .nav-item.active { background: rgba(55,208,92,.14); border-color: rgba(55,208,92,.45); box-shadow: none; color: var(--green); }
+.app[data-collapsed="true"] .nav-item.active .nav-item__icon { background: transparent; border-color: transparent; color: var(--green); }
 .nav-item__tip { position: absolute; left: calc(100% + 12px); top: 50%; transform: translateY(-50%) translateX(-4px); padding: 5px 9px; border-radius: var(--radius-sm); background: var(--panel-2); border: 1px solid var(--line-strong); color: var(--ink); font-size: 12px; font-weight: 900; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .14s ease, transform .14s cubic-bezier(0.4, 0, 0.2, 1); z-index: 30; box-shadow: var(--shadow); }
 .app[data-collapsed="true"] .nav-item:hover .nav-item__tip,
 .app[data-collapsed="true"] .nav-item:focus-within .nav-item__tip { opacity: 1; transform: translateY(-50%) translateX(0); }
@@ -253,9 +271,6 @@ img { max-width: 100%; display: block; }
 .post-detail__stat:hover { color: var(--green); background: #111814; border-color: rgba(55,208,92,.28); }
 .post-detail__stat:disabled { opacity: .6; cursor: wait; }
 .post-detail__stat.is-loading { opacity: .55; cursor: progress; }
-.comment__footer { display: flex; align-items: center; margin-top: 10px; }
-.comment__like { font-size: 12px !important; }
-.comment__like svg { width: 15px !important; height: 15px !important; }
 .post-card__stat.is-loading { opacity: .55; cursor: progress; }
 .post-card__stat svg, .post-detail__stat svg { width: 17px; height: 17px; }
 .liked { color: var(--green); }
@@ -265,11 +280,19 @@ img { max-width: 100%; display: block; }
 .post-detail { padding: 22px 24px; }
 .post-detail__back { display: inline-flex; margin-bottom: 16px; color: var(--green); font-weight: 900; cursor: pointer; }
 .post-detail__admin { margin-left: auto; }
-.comments-section { margin-top: 30px; }
-.comments-section__title { font-family: var(--font-display); font-size: 25px; line-height: 1; font-weight: 800; text-transform: uppercase; margin-bottom: 14px; }
-.comments-section__count { color: var(--text-dim); }
-.comment { padding: 16px 18px; margin-top: 14px; }
-.comment-form { padding: 16px; border-radius: var(--radius); background: #20272a; border: 2px solid #30393e; }
+.comments-section { margin-top: 34px; padding-top: 26px; border-top: 2px solid #2a3236; }
+.comments-section__title { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-size: 25px; line-height: 1; font-weight: 800; text-transform: uppercase; margin-bottom: 16px; }
+.comments-section__count { display: inline-flex; align-items: center; min-width: 26px; height: 22px; padding: 0 8px; border-radius: 999px; background: rgba(55,208,92,.12); border: 1px solid rgba(55,208,92,.30); color: var(--green); font-family: var(--mono); font-size: 12px; font-weight: 900; }
+.comment { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 14px 18px; margin-top: 12px; border-left: 3px solid #2f383d; }
+.comment:hover { border-left-color: var(--green); }
+.comment__head { margin-bottom: 0; }
+.comment__body { margin-top: 2px; }
+.comment__footer { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.comment__like { font-size: 12px !important; }
+.comment__like svg { width: 15px !important; height: 15px !important; }
+.comment-form { display: flex; flex-direction: column; gap: 12px; padding: 16px; margin-bottom: 18px; border-radius: var(--radius); background: #20272a; border: 2px solid #30393e; }
+.comment-form__header { display: flex; align-items: center; gap: 8px; font-family: var(--font-display); font-size: 16px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: var(--text-soft); }
+.comment-form__actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 /* Editors/forms */
 .editor { border-radius: var(--radius); background: #111416; border: 2px solid #30393e; overflow: hidden; }
@@ -364,6 +387,11 @@ img { max-width: 100%; display: block; }
   .sidebar__brand, .sidebar__collapse { display: none; }
   .sidebar__nav { display: flex; flex: 1; justify-content: space-around; gap: 4px; }
   .nav-item { flex-direction: column; gap: 4px; min-height: 52px; padding: 6px 4px; justify-content: center; }
+  /* Mobile bottom bar always shows icon + label, even if the persisted
+     collapsed state carried over from desktop. */
+  .app[data-collapsed="true"] .sidebar { padding: 8px; }
+  .app[data-collapsed="true"] .nav-item { width: 100%; min-height: 52px; padding: 6px 4px; }
+  .app[data-collapsed="true"] .nav-item__icon { background: #20282c; border-color: #2f383d; }
   .nav-item__icon { width: 30px; height: 30px; }
   .nav-item__icon svg { width: 16px; height: 16px; }
   .nav-item__copy { display: block; max-width: none; overflow: visible; white-space: normal; opacity: 1; }
