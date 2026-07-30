@@ -61,7 +61,6 @@ export default function Sidebar({ activePage, collapsed, onToggle }: SidebarProp
                 <span>{item.label}</span>
                 <small>{item.kicker}</small>
               </span>
-              <span className="nav-item__tip">{item.label}</span>
             </Link>
           </li>
         ))}

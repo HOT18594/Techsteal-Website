@@ -107,9 +107,6 @@ img { max-width: 100%; display: block; }
    44px tile, so override it here. */
 .app[data-collapsed="true"] .nav-item.active { background: rgba(55,208,92,.14); border-color: rgba(55,208,92,.45); box-shadow: none; color: var(--green); }
 .app[data-collapsed="true"] .nav-item.active .nav-item__icon { background: transparent; border-color: transparent; color: var(--green); }
-.nav-item__tip { position: absolute; left: calc(100% + 12px); top: 50%; transform: translateY(-50%) translateX(-4px); padding: 5px 9px; border-radius: var(--radius-sm); background: var(--panel-2); border: 1px solid var(--line-strong); color: var(--ink); font-size: 12px; font-weight: 900; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .14s ease, transform .14s cubic-bezier(0.4, 0, 0.2, 1); z-index: 30; box-shadow: var(--shadow); }
-.app[data-collapsed="true"] .nav-item:hover .nav-item__tip,
-.app[data-collapsed="true"] .nav-item:focus-within .nav-item__tip { opacity: 1; transform: translateY(-50%) translateX(0); }
 .sidebar__avatar, .post-detail__avatar, .comment__avatar { width: 40px; height: 40px; border-radius: var(--radius-sm); display: grid; place-items: center; overflow: hidden; background: #20282c; color: var(--green); font-weight: 900; border: 2px solid #2f383d; }
 .sidebar__avatar img, .post-detail__avatar img, .comment__avatar img { width: 100%; height: 100%; object-fit: cover; }
 .role-pill { display: inline-flex; align-items: center; gap: 5px; margin-top: 2px; padding: 2px 9px; border-radius: 999px; font-size: 10px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; color: var(--green); background: rgba(55,208,92,.10); border: 1px solid rgba(55,208,92,.30); }
@@ -278,7 +275,8 @@ img { max-width: 100%; display: block; }
 .post-card__image, .post-detail__image, .comment__image, .image-thumb { border-radius: var(--radius-sm); overflow: hidden; background: #20272a; border: 2px solid #30393e; }
 .post-card__image img, .post-detail__image img, .comment__image img, .image-thumb img { width: 100%; height: 100%; object-fit: cover; aspect-ratio: 16/10; }
 .post-detail { padding: 22px 24px; }
-.post-detail__back { display: inline-flex; margin-bottom: 16px; color: var(--green); font-weight: 900; cursor: pointer; }
+.post-detail__back { display: inline-flex; align-items: center; margin-bottom: 16px; padding: 0; border: 0; background: transparent; font: inherit; color: var(--green); font-weight: 900; cursor: pointer; transition: opacity .12s ease; }
+.post-detail__back:hover { opacity: .8; }
 .post-detail__admin { margin-left: auto; }
 .comments-section { margin-top: 34px; padding-top: 26px; border-top: 2px solid #2a3236; }
 .comments-section__title { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-size: 25px; line-height: 1; font-weight: 800; text-transform: uppercase; margin-bottom: 16px; }
@@ -365,6 +363,10 @@ img { max-width: 100%; display: block; }
 .pagination button:disabled { opacity: .4; cursor: not-allowed; }
 .post-card__image-more { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.72); color: #fff; font-weight: 900; font-size: 18px; }
 
+/* Toasts */
+.toast-stack { position: fixed; right: 16px; bottom: 16px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.toast { animation: fadeSlideIn .25s ease both; }
+
 /* Modal/lightbox */
 .modal-overlay, .lightbox { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: rgba(0, 0, 0, .70); backdrop-filter: blur(8px); }
 .modal-card { padding: 24px; max-height: calc(100vh - 48px); overflow: auto; }
@@ -397,9 +399,10 @@ img { max-width: 100%; display: block; }
   .nav-item__copy { display: block; max-width: none; overflow: visible; white-space: normal; opacity: 1; }
   .nav-item__copy small { display: none; }
   .nav-item__copy span { font-size: 11px; }
-  .nav-item__tip { display: none; }
   .header__inner { width: min(100% - 32px, 1140px); min-height: 64px; padding: 12px 0; }
   .header__title { font-size: 32px; }
+  /* Lift toasts above the mobile bottom nav bar. */
+  .toast-stack { bottom: 84px; }
   .content { width: min(100% - 32px, 1140px); padding-top: 20px; padding-bottom: 96px; }
   .home-grid, .blog-grid { grid-template-columns: 1fr; }
 }

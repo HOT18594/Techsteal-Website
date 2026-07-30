@@ -420,9 +420,9 @@ export default function Community() {
     const images = parseImages(selectedPost.images);
     return (
       <div className="post-detail">
-        <div className="post-detail__back" onClick={() => setSelectedPost(null)}>
+        <button type="button" className="post-detail__back" onClick={() => setSelectedPost(null)}>
           ← Back to Community
-        </div>
+        </button>
         <div className="post-detail__head">
           <div className="post-detail__avatar">
             {selectedPost.pfp ? (

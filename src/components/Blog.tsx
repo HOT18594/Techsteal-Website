@@ -48,6 +48,16 @@ export default function Blog() {
     loadData();
   }, []);
 
+  // Close the editor modal on Escape (matches ConfirmModal/Lightbox behavior).
+  useEffect(() => {
+    if (!editorOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !uploading) closeEditor();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editorOpen, uploading]);
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -164,13 +174,14 @@ export default function Blog() {
     const viewerImages = parseImages(viewing.images);
     return (
       <div>
-        <div
+        <button
+          type="button"
           className="post-detail__back"
           onClick={() => setViewing(null)}
-          style={{ marginBottom: "20px", cursor: "pointer", color: "var(--text-dim)", fontWeight: 600 }}
+          style={{ marginBottom: "20px" }}
         >
           ← Back to Blog
-        </div>
+        </button>
         <div className="card">
           {viewerImages.length > 0 && (
             <div className="viewer__banner" onClick={() => openLightbox(viewerImages, 0)} style={{ cursor: "pointer" }}>
