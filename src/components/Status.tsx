@@ -186,7 +186,7 @@ export function Status() {
                   <span className="text-sm">{siteConfig.location}</span>
                 </div>
               </div>
-              <button className="btn-secondary w-full mt-5 !py-2.5 !text-xs" onClick={copyIP}>
+              <button className="btn-secondary w-full mt-5 py-2.5! text-xs!" onClick={copyIP}>
                 <i className="fa-solid fa-copy" />
                 Copy Address
               </button>

@@ -64,7 +64,7 @@ export function Forum() {
               <div className="section-label mb-4">03 / Forum</div>
               <h2 className="font-display text-5xl md:text-6xl font-bold mb-3">Forum</h2>
             </div>
-            <button className="btn-secondary mt-6 md:mt-0 !py-2.5 !text-xs" onClick={() => setModalOpen(true)}>
+            <button className="btn-secondary mt-6 md:mt-0 py-2.5! text-xs!" onClick={() => setModalOpen(true)}>
               <i className="fa-solid fa-pen-to-square" />
               New Thread
             </button>
@@ -174,14 +174,14 @@ export function Forum() {
               </select>
               <div className="flex gap-3 pt-2">
                 <button
-                  className="btn-primary !py-3 !px-6 !text-xs"
+                  className="btn-primary py-3! px-6! text-xs!"
                   onClick={() => void submit()}
                   disabled={submitting}
                 >
                   {submitting ? "Posting…" : "Create Thread"}
                 </button>
                 <button
-                  className="btn-secondary !py-3 !px-6 !text-xs"
+                  className="btn-secondary py-3! px-6! text-xs!"
                   onClick={() => setModalOpen(false)}
                 >
                   Cancel

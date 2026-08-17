@@ -89,7 +89,7 @@ export function Navbar() {
                 {online ? "Online" : "Offline"} · {players}/{max}
               </span>
             </div>
-            <button className="btn-primary !py-2.5 !px-5 !text-xs" onClick={copyIP}>
+            <button className="btn-primary py-2.5! px-5! text-xs!" onClick={copyIP}>
               <i className="fa-solid fa-cube" />
               <span className="hidden sm:inline">Join Server</span>
             </button>

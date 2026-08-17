@@ -1,8 +1,4 @@
 import { config } from "dotenv";
-
-// Load local env (same precedence as the app: .env.local then .env)
-config({ path: [".env.local", ".env"] });
-
 import { createDb } from "../src/lib/db";
 import { seedData } from "../src/lib/fallback-data";
 import {
@@ -14,6 +10,9 @@ import {
 } from "../src/lib/schema";
 
 async function main() {
+  // Load local env (same precedence as the app: .env.local then .env)
+  config({ path: [".env.local", ".env"] });
+
   const db = createDb();
 
   console.log("Clearing existing rows…");
