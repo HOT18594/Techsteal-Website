@@ -3,9 +3,14 @@
 import { useState } from "react";
 import { fallbackThreads } from "@/lib/fallback-data";
 import type { ForumThread } from "@/types";
+import { SubPage } from "@/components/SubPage";
+import { useApi } from "@/lib/use-api";
 
 export default function ForumPage() {
-  const threads = fallbackThreads;
+  const { data: apiThreads } = useApi<ForumThread[]>("/api/forum", fallbackThreads);
+  // Threads created this session (persisted server-side when a DB is present).
+  const [fresh, setFresh] = useState<ForumThread[]>([]);
+  const threads = [...fresh, ...apiThreads];
   const [filter, setFilter] = useState<"all" | "pinned" | "hot">("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -26,10 +31,18 @@ export default function ForumPage() {
     if (!t || !a || submitting) return;
     setSubmitting(true);
     try {
-      // Static export: new threads are demo-only and won't persist.
-      setTitle("");
-      setAuthor("");
-      setModalOpen(false);
+      const res = await fetch("/api/forum", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: t, author: a, category }),
+      });
+      if (res.ok) {
+        const created = (await res.json()) as ForumThread;
+        setFresh((prev) => [created, ...prev]);
+        setTitle("");
+        setAuthor("");
+        setModalOpen(false);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -39,13 +52,19 @@ export default function ForumPage() {
     "w-full bg-[var(--bg-2)] border border-[var(--border)] px-4 py-3 text-sm text-[var(--fg)] outline-none focus:border-[var(--accent)] transition placeholder:text-[var(--muted-2)] rounded-lg";
 
   return (
-    <section className="px-6 lg:px-10 pt-24 lg:pt-28">
-      <div className="max-w-7xl mx-auto">
+    <SubPage className="mx-auto max-w-7xl pt-6 pb-16">
+      <div className="max-w-7xl mx-auto w-full">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
-          <h1 className="font-display text-4xl md:text-5xl font-bold">Forum</h1>
+        <div className="page-header rowed mb-8">
+          <div>
+            <span className="page-kicker">
+              <i className="fa-solid fa-comments" aria-hidden="true" />
+              Community · Forum
+            </span>
+            <h1 className="page-title">Forum</h1>
+          </div>
           <button
-            className="btn-secondary mt-4 md:mt-0 py-2.5! px-5! text-xs!"
+            className="btn-secondary py-2.5! px-5! text-xs!"
             onClick={() => setModalOpen(true)}
           >
             <i className="fa-solid fa-pen-to-square" />
@@ -176,6 +195,6 @@ export default function ForumPage() {
           </div>
         </div>
       ) : null}
-    </section>
+    </SubPage>
   );
 }

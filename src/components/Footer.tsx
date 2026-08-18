@@ -23,19 +23,31 @@ const SOCIALS = [
 
 export function Footer() {
   return (
-    <footer className="py-16 border-t border-[var(--border)]">
+    <footer className="relative py-16 border-t border-[var(--border-strong)]">
+      {/* Glow line along the top edge */}
+      <div
+        aria-hidden="true"
+        className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent opacity-60"
+      />
       <div className="max-w-7xl mx-auto px-6 lg:px-10">
         <div className="grid md:grid-cols-4 gap-10 mb-12">
           <div className="md:col-span-2">
-            <div className="flex items-center gap-3 mb-6">
-              <span className="font-display text-2xl tracking-wider text-[var(--fg)]">{siteConfig.name}</span>
+            <div className="flex items-center gap-3 mb-4">
+              <i className="fa-solid fa-cube text-[var(--accent-bright)]" aria-hidden="true" />
+              <span className="font-display text-2xl tracking-wider text-[var(--fg)]">
+                {siteConfig.name}
+              </span>
             </div>
+            <p className="text-sm text-[var(--muted)] max-w-md mb-6">
+              A private Minecraft community — status, builds, history, and
+              rules in one place.
+            </p>
             <div className="flex gap-3">
               {SOCIALS.map((s) => (
                 <a
                   key={s.key}
                   href={siteConfig.socials[s.key]}
-                  className="w-10 h-10 flex items-center justify-center border border-[var(--border)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition rounded-lg"
+                  className="w-10 h-10 flex items-center justify-center border border-[var(--border)] hover:border-[var(--accent)] hover:text-[var(--accent)] hover:shadow-[0_0_18px_-6px_var(--accent-glow)] transition rounded-lg"
                   aria-label={s.label}
                 >
                   <i className={s.icon} />
@@ -51,7 +63,7 @@ export function Footer() {
             <ul className="space-y-2.5">
               {NAVIGATE.map((l) => (
                 <li key={l.href}>
-                  <a href={l.href} className="text-sm text-[var(--muted)] hover:text-[var(--fg)] transition">
+                  <a href={l.href} className="text-sm text-[var(--muted)] hover:text-[var(--accent-bright)] transition">
                     {l.label}
                   </a>
                 </li>
@@ -66,7 +78,7 @@ export function Footer() {
             <ul className="space-y-2.5 mb-4">
               {CONNECT.map((l) => (
                 <li key={l.href}>
-                  <a href={l.href} className="text-sm text-[var(--muted)] hover:text-[var(--fg)] transition">
+                  <a href={l.href} className="text-sm text-[var(--muted)] hover:text-[var(--accent-bright)] transition">
                     {l.label}
                   </a>
                 </li>

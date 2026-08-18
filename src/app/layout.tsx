@@ -5,6 +5,7 @@ import { BackToTop } from "@/components/BackToTop";
 import { Footer } from "@/components/Footer";
 import { Navbar } from "@/components/Navbar";
 import { RevealObserver } from "@/components/RevealObserver";
+import { ScrollFx } from "@/components/ScrollFx";
 import { ToastProvider } from "@/components/Toast";
 import { siteConfig } from "@/lib/site";
 import "./globals.css";
@@ -22,7 +23,7 @@ const grotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: `${siteConfig.name} — Private Minecraft Server`,
+  title: "Techsteal",
   description: `Official website for the ${siteConfig.name} private Minecraft server.`,
 };
 
@@ -42,6 +43,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className="antialiased min-h-screen flex flex-col">
         <ToastProvider>
           <RevealObserver />
+          <ScrollFx />
           <Navbar />
           <main className="flex-1 flex flex-col">{children}</main>
           <Footer />

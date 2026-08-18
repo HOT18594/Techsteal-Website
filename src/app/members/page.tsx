@@ -2,22 +2,30 @@
 
 import { fallbackMembers } from "@/lib/fallback-data";
 import type { Member } from "@/types";
+import { SubPage } from "@/components/SubPage";
+import { useApi } from "@/lib/use-api";
 
 export default function MembersPage() {
-  const members: Member[] = fallbackMembers;
+  const { data: members } = useApi<Member[]>("/api/members", fallbackMembers);
 
   const online = members.filter((m) => m.status === "online").length;
   const offline = members.length - online;
 
   return (
-    <section className="px-6 lg:px-10 pt-24 lg:pt-28">
-      <div className="max-w-7xl mx-auto">
+    <SubPage className="mx-auto max-w-7xl pt-6 pb-16">
+      <div className="max-w-7xl mx-auto w-full">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
-          <h1 className="font-display text-4xl md:text-5xl font-bold">Members</h1>
-          <div className="mt-4 md:mt-0 flex items-center gap-6 text-sm text-[var(--muted)]">
+        <div className="page-header rowed mb-8">
+          <div>
+            <span className="page-kicker">
+              <i className="fa-solid fa-users" aria-hidden="true" />
+              Community · Members
+            </span>
+            <h1 className="page-title">Members</h1>
+          </div>
+          <div className="flex items-center gap-6 text-sm text-[var(--muted)]">
             <span className="flex items-center gap-2">
-              <span className="w-2 h-2 bg-[var(--emerald)] rounded-full" />
+              <span className="w-2 h-2 bg-[var(--emerald)] rounded-full shadow-[0_0_8px_var(--emerald-glow)]" />
               {online} online
             </span>
             <span className="flex items-center gap-2">
@@ -58,6 +66,6 @@ export default function MembersPage() {
           </div>
         )}
       </div>
-    </section>
+    </SubPage>
   );
 }

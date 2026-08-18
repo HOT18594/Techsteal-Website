@@ -7,6 +7,7 @@ import { siteConfig } from "@/lib/site";
 import { fallbackStatus } from "@/lib/fallback-data";
 import type { ServerStatus } from "@/types";
 import { useToast } from "./Toast";
+import { useApi } from "@/lib/use-api";
 
 const NAV_LINKS = [
   { href: "/", label: "Home", icon: "fa-house" },
@@ -22,27 +23,29 @@ const NAV_LINKS = [
 export function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
   const { show } = useToast();
   const pathname = usePathname();
-  const status: ServerStatus = fallbackStatus;
-
-  const closeMenu = () => setMenuOpen(false);
+  // Live status from /api/status (falls back to placeholder until configured).
+  const { data: status } = useApi<ServerStatus>("/api/status", fallbackStatus);
 
   // Close on route change.
   useEffect(() => {
     setMenuOpen(false);
   }, [pathname]);
 
-  // Close on outside click / Escape.
+  // Close on outside click / Escape — but NEVER when the toggle button
+  // itself was clicked: the toggle's onClick is the single source of truth.
   useEffect(() => {
     if (!menuOpen) return;
     const onClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        closeMenu();
-      }
+      const target = e.target as Node;
+      const insideMenu = menuRef.current?.contains(target);
+      const onToggle = toggleRef.current?.contains(target);
+      if (!insideMenu && !onToggle) setMenuOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closeMenu();
+      if (e.key === "Escape") setMenuOpen(false);
     };
     document.addEventListener("mousedown", onClick);
     document.addEventListener("keydown", onKey);
@@ -68,15 +71,13 @@ export function Navbar() {
   return (
     <>
       {/* Floating wordmark — top left */}
-      <Link
-        href="/"
-        className="fixed top-5 left-6 lg:left-10 z-40 font-display text-2xl tracking-wider text-[var(--fg)] hover:text-[var(--accent)] transition"
-      >
+      <Link href="/" className="nav-wordmark" aria-label={`${siteConfig.name} home`}>
+        <i className="fa-solid fa-cube" aria-hidden="true" />
         {siteConfig.name}
       </Link>
 
-      {/* Floating action buttons — top right */}
-      <div className="fixed top-4 right-4 lg:right-6 z-40 flex items-center gap-2">
+      {/* Floating glass action bar — top right */}
+      <div className="nav-actions">
         <div className={`status-pill hidden sm:inline-flex ${online ? "" : "offline"}`}>
           <span className={`pulse-dot ${online ? "" : "muted"}`} />
           <span>
@@ -96,8 +97,9 @@ export function Navbar() {
           <span className="hidden md:inline">Log in</span>
         </Link>
         <button
-          className="h-11 w-11 flex items-center justify-center text-xl text-[var(--fg)] border border-[var(--border-strong)] rounded-lg hover:border-[var(--accent)] hover:text-[var(--accent)] transition"
-          onClick={() => setMenuOpen(!menuOpen)}
+          ref={toggleRef}
+          className="nav-toggle"
+          onClick={() => setMenuOpen((open) => !open)}
           aria-label={menuOpen ? "Close menu" : "Open menu"}
           aria-expanded={menuOpen}
           aria-controls="nav-popover"
@@ -120,7 +122,7 @@ export function Navbar() {
             key={link.href}
             href={link.href}
             className={`nav-popover-link ${pathname === link.href ? "active" : ""}`}
-            onClick={closeMenu}
+            onClick={() => setMenuOpen(false)}
           >
             <i className={`fa-solid ${link.icon}`} aria-hidden="true" />
             {link.label}
@@ -132,7 +134,7 @@ export function Navbar() {
           <Link
             href="/login"
             className={`nav-popover-link ${pathname === "/login" ? "active" : ""}`}
-            onClick={closeMenu}
+            onClick={() => setMenuOpen(false)}
           >
             <i className="fa-solid fa-user" aria-hidden="true" />
             Log in / Sign up

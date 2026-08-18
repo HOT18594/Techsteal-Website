@@ -2,56 +2,17 @@
 
 import { useState } from "react";
 import { useToast } from "@/components/Toast";
-
-interface Rule {
-  title: string;
-  detail: string;
-}
-
-const RULES: Rule[] = [
-  {
-    title: "No unfair client modifications.",
-    detail: "",
-  },
-  {
-    title: "Hack clients or mods that give unfair advantages",
-    detail:
-      "(e.g. minimaps) are not allowed. Mods that aid building or improve visuals (e.g. full-bright) are fine.",
-  },
-  {
-    title: "Raiding and griefing are part of the game",
-    detail:
-      "but don't go overboard. Structures near world spawn are protected and must not be damaged.",
-  },
-  {
-    title: "Lag machines, chunk bans, and any other intentional server disruption",
-    detail: "are strictly prohibited.",
-  },
-  {
-    title: "Combat logging is not allowed.",
-    detail:
-      "While there's no plugin to prevent it, offenders can be reported.",
-  },
-  {
-    title: "Crystal PvP is only allowed",
-    detail: "if both parties agree beforehand.",
-  },
-  {
-    title: "No bullying or harassment.",
-    detail: "Keep interactions fun and respectful for everyone.",
-  },
-  {
-    title: "Spawn killing is not permitted.",
-    detail: "Give players a fair chance after respawn.",
-  },
-  {
-    title: "Severe enough offences will lead to immediate ban.",
-    detail: "",
-  },
-];
+import { SubPage } from "@/components/SubPage";
+import { fallbackRules } from "@/lib/fallback-data";
+import type { RuleSection } from "@/types";
+import { useApi } from "@/lib/use-api";
 
 export default function RulesPage() {
   const { show } = useToast();
+  const { data: sections } = useApi<RuleSection[]>("/api/rules", fallbackRules);
+  // Rules come from the same source the API/DB uses, so there's only one
+  // copy to maintain going forward.
+  const RULES = sections[0]?.rules ?? [];
   const [acknowledged, setAcknowledged] = useState(false);
 
   const acknowledge = () => {
@@ -61,10 +22,16 @@ export default function RulesPage() {
   };
 
   return (
-    <section className="px-6 lg:px-10 pt-24 lg:pt-28">
-      <div className="max-w-3xl mx-auto">
+    <SubPage className="mx-auto max-w-3xl pt-6 pb-16">
+      <div className="max-w-3xl mx-auto w-full">
         {/* Header */}
-        <h1 className="font-display text-4xl md:text-5xl font-bold">Techsteal Server Rules</h1>
+        <div className="page-header mb-8">
+          <span className="page-kicker">
+            <i className="fa-solid fa-gavel" aria-hidden="true" />
+            Code of Conduct · Rules
+          </span>
+          <h1 className="page-title">Techsteal Server Rules</h1>
+        </div>
 
         {/* Intro */}
         <p className="mt-4 text-[var(--fg-2)]">
@@ -88,14 +55,7 @@ export default function RulesPage() {
               <span className="font-display text-lg text-[var(--accent)] flex-shrink-0 w-8 text-right">
                 {String(i + 1).padStart(2, "0")}
               </span>
-              <div>
-                <p className="text-[var(--fg)] font-medium">
-                  {rule.title}
-                  {rule.detail && (
-                    <span className="text-[var(--muted)] font-normal"> — {rule.detail}</span>
-                  )}
-                </p>
-              </div>
+              <p className="text-[var(--fg)] font-medium">{rule}</p>
             </div>
           ))}
         </div>
@@ -136,6 +96,6 @@ export default function RulesPage() {
           </code>
         </div>
       </div>
-    </section>
+    </SubPage>
   );
 }

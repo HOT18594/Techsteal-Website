@@ -3,9 +3,11 @@
 import { useMemo, useState } from "react";
 import { fallbackGallery } from "@/lib/fallback-data";
 import type { GalleryItem } from "@/types";
+import { SubPage } from "@/components/SubPage";
+import { useApi } from "@/lib/use-api";
 
 export default function GalleryPage() {
-  const items: GalleryItem[] = fallbackGallery;
+  const { data: items } = useApi<GalleryItem[]>("/api/gallery", fallbackGallery);
   const [filter, setFilter] = useState("All");
 
   const categories = useMemo(() => {
@@ -16,21 +18,27 @@ export default function GalleryPage() {
   const visible = filter === "All" ? items : items.filter((i) => i.category === filter);
 
   return (
-    <section className="px-6 lg:px-10 pt-24 lg:pt-28">
-      <div className="max-w-7xl mx-auto">
+    <SubPage className="mx-auto max-w-7xl pt-6 pb-16">
+      <div className="max-w-7xl mx-auto w-full">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
-          <h1 className="font-display text-4xl md:text-5xl font-bold">Gallery</h1>
+        <div className="page-header rowed mb-8">
+          <div>
+            <span className="page-kicker">
+              <i className="fa-solid fa-images" aria-hidden="true" />
+              Community · Gallery
+            </span>
+            <h1 className="page-title">Gallery</h1>
+          </div>
           {categories.length > 1 ? (
-            <div className="flex gap-2 mt-4 md:mt-0 flex-wrap">
+            <div className="flex gap-2 flex-wrap">
               {categories.map((c) => (
                 <button
                   key={c}
                   onClick={() => setFilter(c)}
                   className={`px-3 py-1.5 text-sm rounded-lg border transition ${
                     filter === c
-                      ? "bg-[var(--accent-dim)] border-[var(--accent)] text-[var(--accent)]"
-                      : "border-[var(--border)] text-[var(--muted)] hover:text-[var(--fg)]"
+                      ? "bg-[var(--accent-dim)] border-[var(--accent)] text-[var(--accent)] shadow-[0_0_16px_-8px_var(--accent-glow)]"
+                      : "border-[var(--border)] text-[var(--muted)] hover:text-[var(--fg)] hover:border-[var(--border-strong)]"
                   }`}
                 >
                   {c}
@@ -68,6 +76,6 @@ export default function GalleryPage() {
           </div>
         )}
       </div>
-    </section>
+    </SubPage>
   );
 }

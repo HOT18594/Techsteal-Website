@@ -2,9 +2,12 @@
 
 import { useMemo } from "react";
 import { fallbackTimeline } from "@/lib/fallback-data";
+import type { TimelineEvent } from "@/types";
+import { SubPage } from "@/components/SubPage";
+import { useApi } from "@/lib/use-api";
 
 export default function HistoryPage() {
-  const events = fallbackTimeline;
+  const { data: events } = useApi<TimelineEvent[]>("/api/timeline", fallbackTimeline);
 
   const eras = useMemo(
     () => Array.from(new Set(events.map((e) => e.era))),
@@ -12,10 +15,16 @@ export default function HistoryPage() {
   );
 
   return (
-    <section className="px-6 lg:px-10 pt-24 lg:pt-28">
-      <div className="max-w-7xl mx-auto">
+    <SubPage className="mx-auto max-w-7xl pt-6 pb-16">
+      <div className="max-w-7xl mx-auto w-full">
         {/* Header */}
-        <h1 className="font-display text-4xl md:text-5xl font-bold mb-8">Server History</h1>
+        <div className="page-header mb-8">
+          <span className="page-kicker">
+            <i className="fa-solid fa-clock-rotate-left" aria-hidden="true" />
+            Chronicle · History
+          </span>
+          <h1 className="page-title">Server History</h1>
+        </div>
 
         <div className="grid lg:grid-cols-12 gap-8">
           {/* Era markers */}
@@ -67,6 +76,6 @@ export default function HistoryPage() {
           </div>
         </div>
       </div>
-    </section>
+    </SubPage>
   );
 }

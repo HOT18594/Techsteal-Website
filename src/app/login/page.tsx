@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { siteConfig } from "@/lib/site";
 import { useToast } from "@/components/Toast";
+import { SubPage } from "@/components/SubPage";
 
 export default function LoginPage() {
   const { show } = useToast();
@@ -19,7 +20,7 @@ export default function LoginPage() {
   };
 
   return (
-    <section className="flex-1 min-h-0 flex items-center justify-center px-6 py-6">
+    <SubPage className="items-center justify-center">
       <div className="w-full max-w-sm">
         <div className="card p-8">
           {/* Brand */}
@@ -77,6 +78,6 @@ export default function LoginPage() {
           Authentication is not wired up yet — this is a placeholder.
         </p>
       </div>
-    </section>
+    </SubPage>
   );
 }

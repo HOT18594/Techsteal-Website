@@ -5,8 +5,8 @@ import { siteConfig } from "@/lib/site";
 import { fallbackStatus } from "@/lib/fallback-data";
 import type { ServerStatus } from "@/types";
 import { useToast } from "@/components/Toast";
-
-const STATUS: ServerStatus = fallbackStatus;
+import { SubPage } from "@/components/SubPage";
+import { useApi } from "@/lib/use-api";
 
 function useClock() {
   const [time, setTime] = useState("--:--");
@@ -27,6 +27,7 @@ function useClock() {
 export default function StatusPage() {
   const time = useClock();
   const { show } = useToast();
+  const { data: STATUS } = useApi<ServerStatus>("/api/status", fallbackStatus);
 
   const copyIP = async () => {
     try {
@@ -44,58 +45,72 @@ export default function StatusPage() {
   const stats = siteConfig.stats;
 
   return (
-    <section className="px-6 lg:px-10 pt-24 lg:pt-28">
-      <div className="max-w-7xl mx-auto">
+    <SubPage className="mx-auto max-w-7xl pt-6 pb-16">
+      <div className="max-w-7xl mx-auto w-full">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
-          <h1 className="font-display text-4xl md:text-5xl font-bold">Server Status</h1>
-          <div className={`status-pill mt-4 md:mt-0 ${online ? "" : "offline"}`}>
+        <div className="page-header rowed mb-8">
+          <div>
+            <span className="page-kicker">
+              <i className="fa-solid fa-signal" aria-hidden="true" />
+              Live · Server Status
+            </span>
+            <h1 className="page-title">Server Status</h1>
+          </div>
+          <div className={`status-pill ${online ? "" : "offline"}`}>
             <span className={`pulse-dot ${online ? "" : "muted"}`} />
-            <span>{online ? "All systems nominal" : "Server offline"}</span>
+            <span>{online ? "Online" : "Offline"}</span>
           </div>
         </div>
 
         {/* Stats grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="card p-5">
+          <div className="card stat-card p-5">
             <div className="flex items-center justify-between mb-3">
-              <i className="fa-solid fa-users text-[var(--accent)] text-lg" />
+              <span className="stat-icon">
+                <i className="fa-solid fa-users" />
+              </span>
               <span className="text-xs text-[var(--muted)] uppercase tracking-wider">Active</span>
             </div>
-            <div className="font-display text-3xl font-bold mb-1">
+            <div className="stat-number mb-1">
               <span>{players}</span>
               <span className="text-[var(--muted-2)] text-xl">/{max}</span>
             </div>
             <div className="text-sm text-[var(--muted)]">Players online</div>
           </div>
 
-          <div className="card p-5">
+          <div className="card stat-card p-5">
             <div className="flex items-center justify-between mb-3">
-              <i className="fa-solid fa-bolt text-[var(--diamond)] text-lg" />
+              <span className="stat-icon" style={{ color: "var(--diamond)", borderColor: "rgba(56,211,240,0.4)", background: "rgba(56,211,240,0.08)", boxShadow: "0 0 20px -8px rgba(56,211,240,0.5)" }}>
+                <i className="fa-solid fa-bolt" />
+              </span>
               <span className="text-xs text-[var(--muted)] uppercase tracking-wider">TPS</span>
             </div>
-            <div className="font-display text-3xl font-bold mb-1">{stats.tps}</div>
+            <div className="stat-number mb-1">{stats.tps}</div>
             <div className="text-sm text-[var(--emerald)]">Tick rate</div>
           </div>
 
-          <div className="card p-5">
+          <div className="card stat-card p-5">
             <div className="flex items-center justify-between mb-3">
-              <i className="fa-solid fa-clock text-[var(--accent)] text-lg" />
+              <span className="stat-icon">
+                <i className="fa-solid fa-clock" />
+              </span>
               <span className="text-xs text-[var(--muted)] uppercase tracking-wider">Uptime</span>
             </div>
-            <div className="font-display text-3xl font-bold mb-1">
+            <div className="stat-number mb-1">
               {stats.uptimeDays}
               <span className="text-[var(--muted-2)] text-xl">d</span>
             </div>
             <div className="text-sm text-[var(--muted)]">Days uptime</div>
           </div>
 
-          <div className="card p-5">
+          <div className="card stat-card p-5">
             <div className="flex items-center justify-between mb-3">
-              <i className="fa-solid fa-cube text-[var(--accent)] text-lg" />
+              <span className="stat-icon">
+                <i className="fa-solid fa-cube" />
+              </span>
               <span className="text-xs text-[var(--muted)] uppercase tracking-wider">World</span>
             </div>
-            <div className="font-display text-3xl font-bold mb-1">
+            <div className="stat-number mb-1">
               {stats.worldSize}
               <span className="text-[var(--muted-2)] text-xl">GB</span>
             </div>
@@ -203,6 +218,6 @@ export default function StatusPage() {
           </div>
         </div>
       </div>
-    </section>
+    </SubPage>
   );
 }

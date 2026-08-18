@@ -1,36 +1,37 @@
 "use client";
 
+import Image from "next/image";
 import { siteConfig } from "@/lib/site";
 import Link from "next/link";
 
 export function HeroClient() {
   return (
     <>
-      {/* ============ HERO — full-bleed background + overlay ============ */}
-      <section className="relative min-h-screen overflow-hidden">
-        {/* Full-bleed background placeholder (swap for real image/video later) */}
-        <div className="hero-placeholder asset-placeholder" aria-hidden="true">
-          <div className="asset-placeholder-content">
-            <i className="fa-solid fa-image asset-placeholder-icon" />
-            <span className="asset-placeholder-text">Hero Image / Video</span>
-            <span className="asset-placeholder-hint">Full-screen asset goes here</span>
-          </div>
+      {/* ============ HERO — cinematic, multi-layer ============ */}
+      <section className="hero">
+        {/* Layer 0: the image, parallaxed (moves slower than the page) */}
+        <div className="hero-media" data-parallax="0.18" aria-hidden="true">
+          <Image
+            src="/techsteal-hero.jpeg"
+            alt=""
+            fill
+            priority
+            sizes="100vw"
+            quality={85}
+            className="object-cover"
+          />
         </div>
 
-        {/* Scrim so the wordmark + buttons always read clearly over any asset */}
-        <div
-          className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_35%,rgba(6,10,20,0.55)_100%)]"
-          aria-hidden="true"
-        />
+        {/* Layer 1 — VERY slight dark tint so text sits on a stable base */}
+        <div className="hero-tint" aria-hidden="true" />
 
-        {/* Content layered on top */}
-        <div className="relative z-10 min-h-screen flex flex-col items-center justify-center text-center px-6">
-          <p className="font-display text-lg tracking-[0.4em] uppercase text-[var(--accent)] mb-6">
-            {siteConfig.address}
-          </p>
-          <h1 className="font-display text-6xl sm:text-7xl md:text-8xl lg:text-9xl font-bold tracking-tight text-[var(--fg)] leading-none">
-            {siteConfig.name}
-          </h1>
+        {/* Layer 2 — soft multi-layer blend that melts the image edges into the page bg */}
+        <div className="hero-blend" aria-hidden="true" />
+
+        {/* Layer 3 — content, drifting slightly faster for depth */}
+        <div className="hero-content" data-parallax="-0.05">
+          <p className="hero-kicker">{siteConfig.address}</p>
+          <h1 className="hero-title">{siteConfig.name}</h1>
 
           <div className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-4">
             <button className="btn-primary w-full sm:w-auto" id="hero-copy-ip" onClick={copyIP}>
@@ -44,15 +45,36 @@ export function HeroClient() {
           </div>
         </div>
 
-        {/* Scroll indicator */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 text-[var(--muted)] text-xs tracking-wider uppercase z-10">
+        {/* Layer 4 — floating ember orbs (velocity drift) */}
+        <i
+          className="fa-solid fa-cube absolute left-[12%] top-[24%] text-[var(--accent)]/25 text-3xl"
+          data-drift="6"
+          aria-hidden="true"
+        />
+        <i
+          className="fa-solid fa-sword absolute right-[14%] top-[30%] text-[var(--diamond)]/20 text-2xl rotate-12"
+          data-drift="-8"
+          aria-hidden="true"
+        />
+        <i
+          className="fa-solid fa-diamond absolute right-[24%] bottom-[22%] text-[var(--accent-bright)]/20 text-xl"
+          data-drift="5"
+          aria-hidden="true"
+        />
+
+        {/* Scroll indicator — smooth-scrolls to the features below */}
+        <a
+          href="#features"
+          className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 text-[var(--muted)] text-xs tracking-wider uppercase z-10 hover:text-[var(--accent-bright)] transition"
+          aria-label="Scroll to features"
+        >
           <span>Scroll</span>
           <i className="fa-solid fa-chevron-down animate-bounce text-[var(--accent)]" />
-        </div>
+        </a>
       </section>
 
       {/* ============ FEATURE LINKS (clean, spacious) ============ */}
-      <section className="py-24 lg:py-32 px-6 lg:px-10">
+      <section id="features" className="py-24 lg:py-32 px-6 lg:px-10">
         <div className="max-w-7xl mx-auto">
           <div className="grid md:grid-cols-3 gap-6 lg:gap-8">
             {/* Status */}
@@ -163,7 +185,7 @@ export function HeroClient() {
 }
 
 function copyIP() {
-  const address = "play.techsteal.space";
+  const address = siteConfig.address;
   try {
     navigator.clipboard.writeText(address);
     const btn = document.getElementById("hero-copy-ip");
