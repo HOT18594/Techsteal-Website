@@ -39,11 +39,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
         />
       </head>
-      <body className="antialiased">
+      <body className="antialiased min-h-screen flex flex-col">
         <ToastProvider>
           <RevealObserver />
           <Navbar />
-          <main>{children}</main>
+          <main className="flex-1 flex flex-col">{children}</main>
           <Footer />
           <BackToTop />
         </ToastProvider>

@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { siteConfig } from "@/lib/site";
-import { useApi } from "@/lib/use-api";
+import { fallbackStatus } from "@/lib/fallback-data";
 import type { ServerStatus } from "@/types";
 import { useToast } from "./Toast";
 
@@ -19,30 +20,17 @@ const NAV_LINKS = [
 ] as const;
 
 export function Navbar() {
-  const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const { show } = useToast();
   const pathname = usePathname();
-  const { data: status } = useApi<ServerStatus>("/api/status", {
-    online: true,
-    players: 0,
-    max: siteConfig.maxPlayers,
-  });
+  const status: ServerStatus = fallbackStatus;
 
   const closeMenu = () => setMenuOpen(false);
 
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 30);
-    window.addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
   // Close on route change.
   useEffect(() => {
-    closeMenu();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setMenuOpen(false);
   }, [pathname]);
 
   // Close on outside click / Escape.
@@ -78,40 +66,36 @@ export function Navbar() {
   const max = status.max ?? siteConfig.maxPlayers;
 
   return (
-    <nav
-      id="navbar"
-      className={`fixed top-0 left-0 right-0 z-40 ${scrolled ? "scrolled" : ""}`}
-    >
-      <div className="max-w-7xl mx-auto px-6 lg:px-10 h-16 flex items-center justify-between">
-        {/* Wordmark */}
-        <a href="/" className="font-display text-2xl tracking-wider text-[var(--fg)]">
-          {siteConfig.name}
-        </a>
+    <>
+      {/* Floating wordmark — top left */}
+      <Link
+        href="/"
+        className="fixed top-5 left-6 lg:left-10 z-40 font-display text-2xl tracking-wider text-[var(--fg)] hover:text-[var(--accent)] transition"
+      >
+        {siteConfig.name}
+      </Link>
 
-        <div className="flex items-center gap-3">
-          {/* Status pill — visible on all sizes */}
-          <div className={`status-pill hidden sm:inline-flex ${online ? "" : "offline"}`}>
-            <span className={`pulse-dot ${online ? "" : "muted"}`} />
-            <span>
-              {online ? "Online" : "Offline"} · {players}/{max}
-            </span>
-          </div>
-          {/* Join button — visible on all sizes */}
-          <button className="btn-primary py-2.5! px-5! text-xs!" onClick={copyIP}>
-            <i className="fa-solid fa-cube" />
-            <span className="hidden sm:inline">Join Server</span>
-          </button>
-          {/* Hamburger menu toggle — ALWAYS visible */}
-          <button
-            className="h-11 w-11 flex items-center justify-center text-xl text-[var(--fg)] border border-[var(--border-strong)] rounded-lg hover:border-[var(--accent)] hover:text-[var(--accent)] transition"
-            onClick={() => setMenuOpen(!menuOpen)}
-            aria-label={menuOpen ? "Close menu" : "Open menu"}
-            aria-expanded={menuOpen}
-            aria-controls="nav-popover"
-          >
-            <i className={menuOpen ? "fa-solid fa-xmark" : "fa-solid fa-bars"} />
-          </button>
+      {/* Floating action buttons — top right */}
+      <div className="fixed top-4 right-4 lg:right-6 z-40 flex items-center gap-2">
+        <div className={`status-pill hidden sm:inline-flex ${online ? "" : "offline"}`}>
+          <span className={`pulse-dot ${online ? "" : "muted"}`} />
+          <span>
+            {online ? "Online" : "Offline"} · {players}/{max}
+          </span>
         </div>
+        <button className="btn-primary py-2.5! px-5! text-xs!" onClick={copyIP}>
+          <i className="fa-solid fa-cube" />
+          <span className="hidden sm:inline">Join Server</span>
+        </button>
+        <button
+          className="h-11 w-11 flex items-center justify-center text-xl text-[var(--fg)] border border-[var(--border-strong)] rounded-lg hover:border-[var(--accent)] hover:text-[var(--accent)] transition"
+          onClick={() => setMenuOpen(!menuOpen)}
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={menuOpen}
+          aria-controls="nav-popover"
+        >
+          <i className={menuOpen ? "fa-solid fa-xmark" : "fa-solid fa-bars"} />
+        </button>
       </div>
 
       {/* Compact popover menu */}
@@ -135,6 +119,6 @@ export function Navbar() {
           </a>
         ))}
       </div>
-    </nav>
+    </>
   );
 }

@@ -179,21 +179,13 @@ body {
   }
 }
 
-/* ---------- Navbar ---------- */
-#navbar {
-  transition: all 0.3s ease;
-}
-#navbar.scrolled {
-  background: rgba(6, 10, 20, 0.9);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--border);
-}
+/* ---------- Navbar (no bar — floating elements) ---------- */
+/* The wordmark and buttons float; no full-width strip is rendered. */
 
 /* ---------- Nav popover (compact, right-anchored) ---------- */
 .nav-popover {
   position: fixed;
-  top: 4.5rem;
+  top: 4rem;
   right: 1.25rem;
   width: 280px;
   max-height: calc(100vh - 6rem);
@@ -810,6 +802,19 @@ body {
 ::selection {
   background: var(--accent);
   color: #ffffff;
+}
+
+/* Keyboard focus visibility */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+button:focus {
+  outline: none;
+}
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* Respect reduced motion */

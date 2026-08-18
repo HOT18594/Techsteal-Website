@@ -41,6 +41,7 @@ export interface TimelineEvent {
   title: string;
   era: string;
   major: boolean;
+  description?: string;
 }
 
 export interface RuleSection {

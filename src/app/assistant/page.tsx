@@ -43,28 +43,24 @@ export default function AssistantPage() {
     setInput("");
     setTyping(true);
     try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
-      });
-      const data = (await res.json()) as { reply?: string };
+      // Try the live AI endpoint if it's available; fall back to a local reply.
+      let reply = "That's a good question for the server team. Check the Forum or Rules.";
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { reply?: string };
+          reply = data.reply ?? reply;
+        }
+      } catch {
+        /* static export / no backend — use local reply */
+      }
       setMessages((m) => [
         ...m,
-        {
-          id: nextId.current++,
-          role: "assistant",
-          text: data.reply ?? "I couldn't generate a response.",
-        },
-      ]);
-    } catch {
-      setMessages((m) => [
-        ...m,
-        {
-          id: nextId.current++,
-          role: "assistant",
-          text: "I couldn't reach the server. Try again in a moment.",
-        },
+        { id: nextId.current++, role: "assistant", text: reply },
       ]);
     } finally {
       setTyping(false);
