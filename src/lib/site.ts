@@ -5,14 +5,13 @@
 
 export const siteConfig = {
   name: "TECHSTEAL",
-  address: "play.techsteal.gg",
+  address: "play.techsteal.space",
   version: "1.21.4",
   software: "Paper",
   difficulty: "Hard",
   whitelist: "Enabled",
   location: "FRA · EU",
   maxPlayers: 8,
-  established: "2025",
   stats: {
     tps: "20.0",
     uptimeDays: "120",

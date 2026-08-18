@@ -1,17 +1,17 @@
 import { siteConfig } from "@/lib/site";
 
 const NAVIGATE = [
-  { href: "#home", label: "Home" },
-  { href: "#status", label: "Server Status" },
-  { href: "#assistant", label: "AI Assistant" },
-  { href: "#forum", label: "Forum" },
-  { href: "#history", label: "Server History" },
+  { href: "/", label: "Home" },
+  { href: "/status", label: "Server Status" },
+  { href: "/assistant", label: "AI Assistant" },
+  { href: "/forum", label: "Forum" },
+  { href: "/history", label: "History" },
 ];
 
 const CONNECT = [
-  { href: "#members", label: "Members" },
-  { href: "#gallery", label: "Gallery" },
-  { href: "#rules", label: "Rules" },
+  { href: "/members", label: "Members" },
+  { href: "/gallery", label: "Gallery" },
+  { href: "/rules", label: "Rules" },
 ];
 
 const SOCIALS = [
@@ -23,7 +23,7 @@ const SOCIALS = [
 
 export function Footer() {
   return (
-    <footer className="relative py-16 border-t border-[var(--border)] z-10">
+    <footer className="py-16 border-t border-[var(--border)]">
       <div className="max-w-7xl mx-auto px-6 lg:px-10">
         <div className="grid md:grid-cols-4 gap-10 mb-12">
           <div className="md:col-span-2">
@@ -31,12 +31,15 @@ export function Footer() {
               <div className="logo-mark" />
               <span className="font-display text-2xl tracking-wider">{siteConfig.name}</span>
             </div>
+            <p className="text-[var(--muted)] max-w-md mb-6">
+              A private Minecraft server for friends. Built block by block.
+            </p>
             <div className="flex gap-3">
               {SOCIALS.map((s) => (
                 <a
                   key={s.key}
                   href={siteConfig.socials[s.key]}
-                  className="w-10 h-10 flex items-center justify-center border border-[var(--border)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition"
+                  className="w-10 h-10 flex items-center justify-center border border-[var(--border)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition rounded-lg"
                   aria-label={s.label}
                 >
                   <i className={s.icon} />

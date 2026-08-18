@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import { BackToTop } from "@/components/BackToTop";
 import { Footer } from "@/components/Footer";
 import { Navbar } from "@/components/Navbar";
-import { Particles } from "@/components/Particles";
 import { ToastProvider } from "@/components/Toast";
 import { siteConfig } from "@/lib/site";
 import "./globals.css";
@@ -27,7 +26,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0a0907",
+  themeColor: "#060a14",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -40,8 +39,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         />
       </head>
       <body className="antialiased">
-        <div className="atmosphere" aria-hidden="true" />
-        <Particles />
         <ToastProvider>
           <Navbar />
           <main>{children}</main>

@@ -1,7 +1,5 @@
 "use client";
 
-// Reveal-on-scroll wrapper using IntersectionObserver.
-
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 interface RevealProps {
