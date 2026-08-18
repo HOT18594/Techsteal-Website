@@ -78,7 +78,7 @@ export function HeroClient() {
       </section>
 
       {/* ============ FEATURE LINKS (clean, spacious) ============ */}
-      <section id="features" className="py-24 lg:py-32 px-6 lg:px-10">
+      <section id="features" className="pt-20 lg:pt-24 pb-10 lg:pb-12 px-6 lg:px-10">
         <div className="max-w-7xl mx-auto">
           <div className="grid md:grid-cols-3 gap-6 lg:gap-8">
             {/* Status */}
@@ -148,7 +148,7 @@ export function HeroClient() {
       </section>
 
       {/* ============ QUICK LINKS ============ */}
-      <section className="py-16 lg:py-20 px-6 lg:px-10">
+      <section className="pt-2 pb-16 lg:pb-20 px-6 lg:px-10">
         <div className="max-w-7xl mx-auto">
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <Link href="/assistant" className="reveal group">
