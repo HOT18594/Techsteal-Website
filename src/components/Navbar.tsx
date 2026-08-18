@@ -139,6 +139,11 @@ export function Navbar() {
         </button>
       </div>
 
+      {/* Cinematic scrim behind the popover */}
+      {menuOpen ? (
+        <div className="nav-scrim" onClick={() => setMenuOpen(false)} aria-hidden="true" />
+      ) : null}
+
       {/* Compact popover menu */}
       <div
         id="nav-popover"

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { BackToTop } from "@/components/BackToTop";
 import { Footer } from "@/components/Footer";
 import { Navbar } from "@/components/Navbar";
+import { PageEnter } from "@/components/PageEnter";
 import { RevealObserver } from "@/components/RevealObserver";
 import { ScrollFx } from "@/components/ScrollFx";
 import { ToastProvider } from "@/components/Toast";
@@ -45,7 +46,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <RevealObserver />
           <ScrollFx />
           <Navbar />
-          <main className="flex-1 flex flex-col">{children}</main>
+          <main className="flex-1 flex flex-col">
+            <PageEnter>{children}</PageEnter>
+          </main>
           <Footer />
           <BackToTop />
         </ToastProvider>
