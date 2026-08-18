@@ -23,11 +23,25 @@ async function main() {
   await db.delete(members);
 
   console.log("Seeding placeholder content…");
-  await db.insert(members).values(seedData.members);
-  await db.insert(forumThreads).values(seedData.threads);
-  await db.insert(galleryItems).values(seedData.gallery);
-  await db.insert(timelineEvents).values(seedData.timeline);
-  await db.insert(ruleSections).values(seedData.rules);
+
+  // Only insert collections that actually have rows — Drizzle's
+  // .values() rejects empty arrays.
+  const inserts = [
+    ["members", members, seedData.members],
+    ["forum threads", forumThreads, seedData.threads],
+    ["gallery items", galleryItems, seedData.gallery],
+    ["timeline events", timelineEvents, seedData.timeline],
+    ["rule sections", ruleSections, seedData.rules],
+  ] as const;
+
+  for (const [label, table, rows] of inserts) {
+    if (rows.length === 0) {
+      console.log(`  - ${label}: 0 rows (skipped — nothing to seed)`);
+      continue;
+    }
+    await db.insert(table).values(rows);
+    console.log(`  - ${label}: ${rows.length} rows`);
+  }
 
   console.log("Done. Seed complete.");
 }
