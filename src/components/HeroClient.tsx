@@ -5,18 +5,6 @@ import type { CSSProperties } from "react";
 import { siteConfig } from "@/lib/site";
 import Link from "next/link";
 
-// Floating party emojis drifting over the hero backdrop.
-const HERO_EMOJIS = [
-  { e: "🔥", left: "7%", top: "20%", size: "1.5rem", delay: "0s", dur: "7s" },
-  { e: "🎉", left: "90%", top: "16%", size: "1.7rem", delay: "0.6s", dur: "8s" },
-  { e: "💎", left: "12%", top: "72%", size: "1.3rem", delay: "1.2s", dur: "6.5s" },
-  { e: "✨", left: "85%", top: "68%", size: "1.2rem", delay: "0.3s", dur: "5.5s" },
-  { e: "⚔️", left: "20%", top: "42%", size: "1.4rem", delay: "1.8s", dur: "7.5s" },
-  { e: "🎊", left: "76%", top: "42%", size: "1.5rem", delay: "0.9s", dur: "6.2s" },
-  { e: "🧱", left: "6%", top: "55%", size: "1.2rem", delay: "2.1s", dur: "8.4s" },
-  { e: "🏆", left: "94%", top: "30%", size: "1.3rem", delay: "1.5s", dur: "7.1s" },
-];
-
 export function HeroClient() {
   return (
     <>
@@ -41,43 +29,23 @@ export function HeroClient() {
         {/* Layer 2 — soft multi-layer blend that melts the image edges into the page bg */}
         <div className="hero-blend" aria-hidden="true" />
 
-        {/* Party emojis floating around the title */}
-        {HERO_EMOJIS.map((f, i) => (
-          <span
-            key={i}
-            className="hero-emoji"
-            style={{
-              left: f.left,
-              top: f.top,
-              fontSize: f.size,
-              animationDelay: f.delay,
-              animationDuration: f.dur,
-            }}
-            aria-hidden="true"
-          >
-            {f.e}
-          </span>
-        ))}
-
         {/* Layer 3 — content, drifting slightly faster for depth */}
         <div className="hero-content" data-parallax="-0.05">
           <p className="hero-kicker">{siteConfig.address}</p>
 
-          {/* Layer 3a — TECHSTEAL: letters fly in, then live on their own */}
-          <div className="hero-title-wrap">
-            <h1 className="hero-title" data-text={siteConfig.name} aria-label={siteConfig.name}>
-              {siteConfig.name.split("").map((ch, i) => (
-                <span
-                  key={i}
-                  className="hero-letter"
-                  style={{ "--i": i } as CSSProperties}
-                  aria-hidden="true"
-                >
-                  <span className="hero-letter-inner">{ch}</span>
-                </span>
-              ))}
-            </h1>
-          </div>
+          {/* TECHSTEAL — letters fly in, then rest in the original style */}
+          <h1 className="hero-title" aria-label={siteConfig.name}>
+            {siteConfig.name.split("").map((ch, i) => (
+              <span
+                key={i}
+                className="hero-letter"
+                style={{ "--i": i } as CSSProperties}
+                aria-hidden="true"
+              >
+                {ch}
+              </span>
+            ))}
+          </h1>
 
           <div className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link href="/join" className="btn-primary w-full sm:w-auto justify-center">
