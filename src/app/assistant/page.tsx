@@ -86,9 +86,6 @@ export default function AssistantPage() {
           <div className="text-center mb-12">
             <div className="section-label mb-4 inline-block">02 / AI Assistant</div>
             <h1 className="font-display text-5xl md:text-6xl font-bold mb-4">{ai.name}</h1>
-            <p className="text-xl text-[var(--fg-2)] max-w-2xl mx-auto">
-              Your guide to the realm. Ask about builds, rules, members, or anything else.
-            </p>
           </div>
         </Reveal>
 

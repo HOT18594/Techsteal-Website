@@ -28,12 +28,8 @@ export function Footer() {
         <div className="grid md:grid-cols-4 gap-10 mb-12">
           <div className="md:col-span-2">
             <div className="flex items-center gap-3 mb-6">
-              <div className="logo-mark" />
-              <span className="font-display text-2xl tracking-wider">{siteConfig.name}</span>
+              <span className="font-display text-2xl tracking-wider text-[var(--fg)]">{siteConfig.name}</span>
             </div>
-            <p className="text-[var(--muted)] max-w-md mb-6">
-              A private Minecraft server for friends. Built block by block.
-            </p>
             <div className="flex gap-3">
               {SOCIALS.map((s) => (
                 <a

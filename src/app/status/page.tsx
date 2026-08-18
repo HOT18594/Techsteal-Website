@@ -60,7 +60,6 @@ export default function StatusPage() {
             <div>
               <div className="section-label mb-4">01 / Server Status</div>
               <h1 className="font-display text-5xl md:text-6xl font-bold mb-3">Server Status</h1>
-              <p className="text-[var(--muted)] max-w-lg">Real-time diagnostics from the heart of the realm.</p>
             </div>
             <div className={`status-pill mt-6 md:mt-0 ${online ? "" : "offline"}`}>
               <span className={`pulse-dot ${online ? "" : "muted"}`} />

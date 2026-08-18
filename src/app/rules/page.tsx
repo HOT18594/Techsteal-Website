@@ -16,7 +16,6 @@ export default function RulesPage() {
           <div className="mb-16">
             <div className="section-label mb-4">07 / Rules</div>
             <h1 className="font-display text-5xl md:text-6xl font-bold mb-3">Rules</h1>
-            <p className="text-[var(--muted)] max-w-lg">The codex. Short, clear, and built to last.</p>
           </div>
         </Reveal>
 
