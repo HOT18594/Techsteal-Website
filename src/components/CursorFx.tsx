@@ -9,8 +9,14 @@ import { useEffect } from "react";
  * - `.cursor-dot`  — small bright core, snaps closely,
  * - `.cursor-ring` — slightly larger trailing halo, floats behind.
  *
+ * IMPORTANT: position AND scale are written together in a single
+ * `transform` every frame from the rAF loop. Never move scale/opacity
+ * via CSS transitions on these elements — a transitioned `scale`
+ * property racing the per-frame `transform` makes the cursor glitch
+ * and flicker over hover targets (tiles, links, buttons).
+ *
  * On hover over interactive elements (links, buttons, summaries) the ring
- * grows a little and brightens; while typing in an input/textarea the custom
+ * eases larger and brightens; while typing in an input/textarea the custom
  * cursor fades out so the native text caret takes over.
  *
  * Safety: the whole setup runs inside a try/catch — if anything fails, the
@@ -37,7 +43,11 @@ export function CursorFx() {
       let mx = -100, my = -100;
       let dx = -100, dy = -100;
       let rx = -100, ry = -100;
+      let ringScale = 1;
       let shown = false;
+      let hovering = false;
+      let pressed = false;
+      let onText = false;
       let raf = 0;
 
       const onMove = (e: MouseEvent) => {
@@ -54,17 +64,19 @@ export function CursorFx() {
         // run closest() on real Elements, otherwise the handler throws and
         // the hover states silently break.
         const t = e.target instanceof Element ? e.target : null;
-        const onText = !!t?.closest("input, textarea, select, [contenteditable]");
-        const interactive =
-          !onText &&
-          !!t?.closest("a, button, [role='button'], summary");
+        onText = !!t?.closest("input, textarea, select, [contenteditable]");
+        hovering = !onText && !!t?.closest("a, button, [role='button'], summary");
         doc.classList.toggle("cursor-on-text", onText);
-        ring.classList.toggle("cursor-hover", interactive);
-        dot.classList.toggle("cursor-hover", interactive);
+        ring.classList.toggle("cursor-hover", hovering);
+        dot.classList.toggle("cursor-hover", hovering);
       };
 
-      const onDown = () => ring.classList.add("cursor-pressed");
-      const onUp = () => ring.classList.remove("cursor-pressed");
+      const onDown = () => {
+        pressed = true;
+      };
+      const onUp = () => {
+        pressed = false;
+      };
       const onLeave = () => {
         shown = false;
         dot.classList.remove("cursor-visible");
@@ -76,10 +88,17 @@ export function CursorFx() {
         // over fast-moving grids of tiles and links.
         dx += (mx - dx) * 0.6;
         dy += (my - dy) * 0.6;
-        rx += (mx - rx) * 0.25;
-        ry += (my - ry) * 0.25;
-        dot.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
-        ring.style.transform = `translate(${rx.toFixed(1)}px, ${ry.toFixed(1)}px)`;
+        rx += (mx - rx) * 0.28;
+        ry += (my - ry) * 0.28;
+
+        // Ease the ring scale toward its target (hover/press states) —
+        // scale lives in the same transform, so nothing can desync.
+        const ringTarget = hovering ? (pressed ? 0.95 : 1.3) : pressed ? 0.8 : 1;
+        ringScale += (ringTarget - ringScale) * 0.18;
+        const dotScale = hovering ? 0.85 : 1;
+
+        dot.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) scale(${dotScale})`;
+        ring.style.transform = `translate(${rx.toFixed(1)}px, ${ry.toFixed(1)}px) scale(${ringScale.toFixed(3)})`;
         raf = requestAnimationFrame(loop);
       };
 

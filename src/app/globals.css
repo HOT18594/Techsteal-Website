@@ -1339,14 +1339,13 @@ html.custom-cursor [contenteditable] {
   border-radius: 50%;
   background: var(--accent-bright);
   box-shadow: 0 0 12px var(--accent-glow), 0 0 28px rgba(110, 168, 255, 0.45);
-  transition: opacity 0.25s, scale 0.25s;
-  scale: 1;
+  /* NOTE: no transform/scale transitions here — CursorFx writes the full
+     transform (position + scale) every frame; any transitioned scale
+     would race it and glitch over hover targets. */
+  transition: opacity 0.25s;
 }
 .cursor-dot.cursor-visible {
   opacity: 1;
-}
-.cursor-dot.cursor-hover {
-  scale: 0.85;
 }
 
 .cursor-ring {
@@ -1357,20 +1356,15 @@ html.custom-cursor [contenteditable] {
   border-radius: 50%;
   background: transparent;
   box-shadow: 0 0 14px -6px var(--accent-glow);
-  transition: opacity 0.2s, scale 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 0.25s;
-  scale: 1;
+  /* same rule as above: position + scale live in the JS transform */
+  transition: opacity 0.2s, border-color 0.2s;
 }
 .cursor-ring.cursor-visible {
   opacity: 1;
 }
 .cursor-ring.cursor-hover {
-  scale: 1.25;
   border-color: var(--accent-bright);
   box-shadow: 0 0 20px -4px var(--accent-glow);
-}
-.cursor-ring.cursor-pressed {
-  scale: 0.85;
 }
 
 /* Over text fields the native caret takes over — fade the custom cursor out */
