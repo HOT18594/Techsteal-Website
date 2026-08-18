@@ -85,17 +85,20 @@ cp .env.example .env.local
 # then edit .env.local with your real values
 ```
 
-### Setting up the database
+### Setting up the database (Supabase)
 
-1. Create a free Postgres instance on **[Neon](https://neon.tech)** (or use
-   Vercel Postgres / Supabase).
-2. Copy the **pooled connection string** into `DATABASE_URL` in `.env.local`.
-3. Create the tables and seed placeholder content:
+1. Create a free project at **[supabase.com](https://supabase.com)** — no credit card needed.
+2. In **Project Settings → Database → Connection string**, pick the **Session pooler** tab (port `5432`), copy the **URI**, and replace `[YOUR-PASSWORD]` with the database password you set when creating the project.
+3. Put it in `DATABASE_URL` in `.env.local` (example in `.env.example`).
+4. Create the tables and seed placeholder content:
 
 ```bash
 bun run db:push     # creates the tables from src/lib/schema.ts
 bun run db:seed     # fills them with the sample content
 ```
+
+Any Postgres works (Supabase, Neon, RDS, local) — the driver is
+[postgres.js](https://github.com/porsager/postgres) via Drizzle.
 
 ### Connecting the APIs
 
