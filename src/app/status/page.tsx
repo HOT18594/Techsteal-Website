@@ -27,7 +27,13 @@ function useClock() {
 export default function StatusPage() {
   const time = useClock();
   const { show } = useToast();
-  const { data: STATUS } = useApi<ServerStatus>("/api/status", fallbackStatus);
+  const { data: STATUS, refetch } = useApi<ServerStatus>("/api/status", fallbackStatus);
+
+  // Auto-refresh the live status every 60s so the page stays current.
+  useEffect(() => {
+    const id = setInterval(() => void refetch(), 60000);
+    return () => clearInterval(id);
+  }, [refetch]);
 
   const copyIP = async () => {
     try {
@@ -56,9 +62,20 @@ export default function StatusPage() {
             </span>
             <h1 className="page-title">Server Status</h1>
           </div>
-          <div className={`status-pill ${online ? "" : "offline"}`}>
-            <span className={`pulse-dot ${online ? "" : "muted"}`} />
-            <span>{online ? "Online" : "Offline"}</span>
+          <div className="flex items-center gap-3">
+            <button
+              className="btn-ghost py-2! px-3!"
+              onClick={() => void refetch()}
+              aria-label="Refresh status"
+              title="Refresh now"
+            >
+              <i className="fa-solid fa-rotate-right" />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+            <div className={`status-pill ${online ? "" : "offline"}`}>
+              <span className={`pulse-dot ${online ? "" : "muted"}`} />
+              <span>{online ? "Online" : "Offline"}</span>
+            </div>
           </div>
         </div>
 

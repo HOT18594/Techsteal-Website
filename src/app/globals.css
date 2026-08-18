@@ -228,7 +228,7 @@ body {
   position: fixed;
   top: 18px;
   left: 20px;
-  z-index: 40;
+  z-index: 56; /* above the nav-scrim (55) so it stays clickable while the menu is open */
   font-family: var(--font-pixel), monospace;
   font-size: 1.5rem;
   letter-spacing: 0.06em;
@@ -249,7 +249,7 @@ body {
   position: fixed;
   top: 14px;
   right: 16px;
-  z-index: 40;
+  z-index: 56; /* above the nav-scrim (55) so controls stay clickable while the menu is open */
   display: flex;
   align-items: center;
   gap: 8px;

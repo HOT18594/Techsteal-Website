@@ -40,32 +40,43 @@ export default function AssistantPage() {
   const { show } = useToast();
   const ai = siteConfig.assistant;
 
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    const history = loadHistory();
-    if (history && history.length > 0) return history;
-    return [
-      {
-        id: 0,
-        role: "assistant",
-        text: `Hey — I'm ${ai.name}, ${siteConfig.name}'s assistant. Ask me about the server, rules, members, or how to join.`,
-        time: nowTime(),
-      },
-    ];
-  });
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: 0,
+      role: "assistant",
+      text: `Hey — I'm ${ai.name}, ${siteConfig.name}'s assistant. Ask me about the server, rules, members, or how to join.`,
+      time: nowTime(),
+    },
+  ]);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const nextId = useRef(1);
-  const cancelRef = useRef(false);
+  const genRef = useRef(0);
   const autoAsked = useRef(false);
 
-  // Persist history (but never the empty welcome state).
+  // Load persisted history once, after mount — the initializer above must
+  // NOT read localStorage, or SSR and client render different first frames
+  // (hydration mismatch).
   useEffect(() => {
+    const history = loadHistory();
+    if (history && history.length > 0) {
+      setMessages(history);
+      nextId.current = Math.max(...history.map((m) => m.id), 0) + 1;
+    }
+    setHydrated(true);
+  }, []);
+
+  // Persist history — but only once hydrated, so the welcome state never
+  // overwrites saved chats.
+  useEffect(() => {
+    if (!hydrated) return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
     } catch {}
-  }, [messages]);
+  }, [messages, hydrated]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -73,10 +84,10 @@ export default function AssistantPage() {
     }
   }, [messages, typing]);
 
-  // Auto-ask a prefill question when navigated to with ?ask=... — only if
-  // the chat is still the default welcome state.
+  // Auto-ask a prefill question when navigated to with ?ask=... — only after
+  // history has loaded and only if the chat is still the welcome state.
   useEffect(() => {
-    if (autoAsked.current) return;
+    if (!hydrated || autoAsked.current) return;
     if (messages.length > 1) return; // already has a real conversation
     const params = new URLSearchParams(window.location.search);
     const ask = params.get("ask");
@@ -85,12 +96,12 @@ export default function AssistantPage() {
       void send(ask);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hydrated, messages.length]);
 
   const send = async (raw?: string) => {
     const text = (raw ?? input).trim();
     if (!text || typing) return;
-    cancelRef.current = false;
+    const gen = ++genRef.current; // invalidates any in-flight request
     setMessages((m) => [
       ...m,
       { id: nextId.current++, role: "user", text, time: nowTime() },
@@ -115,23 +126,23 @@ export default function AssistantPage() {
       } catch {
         /* static export / no backend — use local reply */
       }
-      if (cancelRef.current) return; // user hit stop
+      if (gen !== genRef.current) return; // stopped or superseded
       setMessages((m) => [
         ...m,
         { id: nextId.current++, role: "assistant", text: reply, time: nowTime() },
       ]);
     } finally {
-      setTyping(false);
+      if (gen === genRef.current) setTyping(false);
     }
   };
 
   const stop = () => {
-    cancelRef.current = true;
+    genRef.current++; // invalidate the in-flight request
     setTyping(false);
   };
 
   const clear = () => {
-    cancelRef.current = true;
+    genRef.current++; // invalidate any in-flight request
     setTyping(false);
     setMessages([
       {

@@ -57,6 +57,11 @@ export function ScrollFx() {
     const onWheel = (e: WheelEvent) => {
       // Ctrl/cmd+wheel is browser zoom — never touch it.
       if (e.ctrlKey || e.metaKey) return;
+      // Someone else already handled this tick (or it's a passive listener's).
+      if (e.defaultPrevented) return;
+      // Ignore negligible deltas (horizontal flicks, tiny trackpad jitter) —
+      // they're usually meant for a horizontal scroller, not the page.
+      if (Math.abs(e.deltaY) < 1) return;
       // Inner scrollers (popovers, scrollable lists) keep native wheel.
       let el = e.target instanceof Element ? e.target : null;
       while (el && el !== document.body) {

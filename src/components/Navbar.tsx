@@ -154,7 +154,7 @@ export function Navbar() {
         className={`nav-popover ${menuOpen ? "open" : ""}`}
       >
         {NAV_LINKS.map((link) => (
-          <a
+          <Link
             key={link.href}
             href={link.href}
             className={`nav-popover-link ${pathname === link.href ? "active" : ""}`}
@@ -162,7 +162,7 @@ export function Navbar() {
           >
             <i className={`fa-solid ${link.icon}`} aria-hidden="true" />
             {link.label}
-          </a>
+          </Link>
         ))}
 
         {/* Account */}
@@ -170,14 +170,14 @@ export function Navbar() {
           {user ? (
             <>
               {user.role === "admin" ? (
-                <a
+                <Link
                   href="/admin"
                   className={`nav-popover-link ${pathname === "/admin" ? "active" : ""}`}
                   onClick={() => setMenuOpen(false)}
                 >
                   <i className="fa-solid fa-shield-halved" aria-hidden="true" />
                   Admin Panel
-                </a>
+                </Link>
               ) : null}
               <button
                 className="nav-popover-link w-full text-left"
@@ -191,14 +191,14 @@ export function Navbar() {
               </button>
             </>
           ) : (
-            <a
+            <Link
               href="/login"
               className={`nav-popover-link ${pathname === "/login" ? "active" : ""}`}
               onClick={() => setMenuOpen(false)}
             >
               <i className="fa-solid fa-user" aria-hidden="true" />
               Log in / Sign up
-            </a>
+            </Link>
           )}
         </div>
       </div>

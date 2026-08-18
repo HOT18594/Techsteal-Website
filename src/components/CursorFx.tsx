@@ -50,7 +50,10 @@ export function CursorFx() {
           dx = rx = mx;
           dy = ry = my;
         }
-        const t = e.target as HTMLElement | null;
+        // e.target can be a text node or SVG child in some browsers — only
+        // run closest() on real Elements, otherwise the handler throws and
+        // the hover states silently break.
+        const t = e.target instanceof Element ? e.target : null;
         const onText = !!t?.closest("input, textarea, select, [contenteditable]");
         const interactive =
           !onText &&

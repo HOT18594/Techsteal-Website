@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fallbackThreads } from "@/lib/fallback-data";
 import type { ForumThread } from "@/types";
 import { SubPage } from "@/components/SubPage";
 import { useApi } from "@/lib/use-api";
+import { useToast } from "@/components/Toast";
 
 export default function ForumPage() {
+  const { show } = useToast();
   const { data: apiThreads } = useApi<ForumThread[]>("/api/forum", fallbackThreads);
   // Threads created this session (persisted server-side when a DB is present).
   const [fresh, setFresh] = useState<ForumThread[]>([]);
@@ -17,6 +19,23 @@ export default function ForumPage() {
   const [author, setAuthor] = useState("");
   const [category, setCategory] = useState("General");
   const [submitting, setSubmitting] = useState(false);
+  const titleRef = useRef<HTMLInputElement>(null);
+
+  // Escape closes the modal; autofocus the title field; lock body scroll.
+  useEffect(() => {
+    if (!modalOpen) return;
+    titleRef.current?.focus();
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setModalOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [modalOpen]);
 
   const visible: ForumThread[] =
     filter === "all"
@@ -42,7 +61,11 @@ export default function ForumPage() {
         setTitle("");
         setAuthor("");
         setModalOpen(false);
+      } else {
+        show("Couldn't create thread", "The server rejected the request.");
       }
+    } catch {
+      show("Couldn't create thread", "Check your connection and try again.");
     } finally {
       setSubmitting(false);
     }
@@ -162,6 +185,7 @@ export default function ForumPage() {
             <h3 className="font-display text-xl font-bold mb-5">New Thread</h3>
             <div className="space-y-3">
               <input
+                ref={titleRef}
                 className={inputClass}
                 placeholder="Thread title"
                 value={title}
