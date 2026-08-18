@@ -34,9 +34,13 @@ export function HeroClient() {
           <h1 className="hero-title">{siteConfig.name}</h1>
 
           <div className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <button className="btn-primary w-full sm:w-auto" id="hero-copy-ip" onClick={copyIP}>
-              <i className="fa-solid fa-play" />
-              <span>Join Server</span>
+            <Link href="/join" className="btn-primary w-full sm:w-auto justify-center">
+              <i className="fa-solid fa-compass" />
+              <span>How to Join</span>
+            </Link>
+            <button className="btn-secondary w-full sm:w-auto justify-center" id="hero-copy-ip" onClick={copyIP}>
+              <i className="fa-solid fa-copy" />
+              <span>Copy IP</span>
             </button>
             <Link href="/status" className="btn-secondary w-full sm:w-auto justify-center">
               <i className="fa-solid fa-signal" />

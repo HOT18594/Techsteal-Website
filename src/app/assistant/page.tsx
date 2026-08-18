@@ -29,12 +29,25 @@ export default function AssistantPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const nextId = useRef(1);
+  const autoAsked = useRef(false);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, typing]);
+
+  // Auto-ask a prefill question when navigated to with ?ask=...
+  useEffect(() => {
+    if (autoAsked.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const ask = params.get("ask");
+    if (ask) {
+      autoAsked.current = true;
+      void send(ask);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const send = async (raw?: string) => {
     const text = (raw ?? input).trim();

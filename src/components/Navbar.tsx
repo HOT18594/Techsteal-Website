@@ -2,15 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { siteConfig } from "@/lib/site";
 import { fallbackStatus } from "@/lib/fallback-data";
 import type { ServerStatus } from "@/types";
 import { useToast } from "./Toast";
 import { useApi } from "@/lib/use-api";
+import { useSession } from "@/lib/use-session";
 
 const NAV_LINKS = [
   { href: "/", label: "Home", icon: "fa-house" },
+  { href: "/join", label: "How to Join", icon: "fa-compass" },
   { href: "/status", label: "Status", icon: "fa-signal" },
   { href: "/assistant", label: "Assistant", icon: "fa-robot" },
   { href: "/forum", label: "Forum", icon: "fa-comments" },
@@ -25,7 +27,9 @@ export function Navbar() {
   const menuRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const { show } = useToast();
+  const router = useRouter();
   const pathname = usePathname();
+  const { user, loading: sessionLoading, logout } = useSession();
   // Live status from /api/status (falls back to placeholder until configured).
   const { data: status } = useApi<ServerStatus>("/api/status", fallbackStatus);
 
@@ -55,13 +59,10 @@ export function Navbar() {
     };
   }, [menuOpen]);
 
-  const copyIP = async () => {
-    try {
-      await navigator.clipboard.writeText(siteConfig.address);
-      show("Server address copied", siteConfig.address);
-    } catch {
-      show("Couldn't copy address", siteConfig.address);
-    }
+  const handleLogout = async () => {
+    await logout();
+    show("Signed out", "See you later.");
+    if (pathname === "/admin") router.push("/");
   };
 
   const online = status.online;
@@ -84,18 +85,48 @@ export function Navbar() {
             {online ? "Online" : "Offline"} · {players}/{max}
           </span>
         </div>
-        <button className="btn-primary py-2.5! px-5! text-xs!" onClick={copyIP}>
-          <i className="fa-solid fa-cube" />
-          <span className="hidden sm:inline">Join Server</span>
-        </button>
-        <Link
-          href="/login"
-          className="btn-secondary py-2.5! px-4! text-xs! hidden sm:inline-flex"
-          aria-label="Log in with Discord"
-        >
-          <i className="fa-brands fa-discord" />
-          <span className="hidden md:inline">Log in</span>
+        <Link href="/join" className="btn-primary py-2.5! px-5! text-xs!" aria-label="How to join">
+          <i className="fa-solid fa-compass" />
+          <span className="hidden sm:inline">Join</span>
         </Link>
+        {user ? (
+          <>
+            {user.role === "admin" ? (
+              <Link
+                href="/admin"
+                className={`btn-secondary py-2.5! px-4! text-xs! hidden sm:inline-flex ${
+                  pathname === "/admin" ? "!text-[var(--accent)]" : ""
+                }`}
+                aria-label="Admin panel"
+              >
+                <i className="fa-solid fa-shield-halved" />
+                <span className="hidden md:inline">Admin</span>
+              </Link>
+            ) : null}
+            <button
+              className="h-11 px-3 flex items-center gap-2 border border-[var(--border-strong)] rounded-lg text-[var(--fg)] hover:border-[var(--accent)] transition"
+              onClick={() => void handleLogout()}
+              aria-label="Sign out"
+              title="Sign out"
+            >
+              <span className="w-7 h-7 rounded-md bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center font-display font-bold text-white text-sm">
+                {user.username.charAt(0).toUpperCase()}
+              </span>
+              <span className="hidden lg:inline text-sm">{user.username}</span>
+            </button>
+          </>
+        ) : (
+          !sessionLoading && (
+            <Link
+              href="/login"
+              className="btn-secondary py-2.5! px-4! text-xs! hidden sm:inline-flex"
+              aria-label="Log in"
+            >
+              <i className="fa-brands fa-discord" />
+              <span className="hidden md:inline">Log in</span>
+            </Link>
+          )
+        )}
         <button
           ref={toggleRef}
           className="nav-toggle"
@@ -131,14 +162,39 @@ export function Navbar() {
 
         {/* Account */}
         <div className="mt-2 pt-2 border-t border-[var(--border)]">
-          <Link
-            href="/login"
-            className={`nav-popover-link ${pathname === "/login" ? "active" : ""}`}
-            onClick={() => setMenuOpen(false)}
-          >
-            <i className="fa-solid fa-user" aria-hidden="true" />
-            Log in / Sign up
-          </Link>
+          {user ? (
+            <>
+              {user.role === "admin" ? (
+                <a
+                  href="/admin"
+                  className={`nav-popover-link ${pathname === "/admin" ? "active" : ""}`}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <i className="fa-solid fa-shield-halved" aria-hidden="true" />
+                  Admin Panel
+                </a>
+              ) : null}
+              <button
+                className="nav-popover-link w-full text-left"
+                onClick={() => {
+                  setMenuOpen(false);
+                  void handleLogout();
+                }}
+              >
+                <i className="fa-solid fa-right-from-bracket" aria-hidden="true" />
+                Sign out ({user.username})
+              </button>
+            </>
+          ) : (
+            <a
+              href="/login"
+              className={`nav-popover-link ${pathname === "/login" ? "active" : ""}`}
+              onClick={() => setMenuOpen(false)}
+            >
+              <i className="fa-solid fa-user" aria-hidden="true" />
+              Log in / Sign up
+            </a>
+          )}
         </div>
       </div>
     </>

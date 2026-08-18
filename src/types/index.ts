@@ -51,6 +51,35 @@ export interface RuleSection {
   rules: string[];
 }
 
+// ------------------------------------------------------------------
+// Auth / accounts
+// ------------------------------------------------------------------
+
+/** Roles a signed-in user can hold. */
+export type UserRole = "admin" | "member";
+
+/** Fine-grained capabilities that admins can grant per-member. */
+export type Permission = "server_control" | "ai_access";
+
+/** A user account (demo store until Discord OAuth is wired up). */
+export interface Account {
+  id: string;
+  username: string;
+  email?: string;
+  role: UserRole;
+  permissions: Permission[];
+  /** Demo accounts are seeded; admins can add more later. */
+  createdAt?: string;
+}
+
+/** The authenticated user, as carried in the session cookie / JWT. */
+export interface SessionUser {
+  id: string;
+  username: string;
+  role: UserRole;
+  permissions: Permission[];
+}
+
 export interface ServerStatus {
   online: boolean;
   players?: number;

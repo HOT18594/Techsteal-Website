@@ -18,6 +18,7 @@ export const siteConfig = {
     worldSize: "4.2",
     mapSize: "60k×60k",
   },
+  season: "Season 5",
   assistant: {
     name: "Nova",
     initial: "N",
