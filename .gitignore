@@ -31,6 +31,5 @@ next-env.d.ts
 # vercel
 .vercel
 
-dev.log
-.vercel
+# keep ignoring any env variant (incl. .env.example copies)
 .env*
