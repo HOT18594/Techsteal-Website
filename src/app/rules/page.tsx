@@ -71,7 +71,7 @@ export default function RulesPage() {
 
         {/* The One Rule card */}
         <Reveal delay={2}>
-          <div className="mt-12 card p-8" style={{ background: "linear-gradient(135deg, var(--card) 0%, var(--bg-2) 100%)" }}>
+          <div className="mt-12 card p-8" style={{ background: "var(--card)" }}>
             <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
               <div className="w-16 h-16 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center flex-shrink-0 rounded-xl">
                 <i className="fa-solid fa-shield-halved text-3xl text-white" />

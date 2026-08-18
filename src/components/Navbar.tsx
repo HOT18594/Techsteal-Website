@@ -36,6 +36,11 @@ export function Navbar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Close the dropdown whenever the route changes (e.g. after a nav click).
+  useEffect(() => {
+    setDropdownOpen(false);
+  }, [pathname]);
+
   const copyIP = async () => {
     try {
       await navigator.clipboard.writeText(siteConfig.address);
@@ -49,8 +54,6 @@ export function Navbar() {
   const players = status.players ?? 0;
   const max = status.max ?? siteConfig.maxPlayers;
 
-  const closeDropdown = () => setDropdownOpen(false);
-
   return (
     <>
       <nav
@@ -63,76 +66,64 @@ export function Navbar() {
             <span className="font-display text-xl tracking-wider">{siteConfig.name}</span>
           </a>
 
-          {/* Desktop: Hamburger button */}
-          <button
-            className="lg:hidden text-[var(--fg)] text-xl"
-            onClick={() => setDropdownOpen(!dropdownOpen)}
-            aria-label={dropdownOpen ? "Close menu" : "Open menu"}
-            aria-expanded={dropdownOpen}
-          >
-            <i className={dropdownOpen ? "fa-solid fa-xmark" : "fa-solid fa-bars"} />
-          </button>
-
-          {/* Desktop: Status pill + Join button (hidden on mobile, shown in dropdown) */}
-          <div className="hidden lg:flex items-center gap-3">
-            <div className={`status-pill ${online ? "" : "offline"}`}>
+          <div className="flex items-center gap-3">
+            {/* Status pill — visible on all sizes */}
+            <div className={`status-pill hidden sm:inline-flex ${online ? "" : "offline"}`}>
               <span className={`pulse-dot ${online ? "" : "muted"}`} />
               <span>
                 {online ? "Online" : "Offline"} · {players}/{max}
               </span>
             </div>
+            {/* Join button — visible on all sizes */}
             <button className="btn-primary py-2.5! px-5! text-xs!" onClick={copyIP}>
               <i className="fa-solid fa-cube" />
               <span className="hidden sm:inline">Join Server</span>
             </button>
+            {/* Hamburger menu toggle — ALWAYS visible */}
+            <button
+              className="h-11 w-11 flex items-center justify-center text-xl text-[var(--fg)] border border-[var(--border-strong)] rounded-lg hover:border-[var(--accent)] hover:text-[var(--accent)] transition"
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              aria-label={dropdownOpen ? "Close menu" : "Open menu"}
+              aria-expanded={dropdownOpen}
+            >
+              <i className={dropdownOpen ? "fa-solid fa-xmark" : "fa-solid fa-bars"} />
+            </button>
           </div>
         </div>
-
-        {/* Slide-down dropdown panel (desktop + mobile) */}
-        <div
-          className={`nav-dropdown ${dropdownOpen ? "open" : ""}`}
-          role="navigation"
-          aria-label="Main navigation"
-        >
-          <div className="nav-dropdown-inner">
-            <div className="nav-dropdown-links">
-              {NAV_LINKS.map((link) => (
-                <a
-                  key={link.href}
-                  href={link.href}
-                  className={`nav-dropdown-link ${pathname === link.href ? "active" : ""}`}
-                  onClick={closeDropdown}
-                >
-                  <i className={`fa-solid ${link.icon}`} aria-hidden="true" />
-                  {link.label}
-                </a>
-              ))}
-              {/* Mobile-only: Status + Join button in dropdown */}
-              <div className="lg:hidden pt-4 border-t border-[var(--border)] flex flex-col gap-3">
-                <div className={`status-pill ${online ? "" : "offline"}`}>
-                  <span className={`pulse-dot ${online ? "" : "muted"}`} />
-                  <span>
-                    {online ? "Online" : "Offline"} · {players}/{max}
-                  </span>
-                </div>
-                <button className="btn-primary py-2.5! px-5! text-xs! w-full justify-center" onClick={copyIP}>
-                  <i className="fa-solid fa-cube" />
-                  <span>Join Server</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Backdrop for mobile */}
-        {dropdownOpen && (
-          <div
-            className="lg:hidden fixed inset-0 z-40 bg-black/50"
-            onClick={closeDropdown}
-            aria-hidden="true"
-          />
-        )}
       </nav>
+
+      {/* Slide-down dropdown panel (all screen sizes) */}
+      <div
+        className={`nav-dropdown ${dropdownOpen ? "open" : ""}`}
+        role="navigation"
+        aria-label="Main navigation"
+        aria-hidden={!dropdownOpen}
+      >
+        <div className="nav-dropdown-inner">
+          <div className="grid sm:grid-cols-2 gap-1">
+            {NAV_LINKS.map((link) => (
+              <a
+                key={link.href}
+                href={link.href}
+                className={`nav-dropdown-link ${pathname === link.href ? "active" : ""}`}
+                onClick={() => setDropdownOpen(false)}
+              >
+                <i className={`fa-solid ${link.icon}`} aria-hidden="true" />
+                {link.label}
+              </a>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Backdrop when dropdown is open */}
+      {dropdownOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/50"
+          onClick={() => setDropdownOpen(false)}
+          aria-hidden="true"
+        />
+      )}
     </>
   );
 }

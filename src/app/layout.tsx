@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { BackToTop } from "@/components/BackToTop";
 import { Footer } from "@/components/Footer";
 import { Navbar } from "@/components/Navbar";
+import { RevealObserver } from "@/components/RevealObserver";
 import { ToastProvider } from "@/components/Toast";
 import { siteConfig } from "@/lib/site";
 import "./globals.css";
@@ -40,6 +41,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body className="antialiased">
         <ToastProvider>
+          <RevealObserver />
           <Navbar />
           <main>{children}</main>
           <Footer />

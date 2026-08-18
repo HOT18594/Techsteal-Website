@@ -95,7 +95,7 @@ export default function AssistantPage() {
         <Reveal delay={1}>
           <div
             className="card overflow-hidden"
-            style={{ background: "linear-gradient(180deg, var(--card) 0%, var(--bg-2) 100%)" }}
+            style={{ background: "var(--bg-2)" }}
           >
             {/* Chat header */}
             <div className="px-6 py-4 border-b border-[var(--border)] flex items-center justify-between">
