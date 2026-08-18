@@ -108,3 +108,27 @@ export function toSessionUser(account: Account): SessionUser {
     permissions: [...account.permissions],
   };
 }
+
+/**
+ * Find an account by Discord user id, creating one on first login.
+ * Accounts are keyed `discord:<id>` so they never collide with demo
+ * accounts. New sign-ins start as members with AI access.
+ */
+export function findOrCreateDiscordAccount(input: {
+  id: string;
+  username: string;
+}): Account {
+  const id = `discord:${input.id}`;
+  const existing = findAccount(id);
+  if (existing) return existing;
+
+  const account: Account = {
+    id,
+    username: input.username,
+    role: "member",
+    permissions: ["ai_access"],
+    createdAt: new Date().toISOString().slice(0, 10),
+  };
+  accounts.push(account);
+  return { ...account, permissions: [...account.permissions] };
+}

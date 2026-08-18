@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { siteConfig } from "@/lib/site";
 import { useToast } from "@/components/Toast";
 import { SubPage } from "@/components/SubPage";
@@ -9,11 +9,19 @@ import { useSession } from "@/lib/use-session";
 import type { Account } from "@/types";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginContent />
+    </Suspense>
+  );
+}
+
+function LoginContent() {
   const { show } = useToast();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, loading: sessionLoading, refresh } = useSession();
   const [busy, setBusy] = useState<string | null>(null);
-  const [discordBusy, setDiscordBusy] = useState(false);
   const [demoAccounts, setDemoAccounts] = useState<Account[]>([]);
 
   // Already logged in? Go straight to the right page.
@@ -22,6 +30,18 @@ export default function LoginPage() {
       router.replace(user.role === "admin" ? "/admin" : "/");
     }
   }, [user, sessionLoading, router]);
+
+  // Show a toast if the Discord callback bounced us back with an error.
+  useEffect(() => {
+    const error = searchParams.get("error");
+    if (!error) return;
+    const messages: Record<string, string> = {
+      discord_not_configured: "Discord login isn't set up yet.",
+      state_mismatch: "That sign-in link was stale — try again.",
+      oauth_failed: "Discord didn't let us in. Try again.",
+    };
+    show("Sign-in failed", messages[error] ?? "Something went wrong.");
+  }, [searchParams, show]);
 
   // Load the demo accounts to offer as sign-in options.
   useEffect(() => {
@@ -51,16 +71,6 @@ export default function LoginPage() {
     }
   };
 
-  const startDiscord = () => {
-    if (discordBusy) return;
-    setDiscordBusy(true);
-    // Placeholder — real Discord OAuth will be wired up later.
-    setTimeout(() => {
-      setDiscordBusy(false);
-      show("Discord login coming soon", "We'll connect the real flow shortly.");
-    }, 600);
-  };
-
   return (
     <SubPage className="items-center justify-center">
       <div className="w-full max-w-sm">
@@ -76,25 +86,18 @@ export default function LoginPage() {
             </p>
           </div>
 
-          {/* Discord button (future real auth) */}
-          <button
-            onClick={startDiscord}
-            disabled={discordBusy}
-            className="w-full inline-flex items-center justify-center gap-3 rounded-lg px-4 py-3 font-semibold text-white transition-all duration-200 disabled:opacity-70"
+          {/* Discord OAuth — starts the real login flow */}
+          <a
+            href="/api/auth/discord"
+            className="w-full inline-flex items-center justify-center gap-3 rounded-lg px-4 py-3 font-semibold text-white transition-all duration-200 hover:brightness-110"
             style={{
               background: "#5865F2",
               boxShadow: "0 8px 24px -8px rgba(88, 101, 242, 0.6)",
             }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.background = "#4752c4";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.background = "#5865F2";
-            }}
           >
             <i className="fa-brands fa-discord text-lg" />
-            {discordBusy ? "Connecting…" : "Continue with Discord"}
-          </button>
+            Continue with Discord
+          </a>
 
           {/* Divider */}
           <div className="flex items-center gap-3 my-6">
