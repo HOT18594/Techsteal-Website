@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Pixelify_Sans, Space_Grotesk } from "next/font/google";
 import type { ReactNode } from "react";
 import { BackToTop } from "@/components/BackToTop";
+import { CursorFx } from "@/components/CursorFx";
 import { Footer } from "@/components/Footer";
 import { Navbar } from "@/components/Navbar";
 import { PageEnter } from "@/components/PageEnter";
@@ -45,6 +46,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <ToastProvider>
           <RevealObserver />
           <ScrollFx />
+          <CursorFx />
           <Navbar />
           <main className="flex-1 flex flex-col">
             <PageEnter>{children}</PageEnter>

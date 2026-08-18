@@ -13,7 +13,18 @@ import { useEffect } from "react";
  *   (positive speed = moves slower than the page, negative = faster),
  * - applies a slight velocity "drift" to `[data-drift]` elements.
  *
- * Respects prefers-reduced-motion (disables itself entirely).
+ * It also intercepts the mouse wheel and eases the page toward the target
+ * with a damped lerp — the "controlled scroll speed". Instead of the page
+ * snapping to the wheel's exact position, it glides up to ~6 frames behind,
+ * which gives scrolling a slow, floaty, cinematic feel. The wheel amount is
+ * capped and slightly damped so a fast flick never rockets the page.
+ *
+ * Deliberately left untouched:
+ * - ctrl/cmd+wheel (browser zoom),
+ * - wheel events inside elements that scroll themselves (e.g. nav popover),
+ * - keyboard / scrollbar / touch / anchor-link scrolling (they snap the
+ *   glide target so we never fight the user),
+ * - anything when the user prefers reduced motion (disables itself entirely).
  */
 export function ScrollFx() {
   useEffect(() => {
@@ -30,6 +41,62 @@ export function ScrollFx() {
     let raf = 0;
     const targets = new Set<HTMLElement>();
 
+    // ---- cinematic eased scrolling ---------------------------------------
+    const WHEEL_SPEED = 0.92; // slight dampening — heavier, floatier feel
+    const WHEEL_CAP = 150; // max px a single wheel tick may add
+    const EASE = 0.13; // lerp per frame — lower = silkier glide
+    const SNAP_EPS = 1.5; // px tolerance for scrollTo rounding
+
+    let gliding = false;
+    let targetY = window.scrollY;
+    let glideY = targetY;
+    let lastSetY = targetY;
+
+    const maxScroll = () => Math.max(0, doc.scrollHeight - window.innerHeight);
+
+    const onWheel = (e: WheelEvent) => {
+      // Ctrl/cmd+wheel is browser zoom — never touch it.
+      if (e.ctrlKey || e.metaKey) return;
+      // Inner scrollers (popovers, scrollable lists) keep native wheel.
+      let el = e.target instanceof Element ? e.target : null;
+      while (el && el !== document.body) {
+        const s = getComputedStyle(el).overflowY;
+        if ((s === "auto" || s === "scroll") && el.scrollHeight > el.clientHeight + 2)
+          return;
+        el = el.parentElement;
+      }
+      if (maxScroll() <= 0) return;
+
+      e.preventDefault();
+      const raw =
+        e.deltaMode === 1
+          ? e.deltaY * 16
+          : e.deltaMode === 2
+            ? e.deltaY * window.innerHeight
+            : e.deltaY;
+      const delta = Math.max(-WHEEL_CAP, Math.min(WHEEL_CAP, raw * WHEEL_SPEED));
+      targetY = Math.max(0, Math.min(maxScroll(), targetY + delta));
+      if (!gliding) {
+        gliding = true;
+        glideY = window.scrollY;
+        doc.style.scrollBehavior = "auto"; // the lerp owns the easing now
+      }
+    };
+
+    const onScroll = () => {
+      // Native scroll (keyboard, scrollbar drag, anchor jump) wins: snap the
+      // glide target so we never fight the user.
+      if (Math.abs(window.scrollY - lastSetY) > SNAP_EPS) {
+        targetY = window.scrollY;
+        glideY = targetY;
+        gliding = false;
+        doc.style.scrollBehavior = "";
+      }
+    };
+
+    window.addEventListener("wheel", onWheel, { passive: false });
+    window.addEventListener("scroll", onScroll, { passive: true });
+
     const collect = () => {
       document
         .querySelectorAll<HTMLElement>("[data-parallax], [data-drift]")
@@ -37,6 +104,18 @@ export function ScrollFx() {
     };
 
     const onFrame = () => {
+      // Ease the glide toward the wheel's target.
+      if (gliding) {
+        glideY += (targetY - glideY) * EASE;
+        if (Math.abs(targetY - glideY) < 0.5) {
+          glideY = targetY;
+          gliding = false;
+          doc.style.scrollBehavior = "";
+        }
+        window.scrollTo(0, glideY);
+        lastSetY = glideY;
+      }
+
       y = window.scrollY;
       const vel = y - prev;
       prev = y;
@@ -84,10 +163,13 @@ export function ScrollFx() {
     return () => {
       cancelAnimationFrame(raf);
       mo?.disconnect();
+      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("scroll", onScroll);
       progress.remove();
       document.body.classList.remove("scrolled");
       doc.style.removeProperty("--scroll-y");
       doc.style.removeProperty("--scroll-v");
+      doc.style.scrollBehavior = "";
       document
         .querySelectorAll<HTMLElement>("[data-parallax], [data-drift]")
         .forEach((el) => el.style.removeProperty("transform"));

@@ -1,11 +1,37 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useToast } from "@/components/Toast";
 import { SubPage } from "@/components/SubPage";
 import { fallbackRules } from "@/lib/fallback-data";
 import type { RuleSection } from "@/types";
 import { useApi } from "@/lib/use-api";
+
+/** Party burst: launches a shower of 🎉🎊🔥✨💥 from a point on screen. */
+function emojiBurst(x: number, y: number, count: number) {
+  const EMOJIS = ["🎉", "🎊", "🔥", "✨", "💥"];
+  const wrap = document.createElement("div");
+  wrap.className = "confetti-wrap";
+  wrap.style.left = `${x}px`;
+  wrap.style.top = `${y}px`;
+  document.body.appendChild(wrap);
+
+  for (let i = 0; i < count; i++) {
+    const piece = document.createElement("span");
+    piece.className = "confetti-piece";
+    piece.textContent = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 8 + Math.random() * 9;
+    piece.style.setProperty("--vx", (Math.cos(angle) * speed).toFixed(2));
+    piece.style.setProperty("--vy", (Math.sin(angle) * speed - 6.5).toFixed(2));
+    piece.style.setProperty("--rot", `${(Math.random() - 0.5) * 1080}deg`);
+    piece.style.fontSize = `${1.3 + Math.random() * 1.5}rem`;
+    piece.style.animationDelay = `${(Math.random() * 0.08).toFixed(2)}s`;
+    wrap.appendChild(piece);
+  }
+
+  window.setTimeout(() => wrap.remove(), 1800);
+}
 
 export default function RulesPage() {
   const { show } = useToast();
@@ -14,11 +40,20 @@ export default function RulesPage() {
   // copy to maintain going forward.
   const RULES = sections[0]?.rules ?? [];
   const [acknowledged, setAcknowledged] = useState(false);
+  const ackRef = useRef<HTMLButtonElement>(null);
 
   const acknowledge = () => {
     if (acknowledged) return;
     setAcknowledged(true);
-    show("Rules acknowledged", "Thanks — welcome aboard.");
+    show("Rules acknowledged", "Thanks — welcome aboard. 🔥");
+    const btn = ackRef.current?.getBoundingClientRect();
+    if (btn) {
+      const cx = btn.left + btn.width / 2;
+      const cy = btn.top + btn.height / 2;
+      emojiBurst(cx, cy, 28);
+      window.setTimeout(() => emojiBurst(cx, cy, 18), 160);
+      window.setTimeout(() => emojiBurst(cx, cy, 12), 340);
+    }
   };
 
   return (
@@ -71,6 +106,7 @@ export default function RulesPage() {
             </p>
           </div>
           <button
+            ref={ackRef}
             className={`btn-primary ${acknowledged ? "opacity-90" : ""}`}
             onClick={acknowledge}
             disabled={acknowledged}
@@ -87,13 +123,6 @@ export default function RulesPage() {
               </>
             )}
           </button>
-        </div>
-
-        {/* @everyone footer */}
-        <div className="mt-8 text-center">
-          <code className="inline-block px-4 py-1.5 rounded-lg bg-[var(--bg-2)] border border-[var(--border)] text-sm text-[var(--accent)] font-display">
-            @everyone
-          </code>
         </div>
       </div>
     </SubPage>
