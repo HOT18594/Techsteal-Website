@@ -19,7 +19,7 @@ export const siteConfig = {
     mapSize: "60k×60k",
   },
   assistant: {
-    name: "NEXUS",
+    name: "Nova",
     initial: "N",
     tagline: "Online · responds instantly",
   },

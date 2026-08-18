@@ -798,6 +798,85 @@ body {
   width: 80px;
 }
 
+/* ============================================================
+   Premium tile hover effects (home feature / quick-link tiles)
+   ============================================================ */
+.tile {
+  position: relative;
+  isolation: isolate;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.35s ease, border-color 0.35s ease;
+}
+.tile:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 22px 48px -20px var(--accent-glow);
+  border-color: var(--accent);
+}
+
+/* Gradient border that fades in on hover */
+.tile::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: linear-gradient(
+    135deg,
+    var(--accent),
+    var(--accent-bright) 40%,
+    transparent 75%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+  pointer-events: none;
+  z-index: 1;
+}
+.tile:hover::after {
+  opacity: 1;
+}
+
+/* Shine sweep across the tile */
+.tile::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -80%;
+  width: 55%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.7s ease;
+  pointer-events: none;
+  z-index: 2;
+}
+.tile:hover::before {
+  left: 130%;
+}
+
+/* Icon pop + rotate on hover */
+.tile-icon {
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 0.3s ease, color 0.3s ease;
+}
+.tile:hover .tile-icon {
+  transform: scale(1.12) rotate(-8deg);
+}
+
+/* Arrow that slides in on hover */
+.tile-arrow {
+  opacity: 0;
+  transform: translateX(-8px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.tile:hover .tile-arrow {
+  opacity: 1;
+  transform: translateX(0);
+}
+
 /* Selection */
 ::selection {
   background: var(--accent);

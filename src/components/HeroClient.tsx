@@ -57,11 +57,14 @@ export function HeroClient() {
           <div className="grid md:grid-cols-3 gap-6 lg:gap-8">
             {/* Status */}
             <Link href="/status" className="reveal group">
-              <div className="card p-10 h-full flex flex-col items-center text-center transition-all duration-300 group-hover:border-[var(--accent)] group-hover:shadow-[0_0_30px_var(--accent-glow)]">
-                <div className="w-16 h-16 rounded-2xl bg-[var(--accent-dim)] flex items-center justify-center mb-8 group-hover:bg-[var(--accent)] group-hover:text-white transition-colors">
+              <div className="tile card p-10 h-full flex flex-col items-center text-center">
+                <div className="tile-icon w-16 h-16 rounded-2xl bg-[var(--accent-dim)] flex items-center justify-center mb-8 group-hover:bg-[var(--accent)] group-hover:text-white transition-colors">
                   <i className="fa-solid fa-signal text-2xl text-[var(--accent)] group-hover:text-white" />
                 </div>
                 <h3 className="font-display text-2xl font-bold">Status</h3>
+                <span className="tile-arrow mt-6 text-[var(--accent)] text-sm font-semibold flex items-center gap-2">
+                  Open <i className="fa-solid fa-arrow-right" />
+                </span>
                 <div className="mt-8 w-full">
                   <div className="asset-placeholder aspect-[4/3] rounded-xl w-full">
                     <div className="asset-placeholder-content">
@@ -75,11 +78,14 @@ export function HeroClient() {
 
             {/* Members */}
             <Link href="/members" className="reveal reveal-delay-1 group">
-              <div className="card p-10 h-full flex flex-col items-center text-center transition-all duration-300 group-hover:border-[var(--accent)] group-hover:shadow-[0_0_30px_var(--accent-glow)]">
-                <div className="w-16 h-16 rounded-2xl bg-[var(--accent-dim)] flex items-center justify-center mb-8 group-hover:bg-[var(--accent)] group-hover:text-white transition-colors">
+              <div className="tile card p-10 h-full flex flex-col items-center text-center">
+                <div className="tile-icon w-16 h-16 rounded-2xl bg-[var(--accent-dim)] flex items-center justify-center mb-8 group-hover:bg-[var(--accent)] group-hover:text-white transition-colors">
                   <i className="fa-solid fa-users text-2xl text-[var(--accent)] group-hover:text-white" />
                 </div>
                 <h3 className="font-display text-2xl font-bold">Members</h3>
+                <span className="tile-arrow mt-6 text-[var(--accent)] text-sm font-semibold flex items-center gap-2">
+                  Open <i className="fa-solid fa-arrow-right" />
+                </span>
                 <div className="mt-8 w-full">
                   <div className="asset-placeholder aspect-[4/3] rounded-xl w-full">
                     <div className="asset-placeholder-content">
@@ -93,11 +99,14 @@ export function HeroClient() {
 
             {/* Gallery */}
             <Link href="/gallery" className="reveal reveal-delay-2 group">
-              <div className="card p-10 h-full flex flex-col items-center text-center transition-all duration-300 group-hover:border-[var(--accent)] group-hover:shadow-[0_0_30px_var(--accent-glow)]">
-                <div className="w-16 h-16 rounded-2xl bg-[var(--accent-dim)] flex items-center justify-center mb-8 group-hover:bg-[var(--accent)] group-hover:text-white transition-colors">
+              <div className="tile card p-10 h-full flex flex-col items-center text-center">
+                <div className="tile-icon w-16 h-16 rounded-2xl bg-[var(--accent-dim)] flex items-center justify-center mb-8 group-hover:bg-[var(--accent)] group-hover:text-white transition-colors">
                   <i className="fa-solid fa-images text-2xl text-[var(--accent)] group-hover:text-white" />
                 </div>
                 <h3 className="font-display text-2xl font-bold">Gallery</h3>
+                <span className="tile-arrow mt-6 text-[var(--accent)] text-sm font-semibold flex items-center gap-2">
+                  Open <i className="fa-solid fa-arrow-right" />
+                </span>
                 <div className="mt-8 w-full">
                   <div className="asset-placeholder aspect-[4/3] rounded-xl w-full">
                     <div className="asset-placeholder-content">
@@ -116,25 +125,35 @@ export function HeroClient() {
       <section className="py-16 lg:py-20 px-6 lg:px-10">
         <div className="max-w-7xl mx-auto">
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-            <Link href="/assistant" className="reveal card p-8 text-center group hover:border-[var(--accent)] transition-all">
-              <i className="fa-solid fa-robot text-2xl text-[var(--accent)] mb-3 group-hover:text-[var(--accent-bright)] transition-colors" />
-              <h3 className="font-display text-lg font-bold">Assistant</h3>
+            <Link href="/assistant" className="reveal group">
+              <div className="tile card p-8 text-center">
+                <i className="tile-icon fa-solid fa-robot text-2xl text-[var(--accent)] mb-3 group-hover:text-[var(--accent-bright)] transition-colors" />
+                <h3 className="font-display text-lg font-bold">Assistant</h3>
+              </div>
             </Link>
-            <Link href="/forum" className="reveal reveal-delay-1 card p-8 text-center group hover:border-[var(--accent)] transition-all">
-              <i className="fa-solid fa-comments text-2xl text-[var(--accent)] mb-3 group-hover:text-[var(--accent-bright)] transition-colors" />
-              <h3 className="font-display text-lg font-bold">Forum</h3>
+            <Link href="/forum" className="reveal reveal-delay-1 group">
+              <div className="tile card p-8 text-center">
+                <i className="tile-icon fa-solid fa-comments text-2xl text-[var(--accent)] mb-3 group-hover:text-[var(--accent-bright)] transition-colors" />
+                <h3 className="font-display text-lg font-bold">Forum</h3>
+              </div>
             </Link>
-            <Link href="/history" className="reveal reveal-delay-2 card p-8 text-center group hover:border-[var(--accent)] transition-all">
-              <i className="fa-solid fa-clock-rotate-left text-2xl text-[var(--accent)] mb-3 group-hover:text-[var(--accent-bright)] transition-colors" />
-              <h3 className="font-display text-lg font-bold">History</h3>
+            <Link href="/history" className="reveal reveal-delay-2 group">
+              <div className="tile card p-8 text-center">
+                <i className="tile-icon fa-solid fa-clock-rotate-left text-2xl text-[var(--accent)] mb-3 group-hover:text-[var(--accent-bright)] transition-colors" />
+                <h3 className="font-display text-lg font-bold">History</h3>
+              </div>
             </Link>
-            <Link href="/rules" className="reveal reveal-delay-3 card p-8 text-center group hover:border-[var(--accent)] transition-all">
-              <i className="fa-solid fa-gavel text-2xl text-[var(--accent)] mb-3 group-hover:text-[var(--accent-bright)] transition-colors" />
-              <h3 className="font-display text-lg font-bold">Rules</h3>
+            <Link href="/rules" className="reveal reveal-delay-3 group">
+              <div className="tile card p-8 text-center">
+                <i className="tile-icon fa-solid fa-gavel text-2xl text-[var(--accent)] mb-3 group-hover:text-[var(--accent-bright)] transition-colors" />
+                <h3 className="font-display text-lg font-bold">Rules</h3>
+              </div>
             </Link>
-            <Link href="/status" className="reveal reveal-delay-4 card p-8 text-center group hover:border-[var(--accent)] transition-all">
-              <i className="fa-solid fa-signal text-2xl text-[var(--accent)] mb-3 group-hover:text-[var(--accent-bright)] transition-colors" />
-              <h3 className="font-display text-lg font-bold">Status</h3>
+            <Link href="/status" className="reveal reveal-delay-4 group">
+              <div className="tile card p-8 text-center">
+                <i className="tile-icon fa-solid fa-signal text-2xl text-[var(--accent)] mb-3 group-hover:text-[var(--accent-bright)] transition-colors" />
+                <h3 className="font-display text-lg font-bold">Status</h3>
+              </div>
             </Link>
           </div>
         </div>

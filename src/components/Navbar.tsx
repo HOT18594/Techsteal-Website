@@ -87,6 +87,14 @@ export function Navbar() {
           <i className="fa-solid fa-cube" />
           <span className="hidden sm:inline">Join Server</span>
         </button>
+        <Link
+          href="/login"
+          className="btn-secondary py-2.5! px-4! text-xs! hidden sm:inline-flex"
+          aria-label="Log in with Discord"
+        >
+          <i className="fa-brands fa-discord" />
+          <span className="hidden md:inline">Log in</span>
+        </Link>
         <button
           className="h-11 w-11 flex items-center justify-center text-xl text-[var(--fg)] border border-[var(--border-strong)] rounded-lg hover:border-[var(--accent)] hover:text-[var(--accent)] transition"
           onClick={() => setMenuOpen(!menuOpen)}
@@ -118,6 +126,18 @@ export function Navbar() {
             {link.label}
           </a>
         ))}
+
+        {/* Account */}
+        <div className="mt-2 pt-2 border-t border-[var(--border)]">
+          <Link
+            href="/login"
+            className={`nav-popover-link ${pathname === "/login" ? "active" : ""}`}
+            onClick={closeMenu}
+          >
+            <i className="fa-solid fa-user" aria-hidden="true" />
+            Log in / Sign up
+          </Link>
+        </div>
       </div>
     </>
   );

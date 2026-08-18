@@ -25,39 +25,18 @@ export const fallbackTimeline: TimelineEvent[] = [];
 
 export const fallbackRules: RuleSection[] = [
   {
-    icon: "fa-handshake",
-    title: "Community Conduct",
+    icon: "fa-shield-halved",
+    title: "Techsteal Server Rules",
     rules: [
-      "Treat every member with respect.",
-      "No griefing, stealing, or unsanctioned killing.",
-      "Let the team know if you will be away for more than a week.",
-    ],
-  },
-  {
-    icon: "fa-hammer",
-    title: "Building",
-    rules: [
-      "No building within 128 blocks of another base without permission.",
-      "Sign your builds so credit is clear.",
-      "Restore the landscape after large mining operations.",
-    ],
-  },
-  {
-    icon: "fa-bolt",
-    title: "PvP & Theft",
-    rules: [
-      "PvP is consent-based. Both parties must agree.",
-      "No stealing from unclaimed chests.",
-      "Pranks are allowed — within reason.",
-    ],
-  },
-  {
-    icon: "fa-microchip",
-    title: "Technical",
-    rules: [
-      "No cheats, hacks, or X-ray. Vanilla only.",
-      "No lag machines. Keep the server healthy.",
-      "Report bugs instead of exploiting them.",
+      "No unfair client modifications.",
+      "Hack clients or mods that give unfair advantages (e.g. minimaps) are not allowed. Mods that aid building or improve visuals (e.g. full-bright) are fine.",
+      "Raiding and griefing are part of the game, but don't go overboard. Structures near world spawn are protected and must not be damaged.",
+      "Lag machines, chunk bans, and any other intentional server disruption are strictly prohibited.",
+      "Combat logging is not allowed. While there's no plugin to prevent it, offenders can be reported.",
+      "Crystal PvP is only allowed if both parties agree beforehand.",
+      "No bullying or harassment. Keep interactions fun and respectful for everyone.",
+      "Spawn killing is not permitted. Give players a fair chance after respawn.",
+      "Severe enough offences will lead to immediate ban.",
     ],
   },
 ];
