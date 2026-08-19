@@ -5,6 +5,7 @@ import { fallbackGallery } from "@/lib/fallback-data";
 import type { GalleryItem } from "@/types";
 import { SubPage } from "@/components/SubPage";
 import { useApi } from "@/lib/use-api";
+import { Carousel } from "@/components/Carousel";
 
 export default function GalleryPage() {
   const { data: items } = useApi<GalleryItem[]>("/api/gallery", fallbackGallery);
@@ -16,6 +17,36 @@ export default function GalleryPage() {
   }, [items]);
 
   const visible = filter === "All" ? items : items.filter((i) => i.category === filter);
+
+  const slides = visible.map((g) => (
+    <div key={g.id ?? g.title} className="card gallery-slide">
+      <div className="relative w-full aspect-[16/10] overflow-hidden rounded-t-[14px]">
+        <img
+          src={g.image}
+          alt={g.title}
+          loading="lazy"
+          className="w-full h-full object-cover"
+        />
+        <div className="gallery-slide-shade" aria-hidden="true" />
+        <div className="absolute bottom-0 inset-x-0 p-6 sm:p-8 flex flex-col items-start">
+          <span className="label-grad mb-3">{g.category}</span>
+          <h3 className="font-display text-2xl sm:text-3xl font-bold text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
+            {g.title}
+          </h3>
+          <div className="flex items-center gap-4 mt-2 text-sm text-[var(--fg-2)]">
+            <span className="flex items-center gap-1.5">
+              <i className="fa-solid fa-user text-xs text-[var(--accent-bright)]" />
+              {g.builder}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <i className="fa-solid fa-heart text-xs text-[var(--redstone)]" />
+              {g.likes}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  ));
 
   return (
     <SubPage className="mx-auto max-w-7xl pt-6 pb-16">
@@ -54,26 +85,7 @@ export default function GalleryPage() {
             No builds posted yet.
           </div>
         ) : (
-          <div className="gallery-grid">
-            {visible.map((g) => (
-              <div key={g.id ?? g.title} className="gallery-item">
-                <div className="aspect-[4/5] relative overflow-hidden">
-                  <img src={g.image} alt={g.title} loading="lazy" className="w-full h-full object-cover" />
-                  <div className="overlay">
-                    <span className="label-grad mb-2">{g.category}</span>
-                    <h3 className="font-display text-xl font-bold text-white">{g.title}</h3>
-                    <div className="flex items-center justify-between mt-2">
-                      <span className="text-sm text-[var(--fg-2)]">by {g.builder}</span>
-                      <span className="flex items-center gap-1.5 text-sm text-[var(--accent-bright)]">
-                        <i className="fa-solid fa-heart text-xs" />
-                        {g.likes}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <Carousel slides={slides} label="Gallery builds" interval={6500} />
         )}
       </div>
     </SubPage>

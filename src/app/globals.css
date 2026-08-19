@@ -1373,6 +1373,126 @@ html.custom-cursor.cursor-on-text .cursor-ring {
   opacity: 0.1;
 }
 
+/* ============================================================
+   Carousel (status / members / gallery slideshows)
+   ============================================================ */
+.carousel-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 17, 32, 0.72);
+  border: 1px solid var(--border-strong);
+  color: var(--fg-2);
+  border-radius: 12px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: all 0.2s;
+}
+.carousel-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent-bright);
+  box-shadow: 0 0 18px -6px var(--accent-glow);
+}
+.carousel-btn.prev {
+  left: 12px;
+}
+.carousel-btn.next {
+  right: 12px;
+}
+@media (max-width: 640px) {
+  .carousel-btn {
+    display: none;
+  }
+}
+
+@keyframes carouselProgress {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+.carousel-progress {
+  animation-name: carouselProgress;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+/* Stat slideshow slides */
+.stat-slide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 56px 24px;
+  min-height: 320px;
+}
+.stat-slide-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  background: var(--accent-dim);
+  border: 1px solid var(--border-strong);
+  color: var(--accent-bright);
+  box-shadow: 0 0 24px -8px var(--accent-glow);
+}
+
+/* Member slideshow slides */
+.member-slide {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 64px 24px;
+  min-height: 380px;
+}
+.member-slide-glow {
+  position: absolute;
+  top: -120px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 340px;
+  height: 340px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--accent-glow), transparent 70%);
+  opacity: 0.5;
+  pointer-events: none;
+}
+.member-slide-avatar {
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.06),
+    0 0 40px -8px var(--accent-glow), 0 18px 40px -18px rgba(0, 0, 0, 0.8);
+}
+
+/* Gallery slideshow slides */
+.gallery-slide {
+  overflow: hidden;
+}
+.gallery-slide-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top,
+    rgba(5, 7, 15, 0.95) 0%,
+    rgba(5, 7, 15, 0.25) 55%,
+    transparent 80%
+  );
+}
+
 /* ---------- Respect reduced motion ---------- */
 @media (prefers-reduced-motion: reduce) {
   *,

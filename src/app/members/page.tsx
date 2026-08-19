@@ -4,12 +4,34 @@ import { fallbackMembers } from "@/lib/fallback-data";
 import type { Member } from "@/types";
 import { SubPage } from "@/components/SubPage";
 import { useApi } from "@/lib/use-api";
+import { Carousel } from "@/components/Carousel";
 
 export default function MembersPage() {
   const { data: members } = useApi<Member[]>("/api/members", fallbackMembers);
 
   const online = members.filter((m) => m.status === "online").length;
   const offline = members.length - online;
+
+  const slides = members.map((m) => (
+    <div key={m.id ?? m.name} className="card member-slide">
+      {/* Glow backdrop tinted with the member's accent */}
+      <div className="member-slide-glow" aria-hidden="true" />
+      <div className="relative">
+        <div className={`avatar avatar-xl ${m.color} member-slide-avatar`}>{m.avatar}</div>
+        <div className={m.status === "online" ? "status-online" : "status-offline"} />
+      </div>
+      <h2 className="mt-6 font-display text-3xl font-bold">{m.name}</h2>
+      <span className="tag tag-accent mt-2">{m.role}</span>
+      <p className="mt-4 text-sm text-[var(--muted)]">
+        Joined <span className="text-[var(--fg-2)]">{m.joined}</span> ·{" "}
+        <span className="text-[var(--fg-2)]">{m.playtime}</span> playtime
+      </p>
+      <div className={`mt-5 flex items-center gap-2 text-xs uppercase tracking-wider ${m.status === "online" ? "text-[var(--emerald)]" : "text-[var(--muted-2)]"}`}>
+        <span className={`w-2 h-2 rounded-full ${m.status === "online" ? "bg-[var(--emerald)] shadow-[0_0_8px_var(--emerald-glow)]" : "bg-[var(--muted-2)]"}`} />
+        {m.status === "online" ? "In-game right now" : "Offline"}
+      </div>
+    </div>
+  ));
 
   return (
     <SubPage className="mx-auto max-w-7xl pt-6 pb-16">
@@ -41,29 +63,7 @@ export default function MembersPage() {
             No members listed yet.
           </div>
         ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {members.map((m) => (
-              <div key={m.id ?? m.name} className="member-card p-5">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="relative">
-                    <div className={`avatar avatar-lg ${m.color}`}>{m.avatar}</div>
-                    <div className={m.status === "online" ? "status-online" : "status-offline"} />
-                  </div>
-                  <div className="text-right">
-                    <div className="text-xs text-[var(--muted)] uppercase tracking-wider">Joined</div>
-                    <div className="font-display text-sm">{m.joined}</div>
-                  </div>
-                </div>
-
-                <h3 className="font-display text-lg font-bold mb-3">{m.name}</h3>
-
-                <div className="pt-3 border-t border-[var(--border)] flex justify-between items-center">
-                  <span className="text-sm text-[var(--accent)]">{m.role}</span>
-                  <span className="text-xs text-[var(--muted)] uppercase">{m.status}</span>
-                </div>
-              </div>
-            ))}
-          </div>
+          <Carousel slides={slides} label="Members" interval={6500} />
         )}
       </div>
     </SubPage>
