@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { siteConfig } from "@/lib/site";
 import { useToast } from "@/components/Toast";
+import { SubPage } from "@/components/SubPage";
 
 interface ChatMessage {
   id: number;
@@ -169,179 +170,173 @@ export default function AssistantPage() {
   const isEmpty = messages.length <= 1 && messages[0]?.role === "assistant";
 
   return (
-    <section className="flex-1 min-h-0 flex flex-col">
-      {/* Invisible top spacer — clears the floating wordmark/buttons */}
-      <div aria-hidden="true" className="h-20 lg:h-24 flex-shrink-0" />
-
-      {/* Header */}
-      <header className="flex-shrink-0 w-full max-w-3xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between border-b border-[var(--border)]">
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="w-11 h-11 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center font-display font-bold text-white rounded-xl shadow-[0_0_20px_-6px_var(--accent-glow)]">
-              {ai.initial}
+    <SubPage className="mx-auto max-w-3xl pt-6 pb-16">
+      <div className="w-full flex flex-col min-h-0 flex-1">
+        {/* Header */}
+        <div className="page-header rowed mb-6">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="w-11 h-11 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center font-display font-bold text-white rounded-xl">
+                {ai.initial}
+              </div>
+              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[var(--emerald)] border-2 border-[var(--bg)] rounded-full" />
             </div>
-            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[var(--emerald)] border-2 border-[var(--bg)] rounded-full" />
-          </div>
-          <div>
-            <div className="font-display font-bold text-xl leading-tight">{ai.name}</div>
-            <div className="text-xs text-[var(--emerald)] flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 bg-[var(--emerald)] rounded-full" />
-              Online · {siteConfig.name}
+            <div>
+              <h1 className="page-title !text-3xl md:!text-4xl">{ai.name}</h1>
+              <div className="text-xs text-[var(--emerald)] flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 bg-[var(--emerald)] rounded-full" />
+                Online · {siteConfig.name}
+              </div>
             </div>
           </div>
+          <button
+            className="btn-ghost py-2! px-3!"
+            onClick={clear}
+            aria-label="New chat"
+          >
+            <i className="fa-solid fa-rotate-right" />
+            <span className="hidden sm:inline">New chat</span>
+          </button>
         </div>
-        <button
-          className="text-[var(--muted)] hover:text-[var(--accent)] transition flex items-center gap-2 text-sm"
-          onClick={clear}
-          aria-label="New chat"
-        >
-          <i className="fa-solid fa-rotate-right" />
-          <span className="hidden sm:inline">New chat</span>
-        </button>
-      </header>
 
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto" id="chat-messages">
-        <div className="w-full max-w-3xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-          {messages.map((m) => (
-            <div key={m.id} className="group">
-              {m.role === "assistant" ? (
+        {/* Chat card */}
+        <div className="card flex-1 min-h-0 flex flex-col overflow-hidden">
+          {/* Messages */}
+          <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto" id="chat-messages">
+            <div className="px-4 sm:px-6 py-6 space-y-5">
+              {messages.map((m) => (
+                <div key={m.id} className="group">
+                  {m.role === "assistant" ? (
+                    <div className="flex gap-3">
+                      <div className="w-8 h-8 mt-1 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center font-display font-bold text-white text-xs flex-shrink-0 rounded-lg">
+                        {ai.initial}
+                      </div>
+                      <div className="max-w-[88%]">
+                        <div className="chat-bubble-ai px-4 py-3">
+                          <div className="text-[15px] leading-relaxed text-[var(--fg-2)]">
+                            {renderText(m.text)}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 mt-1.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <span className="text-[11px] text-[var(--muted-2)]">{m.time}</span>
+                          <button
+                            className="text-[11px] text-[var(--muted)] hover:text-[var(--accent)] transition"
+                            onClick={() => void copyMessage(m.text)}
+                          >
+                            <i className="fa-regular fa-copy mr-1" />
+                            Copy
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex gap-3 justify-end">
+                      <div className="max-w-[88%]">
+                        <div className="chat-bubble-user px-4 py-3">
+                          <div className="text-[15px] leading-relaxed text-[var(--fg)] whitespace-pre-wrap">
+                            {m.text}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-end gap-3 mt-1.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <span className="text-[11px] text-[var(--muted-2)]">{m.time}</span>
+                          <button
+                            className="text-[11px] text-[var(--muted)] hover:text-[var(--accent)] transition"
+                            onClick={() => void copyMessage(m.text)}
+                          >
+                            <i className="fa-regular fa-copy mr-1" />
+                            Copy
+                          </button>
+                        </div>
+                      </div>
+                      <div className="w-8 h-8 mt-1 bg-[var(--accent)] flex items-center justify-center font-display font-bold text-white text-xs flex-shrink-0 rounded-lg">
+                        YOU
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {/* Typing indicator */}
+              {typing ? (
                 <div className="flex gap-3">
                   <div className="w-8 h-8 mt-1 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center font-display font-bold text-white text-xs flex-shrink-0 rounded-lg">
                     {ai.initial}
                   </div>
-                  <div className="max-w-[88%]">
-                    <div className="chat-bubble-ai px-5 py-4">
-                      <div className="text-[15px] leading-relaxed text-[var(--fg-2)]">
-                        {renderText(m.text)}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 mt-1.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <span className="text-[11px] text-[var(--muted-2)]">{m.time}</span>
-                      <button
-                        className="text-[11px] text-[var(--muted)] hover:text-[var(--accent)] transition"
-                        onClick={() => void copyMessage(m.text)}
-                      >
-                        <i className="fa-regular fa-copy mr-1" />
-                        Copy
-                      </button>
-                    </div>
+                  <div className="chat-bubble-ai px-4 py-3 flex items-center gap-1.5">
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
                   </div>
                 </div>
-              ) : (
-                <div className="flex gap-3 justify-end">
-                  <div className="max-w-[88%]">
-                    <div className="chat-bubble-user px-5 py-4">
-                      <div className="text-[15px] leading-relaxed text-[var(--fg)] whitespace-pre-wrap">
-                        {m.text}
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-end gap-3 mt-1.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <span className="text-[11px] text-[var(--muted-2)]">{m.time}</span>
-                      <button
-                        className="text-[11px] text-[var(--muted)] hover:text-[var(--accent)] transition"
-                        onClick={() => void copyMessage(m.text)}
-                      >
-                        <i className="fa-regular fa-copy mr-1" />
-                        Copy
-                      </button>
-                    </div>
-                  </div>
-                  <div className="w-8 h-8 mt-1 bg-[var(--accent)] flex items-center justify-center font-display font-bold text-white text-xs flex-shrink-0 rounded-lg">
-                    YOU
-                  </div>
-                </div>
-              )}
+              ) : null}
             </div>
-          ))}
+          </div>
 
-          {/* Typing indicator */}
-          {typing ? (
-            <div className="flex gap-3">
-              <div className="w-8 h-8 mt-1 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center font-display font-bold text-white text-xs flex-shrink-0 rounded-lg">
-                {ai.initial}
-              </div>
-              <div className="chat-bubble-ai px-5 py-4 flex items-center gap-1.5">
-                <span className="typing-dot" />
-                <span className="typing-dot" />
-                <span className="typing-dot" />
-              </div>
-            </div>
-          ) : null}
-
-          {/* Welcome state — shown when the chat is fresh */}
+          {/* Welcome suggestions — only when fresh */}
           {isEmpty ? (
-            <div className="pt-10 pb-4 flex flex-col items-center text-center">
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center font-display font-bold text-white text-3xl mb-5 shadow-[0_0_40px_-8px_var(--accent-glow)]">
-                {ai.initial}
-              </div>
-              <h2 className="font-display text-2xl font-bold mb-2">Hi, I&apos;m {ai.name}</h2>
-              <p className="text-[var(--muted)] max-w-md mb-8">
-                Ask me anything about {siteConfig.name} — rules, members, builds, or how to join.
-              </p>
-              <div className="grid sm:grid-cols-2 gap-3 w-full max-w-lg">
+            <div className="flex-shrink-0 px-4 sm:px-6 pb-5">
+              <div className="grid sm:grid-cols-2 gap-2.5">
                 {SUGGESTIONS.map((s) => (
                   <button
                     key={s.label}
-                    className="card px-5 py-4 flex items-center gap-3 text-left hover:border-[var(--accent)] transition"
+                    className="card px-4 py-3.5 flex items-center gap-3 text-left hover:border-[var(--accent)] transition"
                     onClick={() => void send(s.text)}
                   >
-                    <i className={`fa-solid ${s.icon} text-[var(--accent)]`} />
+                    <i className={`fa-solid ${s.icon} text-[var(--accent)] text-sm`} />
                     <span className="text-sm text-[var(--fg-2)]">{s.label}</span>
                   </button>
                 ))}
               </div>
             </div>
           ) : null}
-        </div>
-      </div>
 
-      {/* Input pinned to the bottom */}
-      <div className="flex-shrink-0 w-full max-w-3xl mx-auto px-4 sm:px-6 pt-3 pb-6">
-        <div className="card px-4 py-3 flex items-end gap-2 shadow-[0_20px_60px_-20px_rgba(0,0,0,0.6)]">
-          <i className="fa-solid fa-greater-than text-[var(--muted-2)] text-sm mb-2.5 hidden sm:block" />
-          <textarea
-            ref={inputRef}
-            rows={1}
-            value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              e.target.style.height = "auto";
-              e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                void send();
-              }
-            }}
-            placeholder={`Ask ${ai.name} anything…`}
-            className="flex-1 bg-transparent outline-none resize-none text-[15px] leading-relaxed placeholder:text-[var(--muted-2)] max-h-40 py-1.5"
-          />
-          {typing ? (
-            <button
-              onClick={stop}
-              className="w-10 h-10 flex items-center justify-center rounded-xl bg-[var(--redstone)]/15 text-[var(--redstone)] hover:bg-[var(--redstone)]/25 transition flex-shrink-0"
-              aria-label="Stop generating"
-            >
-              <i className="fa-solid fa-stop text-sm" />
-            </button>
-          ) : (
-            <button
-              onClick={() => void send()}
-              disabled={!input.trim()}
-              className="w-10 h-10 flex items-center justify-center rounded-xl bg-[var(--accent)] text-white hover:bg-[var(--accent-bright)] transition disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0 shadow-[0_0_16px_-6px_var(--accent-glow)]"
-              aria-label="Send"
-            >
-              <i className="fa-solid fa-paper-plane text-sm" />
-            </button>
-          )}
+          {/* Input bar */}
+          <div className="flex-shrink-0 border-t border-[var(--border)] px-4 sm:px-6 py-4">
+            <div className="flex items-end gap-2.5">
+              <textarea
+                ref={inputRef}
+                rows={1}
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  e.target.style.height = "auto";
+                  e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void send();
+                  }
+                }}
+                placeholder={`Ask ${ai.name} anything…`}
+                className="flex-1 bg-[var(--bg-2)] border border-[var(--border)] rounded-xl px-4 py-3 outline-none resize-none text-[15px] leading-relaxed placeholder:text-[var(--muted-2)] max-h-40 transition focus:border-[var(--accent)]"
+              />
+              {typing ? (
+                <button
+                  onClick={stop}
+                  className="w-11 h-11 flex items-center justify-center rounded-xl bg-[var(--redstone)]/15 text-[var(--redstone)] hover:bg-[var(--redstone)]/25 transition flex-shrink-0"
+                  aria-label="Stop generating"
+                >
+                  <i className="fa-solid fa-stop text-sm" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => void send()}
+                  disabled={!input.trim()}
+                  className="w-11 h-11 flex items-center justify-center rounded-xl bg-[var(--accent)] text-white hover:bg-[var(--accent-bright)] transition disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                  aria-label="Send"
+                >
+                  <i className="fa-solid fa-paper-plane text-sm" />
+                </button>
+              )}
+            </div>
+            <p className="text-center text-xs text-[var(--muted-2)] mt-2.5">
+              {ai.name} can make mistakes — double-check important info.
+            </p>
+          </div>
         </div>
-        <p className="text-center text-xs text-[var(--muted-2)] mt-2.5">
-          {ai.name} can make mistakes — double-check important info.
-        </p>
       </div>
-    </section>
+    </SubPage>
   );
 }
 

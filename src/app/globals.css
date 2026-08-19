@@ -691,30 +691,16 @@ body.scrolled .nav-actions {
     0 0 120px rgba(63, 124, 255, 0.28);
 }
 
-/* ---------- AI chat ---------- */
+/* ---------- AI chat — simple flat bubbles ---------- */
 .chat-bubble-ai {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0) 55%),
-    var(--card);
+  background: var(--bg-2);
   border: 1px solid var(--border);
-  border-radius: 4px 18px 18px 18px;
-  position: relative;
-  box-shadow: 0 10px 26px -18px rgba(0, 0, 0, 0.7);
-}
-.chat-bubble-ai::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 3px;
-  height: 100%;
-  background: linear-gradient(180deg, var(--accent), var(--diamond));
-  border-radius: 3px 0 0 3px;
+  border-radius: 14px;
 }
 .chat-bubble-user {
-  background: linear-gradient(180deg, var(--accent-dim), rgba(63, 124, 255, 0.04));
+  background: var(--accent-dim);
   border: 1px solid var(--border-strong);
-  border-radius: 18px 4px 18px 18px;
-  box-shadow: 0 10px 26px -18px rgba(0, 0, 0, 0.7);
+  border-radius: 14px;
 }
 .typing-dot {
   width: 6px;
