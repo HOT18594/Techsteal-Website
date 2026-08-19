@@ -4,6 +4,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useRef,
   useState,
   type ReactNode,
@@ -26,6 +27,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setToast({ title, sub });
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => setToast(null), 3000);
+  }, []);
+
+  // Clear any pending auto-dismiss timer on unmount so it can't fire
+  // against a torn-down component (otherwise React 19 warns / leaks).
+  useEffect(() => {
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
   }, []);
 
   return (

@@ -134,6 +134,10 @@ async function buildServerKnowledge(): Promise<string> {
 async function buildLiveStatus(): Promise<string> {
   try {
     const status = await getServerStatus();
+    // The status API returns fabricated placeholder data when mcsrvstat.us
+    // is unreachable (source: "fallback"). Never feed that to the model —
+    // it would state fake player names ("Alex", "Sam") as fact.
+    if (status.source !== "live") return "Live status is unavailable right now.";
     if (!status.online) return "The server is currently offline.";
     const names = (status.playerList ?? []).filter(Boolean);
     const playerLine = names.length > 0 ? ` Currently online: ${names.join(", ")}.` : " No players online right now.";

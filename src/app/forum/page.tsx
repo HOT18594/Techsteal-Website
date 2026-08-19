@@ -259,7 +259,9 @@ export default function ForumPage() {
             <div className="card p-6">
               <h3 className="font-display text-base font-bold mb-4">Categories</h3>
               <div className="space-y-1">
-                {["Announcements", "Ideas", "Builds", "Redstone", "Technical", "Off-topic"].map(
+                {/* "General" is the default the composer offers, so list it
+                    alongside the curated set; counts read from real threads. */}
+                {["General", "Announcements", "Ideas", "Builds", "Redstone", "Technical", "Off-topic"].map(
                   (c) => (
                     <div
                       key={c}

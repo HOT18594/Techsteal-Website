@@ -30,10 +30,11 @@ Website/
 │   │   ├── join/                  # How-to-join steps
 │   │   ├── login/                 # Member/admin login
 │   │   ├── admin/                 # Admin panel (manage members)
-│   │   ├── assistant/             # Nova AI assistant
+│   │   ├── assistant/             # Chatty Jr. AI assistant
 │   │   └── api/                   # Serverless API routes (Vercel functions)
 │   │       ├── status/  chat/  forum/  members/  gallery/  timeline/  rules/
-│   │       ├── auth/login/  auth/logout/  auth/me/  auth/demo-accounts/
+│   │       ├── auth/discord/  auth/discord/callback/  auth/discord/verify/
+│   │       ├── auth/logout/  auth/me/  profile/  minecraft/skin/
 │   │       └── admin/members/
 │   ├── components/                # One purpose per component
 │   │   ├── Navbar, Footer, BackToTop, Toast, SubPage
@@ -107,7 +108,7 @@ Any Postgres works (Supabase, Neon, RDS, local) — the driver is
 | **Minecraft status** | `/api/status` | Set `MINECRAFT_SERVER` / `MINECRAFT_PORT`. Uses free [mcsrvstat.us](https://mcsrvstat.us). Works with any Minecraft (Java) server address. |
 | **AI assistant** | `/api/chat` | Set `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`. Any OpenAI-compatible endpoint works. The key never leaves the server. Leave empty to run in "not connected" mode. |
 | **Forum / content DB** | `/api/forum` etc. | Handled by `DATABASE_URL`. The "New Thread" button already POSTs to `/api/forum`. |
-| **Auth (login/admin)** | `/api/auth/*`, `/api/admin/*` | Member accounts seeded via `bun run db:seed`; session cookie signed with `SESSION_SECRET`. |
+| **Auth (login/admin)** | `/api/auth/*`, `/api/admin/*` | Discord OAuth (sign in with Discord). Accounts are created on first login; the session cookie is a JWT signed with `SESSION_SECRET`. The admin role is unlocked with the admin code in onboarding/profile settings. |
 
 ### Running locally
 
@@ -142,9 +143,13 @@ bun run build      # production build
 | `MINECRAFT_SERVER` | no | Server address (defaults to `siteConfig.address`) |
 | `MINECRAFT_PORT` | no | Server port |
 | `AI_API_KEY` | for AI chat | API key for an OpenAI-compatible endpoint |
-| `AI_BASE_URL` | no | Endpoint base URL (default OpenAI) |
-| `AI_MODEL` | no | Model name (default `gpt-4o-mini`) |
-| `SESSION_SECRET` | for auth | Strong random value signing the session cookie |
+| `AI_BASE_URL` | no | Endpoint base URL (default OpenRouter) |
+| `AI_MODEL` | no | Model name (default `google/gemma-4-26b-a4b-it:free`) |
+| `SESSION_SECRET` | **yes (prod)** | Strong random value signing the session cookie. Falls back to a dev secret locally — set a real one before deploying or sessions can be forged. |
+| `DISCORD_CLIENT_ID` | for Discord login | OAuth client id |
+| `DISCORD_CLIENT_SECRET` | for Discord login | OAuth client secret |
+| `DISCORD_BOT_TOKEN` | no | Bot token to verify server membership during onboarding |
+| `DISCORD_GUILD_ID` | no | Official server id for membership verification |
 | `NEXT_PUBLIC_SITE_URL` | no | Public site URL |
 
 ---
