@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   integer,
@@ -28,6 +29,7 @@ export const forumThreads = pgTable("forum_threads", {
   title: text("title").notNull(),
   content: text("content").notNull().default(""),
   author: text("author").notNull(),
+  authorId: text("author_id").notNull().default(""),
   avatar: text("avatar").notNull().default("P"),
   color: text("color").notNull().default("avatar-1"),
   category: text("category").notNull().default("General"),
@@ -43,8 +45,12 @@ export const forumReplies = pgTable("forum_replies", {
   threadId: integer("thread_id").notNull(),
   content: text("content").notNull(),
   author: text("author").notNull(),
+  authorId: text("author_id").notNull().default(""),
   avatar: text("avatar").notNull().default("R"),
   color: text("color").notNull().default("avatar-2"),
+  likes: integer("likes").notNull().default(0),
+  likedBy: jsonb("liked_by").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  pinned: boolean("pinned").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

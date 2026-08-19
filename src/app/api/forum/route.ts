@@ -4,15 +4,26 @@ import { getDb } from "@/lib/db";
 import { forumReplies, forumThreads } from "@/lib/schema";
 import { fallbackThreads } from "@/lib/fallback-data";
 import { getSessionUser } from "@/lib/auth";
+import { resolveAuthorAvatars } from "@/lib/forum-avatars";
 
 export const dynamic = "force-dynamic";
 
-// List all threads (newest first).
+// List all threads — pinned first, then newest.
 export async function GET() {
   const db = getDb();
   if (!db) return NextResponse.json(fallbackThreads);
-  const rows = await db.select().from(forumThreads).orderBy(desc(forumThreads.createdAt));
-  return NextResponse.json(rows);
+  const rows = await db
+    .select()
+    .from(forumThreads)
+    .orderBy(desc(forumThreads.pinned), desc(forumThreads.createdAt));
+  const avatars = await resolveAuthorAvatars(rows);
+  return NextResponse.json(
+    rows.map((row) => ({
+      ...row,
+      avatarUrl: avatars.get(row.authorId ?? "")?.avatarUrl ?? null,
+      color: avatars.get(row.authorId ?? "")?.color ?? row.color,
+    }))
+  );
 }
 
 // Create a thread. The author is taken from the signed-in account — you
@@ -37,6 +48,7 @@ export async function POST(request: NextRequest) {
     title,
     content,
     author: user.username,
+    authorId: user.id,
     category,
     avatar: user.username.slice(0, 1).toUpperCase(),
     tagClass: "tag-accent",
@@ -52,7 +64,11 @@ export async function POST(request: NextRequest) {
   }
 
   const [created] = await db.insert(forumThreads).values(values).returning();
-  return NextResponse.json(created, { status: 201 });
+  const avatars = await resolveAuthorAvatars([created]);
+  return NextResponse.json(
+    { ...created, avatarUrl: avatars.get(created.authorId ?? "")?.avatarUrl ?? null },
+    { status: 201 }
+  );
 }
 
 // Admin moderation: pin/unpin a thread.

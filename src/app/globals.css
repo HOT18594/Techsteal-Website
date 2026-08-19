@@ -64,6 +64,14 @@ body {
 .font-display {
   font-family: var(--font-pixel), monospace;
   letter-spacing: 0.01em;
+  line-height: 1.3;
+}
+
+/* Font Awesome glyphs are square — force line-height 1 so icons sit
+   dead-center next to text in flex rows and buttons (the pixel font's
+   tall em box otherwise pushes them off-baseline). */
+[class*="fa-"] {
+  line-height: 1;
 }
 
 /* ---------- Scroll progress bar (driven by ScrollFx) ---------- */
@@ -268,9 +276,45 @@ body.scrolled .nav-actions {
   box-shadow: 0 14px 40px -18px rgba(0, 0, 0, 0.7), 0 0 24px -8px var(--accent-glow);
 }
 
+/* Every control in the top action bar is exactly 44px tall so the row
+   reads as one clean strip: status pill, Join, Admin, Log in, profile,
+   and the hamburger all line up. */
+.nav-actions .status-pill {
+  height: 44px;
+  padding: 0 16px;
+}
+.nav-actions .btn-primary,
+.nav-actions .btn-secondary,
+.nav-actions .btn-ghost {
+  height: 44px;
+  padding: 0 16px;
+  font-size: 12px;
+}
+.nav-actions .btn-primary {
+  gap: 8px;
+}
+.nav-profile {
+  height: 44px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  color: var(--fg);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.01));
+  transition: all 0.2s;
+  cursor: pointer;
+}
+.nav-profile:hover {
+  border-color: var(--accent);
+  color: var(--accent-bright);
+  box-shadow: 0 0 18px -6px var(--accent-glow);
+}
+
 .nav-toggle {
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -496,25 +540,38 @@ body.scrolled .nav-actions {
   border-radius: 10px;
   box-shadow: 0 6px 18px -8px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
 }
-.avatar.size-sm {
+.avatar.size-sm,
+.avatar-sm {
   width: 36px;
   height: 36px;
   font-size: 14px;
 }
-.avatar.size-md {
+.avatar.size-md,
+.avatar-md {
   width: 48px;
   height: 48px;
   font-size: 18px;
 }
-.avatar.size-lg {
+.avatar.size-lg,
+.avatar-lg {
   width: 72px;
   height: 72px;
   font-size: 28px;
 }
-.avatar.size-xl {
+.avatar.size-xl,
+.avatar-xl {
   width: 96px;
   height: 96px;
   font-size: 36px;
+}
+/* Minecraft skin heads inside avatars fill the tile, rounded, pixelated */
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+  image-rendering: pixelated;
+  display: block;
 }
 
 .avatar-1 {
@@ -825,7 +882,7 @@ body.scrolled .nav-actions {
 }
 .timeline-dot {
   position: absolute;
-  left: -42px;
+  left: -35px; /* centers the 14px dot on the rail (line sits at 19–21px) */
   top: 4px;
   width: 14px;
   height: 14px;
@@ -842,7 +899,7 @@ body.scrolled .nav-actions {
 .timeline-item.major .timeline-dot {
   width: 18px;
   height: 18px;
-  left: -44px;
+  left: -37px; /* same center as the regular dot */
   background: var(--accent);
 }
 

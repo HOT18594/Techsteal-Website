@@ -3,10 +3,20 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { Avatar } from "@/components/Avatar";
 import { useToast } from "@/components/Toast";
 import { SubPage } from "@/components/SubPage";
 import { useSession } from "@/lib/use-session";
 import type { ForumReply, ForumThread } from "@/types";
+
+/** Pinned comments first, then oldest. */
+function sortReplies(rs: ForumReply[]): ForumReply[] {
+  return [...rs].sort(
+    (a, b) =>
+      Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) ||
+      (a.id ?? 0) - (b.id ?? 0)
+  );
+}
 
 export default function ThreadPage() {
   const { id } = useParams<{ id: string }>();
@@ -21,6 +31,7 @@ export default function ThreadPage() {
   const [replyText, setReplyText] = useState("");
   const [replying, setReplying] = useState(false);
   const [busyReply, setBusyReply] = useState<number | null>(null);
+  const [busyLike, setBusyLike] = useState<number | null>(null);
 
   const isAdmin = user?.role === "admin";
 
@@ -34,7 +45,7 @@ export default function ThreadPage() {
       }
       const data = (await res.json()) as { thread: ForumThread; replies: ForumReply[] };
       setThread(data.thread);
-      setReplies(data.replies);
+      setReplies(sortReplies(data.replies));
     } catch {
       setNotFound(true);
     } finally {
@@ -58,7 +69,7 @@ export default function ThreadPage() {
       });
       if (res.ok) {
         const created = (await res.json()) as ForumReply;
-        setReplies((prev) => [...prev, created]);
+        setReplies((prev) => sortReplies([...prev, created]));
         setThread((t) => (t ? { ...t, replies: t.replies + 1 } : t));
         setReplyText("");
       } else if (res.status === 401) {
@@ -96,6 +107,80 @@ export default function ThreadPage() {
     }
   };
 
+  /** Toggle the signed-in user's like on a reply (optimistic). */
+  const toggleLike = async (reply: ForumReply) => {
+    if (!user) {
+      show("Sign in to like", "Log in with Discord to like comments.");
+      return;
+    }
+    if (busyLike !== null) return;
+    setBusyLike(reply.id ?? 0);
+    const liked = (reply.likedBy ?? []).includes(user.id);
+    // Optimistic flip.
+    setReplies((prev) =>
+      prev.map((r) =>
+        r.id === reply.id
+          ? {
+              ...r,
+              likedBy: liked
+                ? (r.likedBy ?? []).filter((x) => x !== user.id)
+                : [...(r.likedBy ?? []), user.id],
+              likes: (r.likes ?? 0) + (liked ? -1 : 1),
+            }
+          : r
+      )
+    );
+    try {
+      const res = await fetch(`/api/forum/${id}/like`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ replyId: reply.id }),
+      });
+      if (!res.ok) {
+        throw new Error(`like failed (${res.status})`);
+      }
+      const data = (await res.json()) as { reply: ForumReply };
+      setReplies((prev) => prev.map((r) => (r.id === reply.id ? data.reply : r)));
+    } catch {
+      // Roll back the optimistic update.
+      setReplies((prev) =>
+        prev.map((r) =>
+          r.id === reply.id ? { ...r, likedBy: reply.likedBy ?? [], likes: reply.likes ?? 0 } : r
+        )
+      );
+      show("Couldn't like", "The server rejected the request.");
+    } finally {
+      setBusyLike(null);
+    }
+  };
+
+  /** Admin: pin/unpin a comment. */
+  const pinReply = async (reply: ForumReply) => {
+    if (!isAdmin || busyReply !== null) return;
+    setBusyReply(reply.id ?? 0);
+    try {
+      const res = await fetch(`/api/forum/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ replyId: reply.id, pinned: !reply.pinned }),
+      });
+      if (!res.ok) {
+        show("Couldn't update", "The server rejected the request.");
+        return;
+      }
+      const updated = (await res.json()) as ForumReply;
+      setReplies((prev) => sortReplies(prev.map((r) => (r.id === updated.id ? updated : r))));
+      show(
+        updated.pinned ? "Pinned" : "Unpinned",
+        `Comment ${updated.pinned ? "pinned" : "unpinned"}.`
+      );
+    } catch {
+      show("Couldn't update", "Check your connection and try again.");
+    } finally {
+      setBusyReply(null);
+    }
+  };
+
   const inputClass =
     "w-full bg-[var(--bg-2)] border border-[var(--border)] px-4 py-3 text-sm text-[var(--fg)] outline-none focus:border-[var(--accent)] transition placeholder:text-[var(--muted-2)] rounded-lg";
 
@@ -122,7 +207,7 @@ export default function ThreadPage() {
             {/* OP */}
             <article className="card p-6 sm:p-8">
               <div className="flex items-start gap-4">
-                <div className={`avatar avatar-lg ${thread.color}`}>{thread.avatar}</div>
+                <Avatar name={thread.author} src={thread.avatarUrl} size="lg" color={thread.color} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     {thread.pinned ? (
@@ -158,30 +243,76 @@ export default function ThreadPage() {
                 </p>
               ) : (
                 <div className="space-y-4">
-                  {replies.map((r) => (
-                    <div key={r.id} className="card p-5 flex items-start gap-4">
-                      <div className={`avatar avatar-md ${r.color}`}>{r.avatar}</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="text-sm font-medium">{r.author}</div>
-                          {isAdmin ? (
+                  {replies.map((r) => {
+                    const liked = (r.likedBy ?? []).includes(user?.id ?? "");
+                    return (
+                      <div
+                        key={r.id}
+                        className={`card p-5 flex items-start gap-4 ${
+                          r.pinned ? "border-[var(--accent)] shadow-[0_0_24px_-12px_var(--accent-glow)]" : ""
+                        }`}
+                      >
+                        <Avatar name={r.author} src={r.avatarUrl} size="md" color={r.color} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium">{r.author}</span>
+                              {r.pinned ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[var(--accent)] border border-[var(--accent)] rounded px-1.5 py-0.5">
+                                  <i className="fa-solid fa-thumbtack" />
+                                  Pinned
+                                </span>
+                              ) : null}
+                            </div>
+                            {isAdmin ? (
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition disabled:opacity-40"
+                                  onClick={() => void pinReply(r)}
+                                  disabled={busyReply !== null}
+                                  aria-label={r.pinned ? "Unpin comment" : "Pin comment"}
+                                  title={r.pinned ? "Unpin" : "Pin"}
+                                >
+                                  <i className={`fa-solid fa-thumbtack text-xs ${r.pinned ? "text-[var(--accent)]" : ""}`} />
+                                </button>
+                                <button
+                                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)] transition disabled:opacity-40"
+                                  onClick={() => void deleteReply(r)}
+                                  disabled={busyReply !== null}
+                                  aria-label="Delete reply"
+                                  title="Delete reply"
+                                >
+                                  <i className="fa-solid fa-trash text-xs" />
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                          <p className="mt-2 text-[var(--fg-2)] leading-relaxed whitespace-pre-wrap">
+                            {r.content}
+                          </p>
+                          <div className="mt-3">
                             <button
-                              className="w-8 h-8 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)] transition disabled:opacity-40"
-                              onClick={() => void deleteReply(r)}
-                              disabled={busyReply !== null}
-                              aria-label="Delete reply"
-                              title="Delete reply"
+                              className={`inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg border px-2.5 py-1.5 transition disabled:opacity-40 ${
+                                liked
+                                  ? "border-[var(--redstone)] text-[var(--redstone)] bg-[var(--redstone)]/10 shadow-[0_0_14px_-6px_var(--redstone)]"
+                                  : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)]"
+                              }`}
+                              onClick={() => void toggleLike(r)}
+                              disabled={busyLike !== null}
+                              aria-label={liked ? "Unlike comment" : "Like comment"}
+                              title={liked ? "Unlike" : "Like"}
                             >
-                              <i className="fa-solid fa-trash text-xs" />
+                              <i className={`${liked ? "fa-solid" : "fa-regular"} fa-heart`} />
+                              <span>{r.likes ?? 0}</span>
+                              <span className="hidden sm:inline normal-case tracking-normal">
+                                {liked ? "Liked" : "Like"}
+                              </span>
                             </button>
-                          ) : null}
+                          </div>
                         </div>
-                        <p className="mt-2 text-[var(--fg-2)] leading-relaxed whitespace-pre-wrap">
-                          {r.content}
-                        </p>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { siteConfig } from "@/lib/site";
 import { fallbackStatus } from "@/lib/fallback-data";
 import type { ServerStatus } from "@/types";
@@ -193,15 +193,17 @@ export default function StatusPage() {
                 ["Whitelist", siteConfig.whitelist, "emerald"],
                 ["Location", siteConfig.location, "text"],
               ].map(([label, value, kind]) => (
-                <div key={label as string} className="flex justify-between items-center pb-2 border-b border-[var(--border)] last:border-b-0 last:pb-0">
-                  <span className="text-sm text-[var(--muted)]">{label}</span>
-                  {kind === "code" ? (
-                    <code className="text-sm text-[var(--accent)] font-display">{value}</code>
-                  ) : kind === "emerald" ? (
-                    <span className="text-sm text-[var(--emerald)]">{value}</span>
-                  ) : (
-                    <span className="text-sm">{value}</span>
-                  )}
+                <div key={label as string} className="flex justify-between items-center gap-4 pb-2 border-b border-[var(--border)] last:border-b-0 last:pb-0">
+                  <span className="text-sm text-[var(--muted)] flex-shrink-0">{label}</span>
+                  <span className="min-w-0 text-right break-all">
+                    {kind === "code" ? (
+                      <code className="text-sm text-[var(--accent)] font-display">{value}</code>
+                    ) : kind === "emerald" ? (
+                      <span className="text-sm text-[var(--emerald)]">{value}</span>
+                    ) : (
+                      <span className="text-sm">{value}</span>
+                    )}
+                  </span>
                 </div>
               ))}
             </div>

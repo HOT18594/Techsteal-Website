@@ -106,16 +106,16 @@ export function Navbar() {
             {online ? "Online" : "Offline"} · {players}/{max}
           </span>
         </div>
-        <Link href="/join" className="btn-primary py-2.5! px-5! text-xs!" aria-label="How to join">
+        <Link href="/join" className="btn-primary hidden sm:inline-flex" aria-label="How to join">
           <i className="fa-solid fa-compass" />
-          <span className="hidden sm:inline">Join</span>
+          <span>Join</span>
         </Link>
         {user ? (
           <>
             {user.role === "admin" ? (
               <Link
                 href="/admin"
-                className={`btn-secondary py-2.5! px-4! text-xs! hidden sm:inline-flex ${
+                className={`btn-secondary hidden sm:inline-flex ${
                   pathname === "/admin" ? "!text-[var(--accent)]" : ""
                 }`}
                 aria-label="Admin panel"
@@ -127,7 +127,7 @@ export function Navbar() {
             {/* Profile — click opens a menu; logout lives inside it */}
             <button
               ref={profileBtnRef}
-              className="h-11 px-2.5 flex items-center gap-2 border border-[var(--border-strong)] rounded-lg text-[var(--fg)] hover:border-[var(--accent)] transition"
+              className="nav-profile"
               onClick={() => toggleProfile(!profileOpen)}
               aria-label="Profile menu"
               aria-expanded={profileOpen}
@@ -144,7 +144,7 @@ export function Navbar() {
           !sessionLoading && (
             <Link
               href="/login"
-              className="btn-secondary py-2.5! px-4! text-xs! hidden sm:inline-flex"
+              className="btn-secondary hidden sm:inline-flex"
               aria-label="Log in"
             >
               <i className="fa-brands fa-discord" />

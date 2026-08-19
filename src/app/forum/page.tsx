@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { fallbackThreads } from "@/lib/fallback-data";
 import type { ForumThread } from "@/types";
+import { Avatar } from "@/components/Avatar";
 import { SubPage } from "@/components/SubPage";
 import { useApi } from "@/lib/use-api";
 import { useToast } from "@/components/Toast";
@@ -12,10 +13,17 @@ import { useSession } from "@/lib/use-session";
 export default function ForumPage() {
   const { show } = useToast();
   const { user, loading: sessionLoading } = useSession();
-  const { data: apiThreads } = useApi<ForumThread[]>("/api/forum", fallbackThreads);
+  const { data: apiThreads, refetch } = useApi<ForumThread[]>("/api/forum", fallbackThreads);
   // Threads created this session (persisted server-side when a DB is present).
   const [fresh, setFresh] = useState<ForumThread[]>([]);
-  const threads = [...fresh, ...apiThreads];
+  // Pinned threads always float to the top, whether from the DB or this session.
+  const threads = useMemo(
+    () =>
+      [...fresh, ...apiThreads].sort(
+        (a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))
+      ),
+    [fresh, apiThreads]
+  );
   const [filter, setFilter] = useState<"all" | "pinned" | "hot">("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -120,6 +128,9 @@ export default function ForumPage() {
           `"${thread.title}" ${updated.pinned ? "is now pinned" : "is no longer pinned"}.`
         );
       }
+      // The DB thread's pinned flag changed — pull it back so the list
+      // (and the pinned-first ordering) reflects the update immediately.
+      void refetch();
     } catch {
       show("Couldn't update", "Check your connection and try again.");
     } finally {
@@ -178,7 +189,7 @@ export default function ForumPage() {
                     key={t.id ?? t.title}
                     className="thread-row py-3.5 px-2 flex items-center gap-4"
                   >
-                    <div className={`avatar avatar-2 size-sm ${t.color}`}>{t.avatar}</div>
+                    <Avatar name={t.author} src={t.avatarUrl} size="sm" color={t.color} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         {t.pinned ? (

@@ -2,6 +2,7 @@
 
 import { fallbackMembers } from "@/lib/fallback-data";
 import type { Member } from "@/types";
+import { Avatar } from "@/components/Avatar";
 import { SubPage } from "@/components/SubPage";
 import { useApi } from "@/lib/use-api";
 import { Carousel } from "@/components/Carousel";
@@ -17,8 +18,13 @@ export default function MembersPage() {
       {/* Glow backdrop tinted with the member's accent */}
       <div className="member-slide-glow" aria-hidden="true" />
       <div className="relative">
-        <div className={`avatar avatar-xl ${m.color} member-slide-avatar`}>{m.avatar}</div>
-        <div className={m.status === "online" ? "status-online" : "status-offline"} />
+        <Avatar
+          name={m.name}
+          size="xl"
+          color={m.color}
+          className="member-slide-avatar"
+          online={m.status === "online"}
+        />
       </div>
       <h2 className="mt-6 font-display text-3xl font-bold">{m.name}</h2>
       <span className="tag tag-accent mt-2">{m.role}</span>

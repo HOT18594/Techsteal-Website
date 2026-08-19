@@ -24,6 +24,10 @@ export interface ForumThread {
   replies: number;
   last: string;
   pinned: boolean;
+  /** Discord-style account id of the author (for avatar resolution). */
+  authorId?: string;
+  /** Minecraft skin head URL when the author has one set. */
+  avatarUrl?: string | null;
 }
 
 export interface ForumReply {
@@ -34,6 +38,16 @@ export interface ForumReply {
   avatar: string;
   color: string;
   createdAt?: string | null;
+  /** Discord-style account id of the author (for avatar resolution). */
+  authorId?: string;
+  /** Minecraft skin head URL when the author has one set. */
+  avatarUrl?: string | null;
+  /** Number of likes. */
+  likes?: number;
+  /** Account ids that liked this reply. */
+  likedBy?: string[];
+  /** Admin-pinned comment — shows first with a pin badge. */
+  pinned?: boolean;
 }
 
 export interface GalleryItem {
