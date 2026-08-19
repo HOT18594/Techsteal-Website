@@ -41,8 +41,8 @@ export default function JoinPage() {
   };
 
   return (
-    <SubPage className="mx-auto max-w-3xl pt-6 pb-16">
-      <div className="max-w-3xl mx-auto w-full">
+    <SubPage className="max-w-3xl">
+      <div className="w-full">
         {/* Header */}
         <div className="page-header mb-8">
           <h1 className="page-title">How to Join</h1>

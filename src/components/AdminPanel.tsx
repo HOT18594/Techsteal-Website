@@ -82,8 +82,8 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
   };
 
   return (
-    <SubPage className="mx-auto max-w-4xl pt-6 pb-16">
-      <div className="max-w-4xl mx-auto w-full">
+    <SubPage className="max-w-4xl">
+      <div className="w-full">
         {/* Header */}
         <div className="page-header mb-8">
           <h1 className="page-title">Manage Panel</h1>

@@ -18,8 +18,8 @@ export default function GalleryPage() {
   const visible = filter === "All" ? items : items.filter((i) => i.category === filter);
 
   return (
-    <SubPage className="mx-auto max-w-7xl pt-6 pb-16">
-      <div className="max-w-7xl mx-auto w-full">
+    <SubPage>
+      <div className="w-full">
         {/* Header */}
         <div className="page-header rowed mb-8">
           <h1 className="page-title">Gallery</h1>

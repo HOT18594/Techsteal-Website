@@ -197,8 +197,8 @@ export default function ThreadPage() {
     "w-full bg-[var(--bg-2)] border border-[var(--border)] px-4 py-3 text-sm text-[var(--fg)] outline-none focus:border-[var(--accent)] transition placeholder:text-[var(--muted-2)] rounded-lg";
 
   return (
-    <SubPage className="mx-auto max-w-4xl pt-6 pb-16">
-      <div className="max-w-4xl mx-auto w-full">
+    <SubPage className="max-w-4xl">
+      <div className="w-full">
         <Link
           href="/forum"
           className="inline-flex items-center gap-2 text-sm text-[var(--muted)] hover:text-[var(--accent)] transition mb-6"

@@ -143,14 +143,14 @@ function SettingsContent() {
 
   if (loadingProfile) {
     return (
-      <SubPage className="mx-auto max-w-3xl pt-6 pb-16">
+      <SubPage className="max-w-3xl">
         <p className="text-sm text-[var(--muted)] text-center py-16">Loading profile…</p>
       </SubPage>
     );
   }
 
   return (
-    <SubPage className="mx-auto max-w-3xl pt-6 pb-16">
+    <SubPage className="max-w-3xl">
       <div className="w-full">
         {/* Header */}
         <div className="page-header mb-8">

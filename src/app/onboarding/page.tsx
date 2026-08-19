@@ -142,7 +142,7 @@ function OnboardingContent() {
     "w-full bg-[var(--bg-2)] border border-[var(--border)] px-4 py-3 text-sm text-[var(--fg)] outline-none focus:border-[var(--accent)] transition placeholder:text-[var(--muted-2)] rounded-lg";
 
   return (
-    <SubPage className="mx-auto max-w-2xl pt-6 pb-16">
+    <SubPage className="max-w-2xl">
       <div className="w-full">
         {/* Header */}
         <div className="page-header mb-8">

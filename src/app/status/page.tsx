@@ -52,8 +52,8 @@ export default function StatusPage() {
   const tpsPct = Math.min(100, Math.round((parseFloat(stats.tps) / 20) * 100));
 
   return (
-    <SubPage className="mx-auto max-w-7xl pt-6 pb-16">
-      <div className="max-w-7xl mx-auto w-full">
+    <SubPage>
+      <div className="w-full">
         {/* Header */}
         <div className="page-header rowed mb-8">
           <h1 className="page-title">Server Status</h1>

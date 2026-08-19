@@ -142,8 +142,8 @@ export default function ForumPage() {
     "w-full bg-[var(--bg-2)] border border-[var(--border)] px-4 py-3 text-sm text-[var(--fg)] outline-none focus:border-[var(--accent)] transition placeholder:text-[var(--muted-2)] rounded-lg";
 
   return (
-    <SubPage className="mx-auto max-w-7xl pt-6 pb-16">
-      <div className="max-w-7xl mx-auto w-full">
+    <SubPage>
+      <div className="w-full">
         {/* Header */}
         <div className="page-header rowed mb-8">
           <h1 className="page-title">Forum</h1>
