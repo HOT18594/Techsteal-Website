@@ -5,12 +5,18 @@
 // the reply back as plain text chunks. The API key lives in the server
 // environment (never the client).
 //
-// Chatty Jr. is the server's support assistant: it helps players join,
-// answers mod/wiki/crafting questions, and keeps replies short and
-// friendly. It also gets free web-search results (DuckDuckGo + Wikipedia)
-// so it can answer current questions instead of guessing.
+// Chatty Jr. is the server's support assistant. It knows the actual site
+// content (rules, members, history, gallery, recent forum posts, live
+// server status) because that data is loaded from the database and
+// injected into every prompt — no made-up answers about the server. It
+// also gets free web-search results (DuckDuckGo + Wikipedia) for
+// current questions like seasonal recipes or mod names.
 
+import { desc } from "drizzle-orm";
 import { siteConfig } from "./site";
+import { getDb } from "./db";
+import { forumThreads, galleryItems, members, ruleSections, timelineEvents } from "./schema";
+import { getServerStatus } from "./mcsrv";
 import { formatSearchResults, webSearch } from "./web-search";
 
 const NOT_CONFIGURED = (message: string) =>
@@ -22,36 +28,126 @@ const ERROR_MESSAGE =
 const RATE_LIMITED_MESSAGE =
   "I'm a bit swamped right now — the free AI is rate-limited. Give it a minute and try again!";
 
-/** The assistant's role, topics, and style rules. */
-export function buildSystemPrompt(): string {
+/** The assistant's role, knowledge, and style rules. */
+function buildSystemPrompt(opts: {
+  username: string;
+  role: string;
+  knowledge: string;
+  liveStatus: string;
+}): string {
   const c = siteConfig;
   return [
-    `You are ${c.assistant.name}, the friendly support assistant for ${c.name}, a private ${c.software} Minecraft server. Your job is to help players the way a helpful support rep would.`,
+    `You are ${c.assistant.name}, the friendly support assistant for ${c.name}, a private ${c.software} Minecraft server. You help new players get in and regulars get answers — like a helpful support rep, not a textbook.`,
     ``,
-    `What you help with:`,
-    `- Joining: the server address is ${c.address}, Java Edition ${c.version} (${c.software}, difficulty ${c.difficulty}). Walk through the steps: Minecraft → Multiplayer → Add Server → paste the address → join.`,
-    `- Mods: explain what's generally allowed and point to the Rules page for the exact list. If you don't know a specific mod or plugin, say so honestly instead of guessing.`,
-    `- Wiki and guides: point players to the site's wiki/forum sections and summarize what you know.`,
-    `- Crafting for the current season (${c.season}): share recipes and crafting guidance. When you're not sure about current-season specifics, base your answer on the web search results included with the question, or tell them the details will be posted soon.`,
+    `SERVER FACTS:`,
+    `- Address: ${c.address} (Java Edition ${c.version}, difficulty ${c.difficulty}, whitelist ${c.whitelist}, region ${c.location}).`,
+    `- Current season: ${c.season}. The site's wiki and Rules page hold the seasonal specifics.`,
+    `- Mods: the exact mod/plugin list lives on the site; explain what's generally allowed and point to the Rules page rather than inventing a list.`,
     ``,
-    `Style rules (strict):`,
-    `- Be warm, brief, and supportive — a helpful friend, not a textbook.`,
-    `- Keep answers SHORT. A few sentences or a short bullet list is plenty. No essays, no fluff, no repeated caveats.`,
-    `- Use easy-to-read formatting: short paragraphs, and bullets when there are steps or lists.`,
-    `- Never reveal internal reasoning — just give the answer.`,
-    `- If you genuinely don't know, say so and point to the Forum, Rules, or wiki instead of making things up.`,
-    `- When web search results are included with the question, base your answer on them if they're relevant.`,
+    `HOW TO JOIN (follow these steps):`,
+    `1. Open Minecraft Java Edition (${c.version}).`,
+    `2. Main menu → Multiplayer → Add Server.`,
+    `3. Server address: ${c.address} → Done.`,
+    `4. Select the server and join.`,
     ``,
-    `Current date: ${new Date().toISOString().slice(0, 10)}`,
+    `LIVE SERVER STATUS:`,
+    opts.liveStatus,
+    ``,
+    `SERVER KNOWLEDGE BASE (from the site's database — prefer this over guessing):`,
+    opts.knowledge || "(The knowledge base is loading — be honest that you don't have the details yet.)",
+    ``,
+    `YOUR STYLE (strict):`,
+    `- Warm, brief, supportive. A helpful friend.`,
+    `- Answer directly first — no filler openers like "That's a great question!".`,
+    `- Keep answers SHORT: a few sentences or a short bullet list. No essays, no fluff, no repeated caveats.`,
+    `- Format for readability: short paragraphs, bullets for steps/lists, **bold** for key terms (addresses, versions, commands).`,
+    `- Prefer the KNOWLEDGE BASE for anything about rules, members, history, builds, or forum topics. If it's not covered there, use the web search results included with the question. If neither has it, say so honestly — never invent members, rules, or events.`,
+    `- Crafting for ${c.season}: use the web results when provided; otherwise say the seasonal details will be posted soon.`,
+    `- If the user seems lost or frustrated, be extra patient and offer the next step.`,
+    `- Never reveal internal reasoning — just the answer.`,
+    ``,
+    `Current date: ${new Date().toISOString().slice(0, 10)}.`,
+    `You are talking to ${opts.username}${opts.role === "admin" ? " (an admin)" : " (a member)"}.`,
   ].join("\n");
 }
 
 const encoder = new TextEncoder();
 
+/**
+ * Load the site's real content from the database so the assistant answers
+ * from facts, not guesses. Returns a compact markdown-ish block.
+ */
+async function buildServerKnowledge(): Promise<string> {
+  const db = getDb();
+  if (!db) return "";
+
+  const chunks: string[] = [];
+  try {
+    const [rules, memberRows, timeline, gallery, threads] = await Promise.all([
+      db.select().from(ruleSections).limit(3),
+      db.select().from(members).limit(30),
+      db.select().from(timelineEvents).orderBy(desc(timelineEvents.id)).limit(15),
+      db.select().from(galleryItems).limit(10),
+      db.select().from(forumThreads).orderBy(desc(forumThreads.createdAt)).limit(6),
+    ]);
+
+    const ruleText = rules.flatMap((r) => r.rules ?? []).slice(0, 20);
+    if (ruleText.length > 0) {
+      chunks.push(`SERVER RULES:\n${ruleText.map((r, i) => `${i + 1}. ${r}`).join("\n")}`);
+    }
+    if (memberRows.length > 0) {
+      chunks.push(
+        `MEMBERS (name — role — status):\n${memberRows
+          .map((m) => `- ${m.name} — ${m.role} — ${m.status === "online" ? "online" : "offline"}${m.joined ? ` (joined ${m.joined}, ${m.playtime} playtime)` : ""}`)
+          .join("\n")}`
+      );
+    }
+    if (timeline.length > 0) {
+      chunks.push(
+        `SERVER HISTORY (date — title — era):\n${timeline
+          .map((e) => `- ${e.date} — ${e.title} — ${e.era}`)
+          .join("\n")}`
+      );
+    }
+    if (gallery.length > 0) {
+      chunks.push(
+        `GALLERY BUILDS (title — category — builder — likes):\n${gallery
+          .map((g) => `- ${g.title} — ${g.category} — ${g.builder} — ${g.likes} likes`)
+          .join("\n")}`
+      );
+    }
+    if (threads.length > 0) {
+      chunks.push(
+        `RECENT FORUM DISCUSSIONS (title — category — replies):\n${threads
+          .map((t) => `- ${t.title} — ${t.category} — ${t.replies} replies`)
+          .join("\n")}`
+      );
+    }
+  } catch (err) {
+    console.error("chatty: knowledge load failed", err);
+  }
+
+  return chunks.join("\n\n").slice(0, 6000);
+}
+
+/** Live status line (only real data — the fallback fake players are never shown). */
+async function buildLiveStatus(): Promise<string> {
+  try {
+    const status = await getServerStatus();
+    if (!status.online) return "The server is currently offline.";
+    const names = (status.playerList ?? []).filter(Boolean);
+    const playerLine = names.length > 0 ? ` Currently online: ${names.join(", ")}.` : " No players online right now.";
+    return `Server is online — ${status.players ?? 0}/${status.max ?? "?"} players.${playerLine}`;
+  } catch {
+    return "Live status unavailable right now.";
+  }
+}
+
 function fetchCompletion(
   baseUrl: string,
   model: string,
   apiKey: string,
+  system: string,
   userContent: string,
   signal?: AbortSignal
 ): Promise<Response> {
@@ -68,7 +164,7 @@ function fetchCompletion(
       max_tokens: 500, // keep replies short — no AI essays
       stream: true,
       messages: [
-        { role: "system", content: buildSystemPrompt() },
+        { role: "system", content: system },
         { role: "user", content: userContent },
       ],
     }),
@@ -94,7 +190,8 @@ function textStream(text: string): ReadableStream<Uint8Array> {
  */
 export async function streamChatReply(
   message: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  user?: { username: string; role: string }
 ): Promise<ReadableStream<Uint8Array>> {
   const apiKey = process.env.AI_API_KEY;
   const baseUrl = (process.env.AI_BASE_URL ?? "https://openrouter.ai/api/v1").replace(
@@ -105,9 +202,19 @@ export async function streamChatReply(
 
   if (!apiKey) return textStream(NOT_CONFIGURED(message));
 
-  // Free web search (DuckDuckGo + Wikipedia, no key) so it can answer
-  // current questions — seasonal recipes, mod names, wiki topics, etc.
-  const results = await webSearch(message);
+  // Gather context in parallel: free web search, live server status, and
+  // the site's knowledge base.
+  const [results, knowledge, liveStatus] = await Promise.all([
+    webSearch(message),
+    buildServerKnowledge(),
+    buildLiveStatus(),
+  ]);
+  const system = buildSystemPrompt({
+    username: user?.username ?? "a player",
+    role: user?.role ?? "member",
+    knowledge,
+    liveStatus,
+  });
   const userContent = [
     `Question: ${message}`,
     ``,
@@ -117,13 +224,13 @@ export async function streamChatReply(
     `Use the web results when they answer the question; otherwise answer from your own knowledge.`,
   ].join("\n");
 
-  let res = await fetchCompletion(baseUrl, model, apiKey, userContent, signal);
+  let res = await fetchCompletion(baseUrl, model, apiKey, system, userContent, signal);
   if (res.status === 429) {
     // Free models share upstream rate limits — one short retry, then a
     // friendly streamed message instead of a hard failure.
     await new Promise((r) => setTimeout(r, 2000));
     if (signal?.aborted) return textStream("");
-    res = await fetchCompletion(baseUrl, model, apiKey, userContent, signal);
+    res = await fetchCompletion(baseUrl, model, apiKey, system, userContent, signal);
   }
 
   if (!res.ok || !res.body) {

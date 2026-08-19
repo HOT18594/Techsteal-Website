@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import { streamChatReply } from "@/lib/ai";
+import { getSessionUser } from "@/lib/auth";
+import { findAccount, hasPermission } from "@/lib/accounts";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -10,19 +12,43 @@ const TEXT_HEADERS = {
   "Cache-Control": "no-cache, no-transform",
 } as const;
 
-// Stream Chatty Jr.'s reply as plain text. The client reads chunks and
-// renders them as they arrive (real streaming, not one big JSON blob).
+// Chatty Jr. is a member perk: you must be signed in with Discord AND
+// hold the `ai_access` permission (admins always have it). Permissions
+// are read from the database, not the session cookie, so granting or
+// revoking access in the Manage Panel takes effect immediately.
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const message = typeof body.message === "string" ? body.message.trim() : "";
   if (!message) {
-    return new Response("Please send a message.", { headers: TEXT_HEADERS });
+    return new Response("Please send a message.", { headers: TEXT_HEADERS, status: 400 });
+  }
+
+  const user = await getSessionUser();
+  if (!user) {
+    return new Response(
+      "Sign in with Discord to chat with Chatty Jr. — it's a member perk. 🚪",
+      { headers: TEXT_HEADERS, status: 401 }
+    );
+  }
+
+  const account = await findAccount(user.id).catch(() => null);
+  const allowed = account
+    ? hasPermission(account, "ai_access")
+    : user.role === "admin" || user.permissions.includes("ai_access");
+  if (!allowed) {
+    return new Response(
+      "You don't have AI access yet — ask an admin to grant it in the Manage Panel. 🔐",
+      { headers: TEXT_HEADERS, status: 403 }
+    );
   }
 
   try {
     // request.signal aborts when the client disconnects (Stop / leave),
     // which cancels the upstream OpenRouter call too.
-    const stream = await streamChatReply(message, request.signal);
+    const stream = await streamChatReply(message, request.signal, {
+      username: user.username,
+      role: user.role,
+    });
     return new Response(stream, { headers: TEXT_HEADERS });
   } catch (err) {
     console.error("chatty: stream error", err);

@@ -7,6 +7,7 @@
 // 3-dot indicator is the only "thinking" ever shown.
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { siteConfig } from "@/lib/site";
 import { Avatar } from "@/components/Avatar";
 import { useToast } from "@/components/Toast";
@@ -47,8 +48,12 @@ function loadHistory(): ChatMessage[] | null {
 export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) {
   const embedded = variant === "embedded";
   const { show } = useToast();
-  const { user } = useSession();
+  const { user, loading: sessionLoading } = useSession();
   const ai = siteConfig.assistant;
+  // Chatty Jr. is a member perk: sign in with Discord and hold the
+  // `ai_access` permission (admins always have it).
+  const hasAccess =
+    user !== null && (user.role === "admin" || user.permissions.includes("ai_access"));
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -98,10 +103,12 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
   }, [messages, typing]);
 
   // Auto-ask a prefill question when navigated to with ?ask=... — only
-  // after history has loaded and only if the chat is still the welcome state.
+  // after history has loaded, only if the chat is still the welcome state,
+  // and only for members with AI access.
   useEffect(() => {
     if (!hydrated || autoAsked.current) return;
     if (messages.length > 1) return; // already has a real conversation
+    if (!hasAccess) return;
     const params = new URLSearchParams(window.location.search);
     const ask = params.get("ask");
     if (ask) {
@@ -109,7 +116,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
       void send(ask);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated, messages.length]);
+  }, [hydrated, messages.length, hasAccess]);
 
   const send = async (raw?: string) => {
     const text = (raw ?? input).trim();
@@ -153,7 +160,18 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
         body: JSON.stringify({ message: text }),
         signal: controller.signal,
       });
-      if (!res.ok || !res.body) throw new Error(`chat returned ${res.status}`);
+      if (!res.ok) {
+        // 401 sign-in / 403 no-access etc. — the server streams a friendly
+        // explanation, show it as the reply.
+        const gateText = await res.text().catch(() => "");
+        if (gen !== genRef.current) return;
+        setDots(false);
+        updateAssistant(
+          gateText.trim() || "Hmm, something went wrong — check your access and try again."
+        );
+        return;
+      }
+      if (!res.body) throw new Error(`chat returned ${res.status}`);
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let acc = "";
@@ -251,7 +269,37 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
         </button>
       </div>
 
-      {/* Chat card — fixed height, scrolls internally, never the page */}
+      {/* Chat card — member perk: sign-in + ai_access required */}
+      {sessionLoading ? (
+        <div className="card p-8 text-center min-h-[26rem] flex items-center justify-center">
+          <p className="text-sm text-[var(--muted)]">Checking session…</p>
+        </div>
+      ) : !user ? (
+        <div className="card p-8 text-center flex flex-col items-center justify-center min-h-[26rem]">
+          <div className="w-14 h-14 rounded-2xl bg-[#5865F2] text-white flex items-center justify-center text-2xl mb-4 shadow-[0_10px_30px_-10px_rgba(88,101,242,0.7)]">
+            <i className="fa-brands fa-discord" />
+          </div>
+          <h2 className="font-display text-xl font-bold mb-2">Sign in to chat with {ai.name}</h2>
+          <p className="text-sm text-[var(--muted)] mb-6 max-w-sm">
+            Chatty Jr. is a member perk — log in with Discord to start chatting.
+          </p>
+          <Link href="/login" className="btn-primary justify-center">
+            <i className="fa-brands fa-discord" />
+            Log in with Discord
+          </Link>
+        </div>
+      ) : !hasAccess ? (
+        <div className="card p-8 text-center flex flex-col items-center justify-center min-h-[26rem]">
+          <div className="w-14 h-14 rounded-2xl bg-[var(--accent-dim)] border border-[var(--border-strong)] text-[var(--accent)] flex items-center justify-center text-2xl mb-4">
+            <i className="fa-solid fa-lock" />
+          </div>
+          <h2 className="font-display text-xl font-bold mb-2">No AI access yet</h2>
+          <p className="text-sm text-[var(--muted)] max-w-sm">
+            Your account doesn&apos;t have the AI permission yet — ask an admin to grant it in the
+            Manage Panel.
+          </p>
+        </div>
+      ) : (
       <div
         className={`card flex flex-col overflow-hidden ${
           embedded
@@ -396,6 +444,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
           </p>
         </div>
       </div>
+      )}
     </div>
   );
 }
