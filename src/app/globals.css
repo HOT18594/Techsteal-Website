@@ -708,7 +708,12 @@ body.scrolled .nav-actions {
 .hero-media {
   position: absolute;
   inset: 0;
-  scale: 1.18;
+  /* Overscan buffer: the parallax (data-parallax="0.18") moves the image up
+     by ~18% of one viewport over a full hero scroll. Scale must exceed that
+     so the image's own edge never slides out from under the fixed edge
+     blend — which is what exposed the hard seam. 1.3 gives comfortable
+     headroom on all four sides while the image still reads as full-bleed. */
+  scale: 1.3;
   will-change: transform;
 }
 .hero-tint {
@@ -723,7 +728,10 @@ body.scrolled .nav-actions {
   background:
     /* fade edges into the page background */
     radial-gradient(ellipse 95% 85% at 50% 42%, transparent 40%, rgba(5, 7, 15, 0.94) 100%),
-    linear-gradient(to top, var(--bg) 0%, transparent 30%),
+    /* Bottom fade is LONGER (40%) and softer than the sides/top so the
+       image melting into the page below never shows a hard line as it
+       parallaxes upward. */
+    linear-gradient(to top, var(--bg) 0%, transparent 40%),
     linear-gradient(to bottom, rgba(5, 7, 15, 0.6) 0%, transparent 16%),
     linear-gradient(to right, rgba(5, 7, 15, 0.55) 0%, transparent 14%),
     linear-gradient(to left, rgba(5, 7, 15, 0.55) 0%, transparent 14%);
