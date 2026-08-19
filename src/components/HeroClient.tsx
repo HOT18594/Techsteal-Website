@@ -3,9 +3,27 @@
 import Image from "next/image";
 import type { CSSProperties } from "react";
 import { siteConfig } from "@/lib/site";
+import { useToast } from "@/components/Toast";
 import Link from "next/link";
 
 export function HeroClient() {
+  const { show } = useToast();
+
+  const copyIP = async () => {
+    try {
+      await navigator.clipboard.writeText(siteConfig.address);
+      show("Server address copied", siteConfig.address);
+      const btn = document.getElementById("hero-copy-ip");
+      if (btn) {
+        const original = btn.innerHTML;
+        btn.innerHTML = '<i class="fa-solid fa-check"></i><span>Copied!</span>';
+        setTimeout(() => (btn.innerHTML = original), 2000);
+      }
+    } catch {
+      show("Couldn't copy address", siteConfig.address);
+    }
+  };
+
   return (
     <>
       {/* ============ HERO — cinematic, multi-layer ============ */}
@@ -31,7 +49,27 @@ export function HeroClient() {
 
         {/* Layer 3 — content, drifting slightly faster for depth */}
         <div className="hero-content" data-parallax="-0.05">
-          <p className="hero-kicker">{siteConfig.address}</p>
+          {/* IP — same letter fly-in as the title, click to copy */}
+          <button
+            className="hero-kicker cursor-pointer"
+            onClick={() => void copyIP()}
+            title="Click to copy the server address"
+            aria-label={`${siteConfig.address} — click to copy`}
+          >
+            {siteConfig.address.split("").map((ch, i) => (
+              <span
+                key={i}
+                className="hero-letter"
+                style={{ "--i": i + siteConfig.name.length + 1 } as CSSProperties}
+                aria-hidden="true"
+              >
+                {ch}
+              </span>
+            ))}
+            <span className="hero-letter hero-kicker-copy" style={{ "--i": siteConfig.name.length + siteConfig.address.length + 2 } as CSSProperties} aria-hidden="true">
+              <i className="fa-regular fa-copy" />
+            </span>
+          </button>
 
           {/* TECHSTEAL — letters fly in, then rest in the original style */}
           <h1 className="hero-title" aria-label={siteConfig.name}>
@@ -48,15 +86,28 @@ export function HeroClient() {
           </h1>
 
           <div className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/join" className="btn-primary w-full sm:w-auto justify-center">
+            <Link
+              href="/join"
+              className="btn-primary w-full sm:w-auto justify-center hero-cta"
+              style={{ "--i": 0 } as CSSProperties}
+            >
               <i className="fa-solid fa-compass" />
               <span>How to Join</span>
             </Link>
-            <button className="btn-secondary w-full sm:w-auto justify-center" id="hero-copy-ip" onClick={copyIP}>
+            <button
+              className="btn-secondary w-full sm:w-auto justify-center hero-cta"
+              id="hero-copy-ip"
+              onClick={() => void copyIP()}
+              style={{ "--i": 1 } as CSSProperties}
+            >
               <i className="fa-solid fa-copy" />
               <span>Copy IP</span>
             </button>
-            <Link href="/status" className="btn-secondary w-full sm:w-auto justify-center">
+            <Link
+              href="/status"
+              className="btn-secondary w-full sm:w-auto justify-center hero-cta"
+              style={{ "--i": 2 } as CSSProperties}
+            >
               <i className="fa-solid fa-signal" />
               <span>Check Status</span>
             </Link>
@@ -200,17 +251,4 @@ export function HeroClient() {
       </section>
     </>
   );
-}
-
-function copyIP() {
-  const address = siteConfig.address;
-  try {
-    navigator.clipboard.writeText(address);
-    const btn = document.getElementById("hero-copy-ip");
-    if (btn) {
-      const original = btn.innerHTML;
-      btn.innerHTML = '<i class="fa-solid fa-check"></i><span>Copied!</span>';
-      setTimeout(() => (btn.innerHTML = original), 2000);
-    }
-  } catch {}
 }

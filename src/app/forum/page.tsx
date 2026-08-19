@@ -1,14 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { fallbackThreads } from "@/lib/fallback-data";
 import type { ForumThread } from "@/types";
 import { SubPage } from "@/components/SubPage";
 import { useApi } from "@/lib/use-api";
 import { useToast } from "@/components/Toast";
+import { useSession } from "@/lib/use-session";
 
 export default function ForumPage() {
   const { show } = useToast();
+  const { user, loading: sessionLoading } = useSession();
   const { data: apiThreads } = useApi<ForumThread[]>("/api/forum", fallbackThreads);
   // Threads created this session (persisted server-side when a DB is present).
   const [fresh, setFresh] = useState<ForumThread[]>([]);
@@ -16,10 +19,12 @@ export default function ForumPage() {
   const [filter, setFilter] = useState<"all" | "pinned" | "hot">("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [title, setTitle] = useState("");
-  const [author, setAuthor] = useState("");
   const [category, setCategory] = useState("General");
   const [submitting, setSubmitting] = useState(false);
+  const [busyThread, setBusyThread] = useState<number | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
+
+  const isAdmin = user?.role === "admin";
 
   // Escape closes the modal; autofocus the title field; lock body scroll.
   useEffect(() => {
@@ -44,22 +49,31 @@ export default function ForumPage() {
         ? threads.filter((t) => t.pinned)
         : [...threads].sort((a, b) => b.replies - a.replies);
 
+  const openModal = () => {
+    if (!user) {
+      show("Sign in to post", "Log in with Discord to create threads.");
+      return;
+    }
+    setModalOpen(true);
+  };
+
   const submit = async () => {
     const t = title.trim();
-    const a = author.trim();
-    if (!t || !a || submitting) return;
+    if (!t || submitting) return;
     setSubmitting(true);
     try {
       const res = await fetch("/api/forum", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: t, author: a, category }),
+        body: JSON.stringify({ title: t, category }),
       });
       if (res.ok) {
         const created = (await res.json()) as ForumThread;
         setFresh((prev) => [created, ...prev]);
         setTitle("");
-        setAuthor("");
+        setModalOpen(false);
+      } else if (res.status === 401) {
+        show("Sign in to post", "Log in with Discord to create threads.");
         setModalOpen(false);
       } else {
         show("Couldn't create thread", "The server rejected the request.");
@@ -68,6 +82,44 @@ export default function ForumPage() {
       show("Couldn't create thread", "Check your connection and try again.");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const moderate = async (thread: ForumThread, action: "delete" | "pin") => {
+    if (busyThread !== null) return;
+    setBusyThread(thread.id ?? 0);
+    try {
+      const res =
+        action === "delete"
+          ? await fetch("/api/forum", {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: thread.id }),
+            })
+          : await fetch("/api/forum", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: thread.id, pinned: !thread.pinned }),
+            });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        show("Couldn't update", data.error ?? "The server rejected the request.");
+        return;
+      }
+      if (action === "delete") {
+        setFresh((prev) => prev.filter((t) => t.id !== thread.id));
+        show("Deleted", `"${thread.title}" was removed.`);
+      } else {
+        const updated = (await res.json()) as ForumThread;
+        setFresh((prev) =>
+          prev.map((t) => (t.id === updated.id ? { ...t, pinned: updated.pinned } : t))
+        );
+        show(updated.pinned ? "Pinned" : "Unpinned", `"${thread.title}" ${updated.pinned ? "is now pinned" : "is no longer pinned"}.`);
+      }
+    } catch {
+      show("Couldn't update", "Check your connection and try again.");
+    } finally {
+      setBusyThread(null);
     }
   };
 
@@ -88,7 +140,7 @@ export default function ForumPage() {
           </div>
           <button
             className="btn-secondary py-2.5! px-5! text-xs!"
-            onClick={() => setModalOpen(true)}
+            onClick={openModal}
           >
             <i className="fa-solid fa-pen-to-square" />
             New Thread
@@ -124,7 +176,6 @@ export default function ForumPage() {
                 </p>
               ) : (
                 visible.map((t) => (
-                  // Display-only row: no detail pages exist in static export.
                   <div
                     key={t.id ?? t.title}
                     className="thread-row py-3.5 px-2 flex items-center gap-4"
@@ -148,6 +199,29 @@ export default function ForumPage() {
                       <div className="font-display text-lg text-[var(--accent)]">{t.replies}</div>
                       <div className="text-xs text-[var(--muted)] uppercase tracking-wider">replies</div>
                     </div>
+                    {/* Admin moderation */}
+                    {isAdmin ? (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          className="w-9 h-9 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition disabled:opacity-40"
+                          onClick={() => void moderate(t, "pin")}
+                          disabled={busyThread !== null}
+                          aria-label={t.pinned ? "Unpin thread" : "Pin thread"}
+                          title={t.pinned ? "Unpin" : "Pin"}
+                        >
+                          <i className={`fa-solid fa-thumbtack text-xs ${t.pinned ? "text-[var(--accent)]" : ""}`} />
+                        </button>
+                        <button
+                          className="w-9 h-9 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)] transition disabled:opacity-40"
+                          onClick={() => void moderate(t, "delete")}
+                          disabled={busyThread !== null}
+                          aria-label="Delete thread"
+                          title="Delete"
+                        >
+                          <i className="fa-solid fa-trash text-xs" />
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                 ))
               )}
@@ -174,6 +248,39 @@ export default function ForumPage() {
                 )}
               </div>
             </div>
+
+            {/* Signed-in as / sign-in prompt */}
+            <div className="card p-6 mt-6">
+              {user ? (
+                <>
+                  <h3 className="font-display text-base font-bold mb-1">Posting as</h3>
+                  <p className="text-sm text-[var(--fg-2)] flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-md bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center font-display font-bold text-white text-xs">
+                      {user.username.charAt(0).toUpperCase()}
+                    </span>
+                    {user.username}
+                    {isAdmin ? (
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent)] border border-[var(--accent)] rounded px-1.5 py-0.5">
+                        Admin
+                      </span>
+                    ) : null}
+                  </p>
+                </>
+              ) : sessionLoading ? (
+                <p className="text-sm text-[var(--muted)]">Checking session…</p>
+              ) : (
+                <>
+                  <h3 className="font-display text-base font-bold mb-1">Want to post?</h3>
+                  <p className="text-sm text-[var(--muted)] mb-3">
+                    Sign in with Discord to create threads.
+                  </p>
+                  <Link href="/login" className="btn-primary w-full py-2.5! text-xs! justify-center">
+                    <i className="fa-brands fa-discord" />
+                    Log in
+                  </Link>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -191,12 +298,14 @@ export default function ForumPage() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
               />
-              <input
-                className={inputClass}
-                placeholder="Your name"
-                value={author}
-                onChange={(e) => setAuthor(e.target.value)}
-              />
+              {user ? (
+                <div className="flex items-center gap-2 px-1 text-xs text-[var(--muted)]">
+                  <span className="w-5 h-5 rounded bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center font-display font-bold text-white text-[10px]">
+                    {user.username.charAt(0).toUpperCase()}
+                  </span>
+                  Posting as <span className="text-[var(--fg-2)] font-medium">{user.username}</span>
+                </div>
+              ) : null}
               <select className={inputClass} value={category} onChange={(e) => setCategory(e.target.value)}>
                 <option value="General">General</option>
                 {["Announcements", "Ideas", "Builds", "Redstone", "Technical", "Off-topic"].map(
@@ -208,7 +317,7 @@ export default function ForumPage() {
                 )}
               </select>
               <div className="flex gap-3 pt-1">
-                <button className="btn-primary w-full" onClick={() => void submit()} disabled={submitting}>
+                <button className="btn-primary w-full" onClick={() => void submit()} disabled={submitting || !title.trim()}>
                   {submitting ? "Posting…" : "Create Thread"}
                 </button>
                 <button className="btn-secondary w-full" onClick={() => setModalOpen(false)}>

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
-import { Pixelify_Sans, Space_Grotesk } from "next/font/google";
+import localFont from "next/font/local";
+import { Space_Grotesk } from "next/font/google";
 import type { ReactNode } from "react";
 import { BackToTop } from "@/components/BackToTop";
 import { CursorFx } from "@/components/CursorFx";
@@ -12,8 +13,9 @@ import { ToastProvider } from "@/components/Toast";
 import { siteConfig } from "@/lib/site";
 import "./globals.css";
 
-const pixelify = Pixelify_Sans({
-  subsets: ["latin"],
+// Minecraft-style pixel font (Minecraftia — the classic free Minecraft clone).
+const minecraft = localFont({
+  src: "./fonts/Minecraftia-Regular.ttf",
   variable: "--font-pixel",
   display: "swap",
 });
@@ -35,7 +37,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${pixelify.variable} ${grotesk.variable}`}>
+    <html lang="en" className={`${minecraft.variable} ${grotesk.variable}`}>
       <head>
         <link
           rel="stylesheet"

@@ -1263,6 +1263,22 @@ button:focus-visible {
   }
 }
 
+/* CTA buttons fly in with the same motion, staggered after the letters.
+   `backwards` (not `both`) so once the animation ends, the button's own
+   hover transform/transition takes over again. */
+.hero-cta {
+  animation: heroLetterIn 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+  animation-delay: calc(var(--i) * 0.12s + 1.15s);
+  will-change: transform, opacity, filter;
+}
+
+/* Copy icon inside the IP kicker */
+.hero-kicker-copy {
+  margin-left: 0.6rem;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
 
 /* ============================================================
    Emoji confetti burst (rules acknowledge)
