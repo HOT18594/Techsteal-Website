@@ -36,25 +36,32 @@ export async function POST(
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
 
-  const rows = await db
-    .select()
-    .from(forumReplies)
-    .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
-    .limit(1);
-  if (rows.length === 0) {
+  // Locking read + write inside a transaction: two simultaneous "like"
+  // clicks used to both read the old likedBy, both append the id, and
+  // one vote would silently vanish. `FOR UPDATE` serializes them.
+  const updated = await db.transaction(async (tx) => {
+    const locked = await tx
+      .select()
+      .from(forumReplies)
+      .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
+      .for("update")
+      .limit(1);
+    if (locked.length === 0) return null;
+    const currentLikedBy = (locked[0].likedBy ?? []) as string[];
+    const already = currentLikedBy.includes(user.id);
+    const updatedLikedBy = already
+      ? currentLikedBy.filter((x) => x !== user.id)
+      : [...currentLikedBy, user.id];
+    const [row] = await tx
+      .update(forumReplies)
+      .set({ likedBy: updatedLikedBy, likes: updatedLikedBy.length })
+      .where(eq(forumReplies.id, replyId))
+      .returning();
+    return row;
+  });
+  if (!updated) {
     return NextResponse.json({ error: "Reply not found" }, { status: 404 });
   }
-
-  const reply = rows[0];
-  const likedBy = (reply.likedBy ?? []) as string[];
-  const liked = likedBy.includes(user.id);
-  const next = liked ? likedBy.filter((x) => x !== user.id) : [...likedBy, user.id];
-
-  const [updated] = await db
-    .update(forumReplies)
-    .set({ likedBy: next, likes: next.length })
-    .where(eq(forumReplies.id, replyId))
-    .returning();
 
   const avatars = await resolveAuthorAvatars([updated]);
   const info = avatarInfoFor(avatars, updated);
@@ -63,6 +70,7 @@ export async function POST(
       ...updated,
       avatarUrl: info?.avatarUrl ?? null,
     },
-    liked: !liked,
+    // Derived from the DB's final state — true if the user's id is in it.
+    liked: (updated.likedBy ?? []).includes(user.id),
   });
 }

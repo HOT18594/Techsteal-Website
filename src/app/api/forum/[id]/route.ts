@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { forumReplies, forumThreads } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
@@ -99,9 +99,11 @@ export async function POST(
     })
     .returning();
 
+  // Atomic increment — a plain `replies + 1` read from `threads[0]` would
+  // lose a count when two replies land at once (both read 5, both write 6).
   await db
     .update(forumThreads)
-    .set({ replies: threads[0].replies + 1, last: "just now" })
+    .set({ replies: sql`${forumThreads.replies} + 1`, last: "just now" })
     .where(eq(forumThreads.id, threadId));
 
   const avatars = await resolveAuthorAvatars([reply]);
