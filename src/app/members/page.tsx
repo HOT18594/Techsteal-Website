@@ -5,39 +5,12 @@ import type { Member } from "@/types";
 import { Avatar } from "@/components/Avatar";
 import { SubPage } from "@/components/SubPage";
 import { useApi } from "@/lib/use-api";
-import { Carousel } from "@/components/Carousel";
 
 export default function MembersPage() {
   const { data: members } = useApi<Member[]>("/api/members", fallbackMembers);
 
   const online = members.filter((m) => m.status === "online").length;
   const offline = members.length - online;
-
-  const slides = members.map((m) => (
-    <div key={m.id ?? m.name} className="card member-slide">
-      {/* Glow backdrop tinted with the member's accent */}
-      <div className="member-slide-glow" aria-hidden="true" />
-      <div className="relative">
-        <Avatar
-          name={m.name}
-          size="xl"
-          color={m.color}
-          className="member-slide-avatar"
-          online={m.status === "online"}
-        />
-      </div>
-      <h2 className="mt-6 font-display text-3xl font-bold">{m.name}</h2>
-      <span className="tag tag-accent mt-2">{m.role}</span>
-      <p className="mt-4 text-sm text-[var(--muted)]">
-        Joined <span className="text-[var(--fg-2)]">{m.joined}</span> ·{" "}
-        <span className="text-[var(--fg-2)]">{m.playtime}</span> playtime
-      </p>
-      <div className={`mt-5 flex items-center gap-2 text-xs uppercase tracking-wider ${m.status === "online" ? "text-[var(--emerald)]" : "text-[var(--muted-2)]"}`}>
-        <span className={`w-2 h-2 rounded-full ${m.status === "online" ? "bg-[var(--emerald)] shadow-[0_0_8px_var(--emerald-glow)]" : "bg-[var(--muted-2)]"}`} />
-        {m.status === "online" ? "In-game right now" : "Offline"}
-      </div>
-    </div>
-  ));
 
   return (
     <SubPage className="mx-auto max-w-7xl pt-6 pb-16">
@@ -63,7 +36,45 @@ export default function MembersPage() {
             No members listed yet.
           </div>
         ) : (
-          <Carousel slides={slides} label="Members" interval={6500} />
+          /* Console-style member cards */
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {members.map((m) => (
+              <div key={m.id ?? m.name} className="member-card flex items-start gap-4">
+                <Avatar
+                  name={m.name}
+                  size="md"
+                  color={m.color}
+                  online={m.status === "online"}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-display text-lg font-bold truncate">{m.name}</h3>
+                    <span className={`tag ${m.status === "online" ? "tag-emerald" : ""}`}>
+                      {m.role}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-[var(--muted)]">
+                    Joined <span className="text-[var(--fg-2)]">{m.joined}</span> ·{" "}
+                    <span className="text-[var(--fg-2)]">{m.playtime}</span> playtime
+                  </p>
+                  <div
+                    className={`mt-3 flex items-center gap-2 text-xs uppercase tracking-wider ${
+                      m.status === "online" ? "text-[var(--emerald)]" : "text-[var(--muted-2)]"
+                    }`}
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        m.status === "online"
+                          ? "bg-[var(--emerald)] shadow-[0_0_8px_var(--emerald-glow)]"
+                          : "bg-[var(--muted-2)]"
+                      }`}
+                    />
+                    {m.status === "online" ? "In-game right now" : "Offline"}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </SubPage>

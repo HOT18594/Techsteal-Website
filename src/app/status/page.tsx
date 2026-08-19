@@ -7,7 +7,6 @@ import type { ServerStatus } from "@/types";
 import { useToast } from "@/components/Toast";
 import { SubPage } from "@/components/SubPage";
 import { useApi } from "@/lib/use-api";
-import { Carousel } from "@/components/Carousel";
 
 function useClock() {
   const [time, setTime] = useState("--:--");
@@ -25,35 +24,10 @@ function useClock() {
   return time;
 }
 
-/** Count from 0 → target when `active` flips true (rAF, 900ms, ease-out). */
-function useCountUp(target: number, active: boolean, decimals = 0) {
-  const [value, setValue] = useState(0);
-  useEffect(() => {
-    if (!active) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setValue(target);
-      return;
-    }
-    let raf = 0;
-    const start = performance.now();
-    const duration = 900;
-    const tick = (t: number) => {
-      const p = Math.min(1, (t - start) / duration);
-      const eased = 1 - Math.pow(1 - p, 3);
-      setValue(target * eased);
-      if (p < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [target, active]);
-  return value.toFixed(decimals);
-}
-
 export default function StatusPage() {
   const time = useClock();
   const { show } = useToast();
   const { data: STATUS, refetch } = useApi<ServerStatus>("/api/status", fallbackStatus);
-  const [active, setActive] = useState(0);
 
   // Auto-refresh the live status every 60s so the page stays current.
   useEffect(() => {
@@ -75,77 +49,7 @@ export default function StatusPage() {
   const max = STATUS.max ?? siteConfig.maxPlayers;
   const playerList = STATUS.playerList ?? [];
   const stats = siteConfig.stats;
-
-  const countPlayers = useCountUp(players, active === 0);
-  const countTps = useCountUp(parseFloat(stats.tps), active === 1, 1);
-  const countUptime = useCountUp(parseInt(stats.uptimeDays, 10), active === 2);
-  const countWorld = useCountUp(parseFloat(stats.worldSize), active === 3, 1);
-
-  const slides = [
-    // 1 — Live status
-    <div key="live" className="card stat-slide">
-      <div className={`status-pill text-base! ${online ? "" : "offline"}`}>
-        <span className={`pulse-dot ${online ? "" : "muted"}`} />
-        {online ? "All systems online" : "Server offline"}
-      </div>
-      <div className="mt-6 font-display text-6xl md:text-7xl font-bold leading-none text-[var(--fg)]">
-        {countPlayers}
-        <span className="text-[var(--muted-2)] text-3xl">/{max}</span>
-      </div>
-      <p className="mt-3 text-sm text-[var(--muted)]">players online right now</p>
-      <div className="mt-4 flex flex-wrap justify-center gap-2">
-        {playerList.length > 0 ? (
-          playerList.map((name) => (
-            <span key={name} className="tag tag-emerald">{name}</span>
-          ))
-        ) : (
-          <span className="text-xs text-[var(--muted-2)]">The realm is quiet right now.</span>
-        )}
-      </div>
-    </div>,
-    // 2 — TPS
-    <div key="tps" className="card stat-slide">
-      <div className="stat-slide-icon" style={{ color: "var(--diamond)", borderColor: "rgba(56,211,240,0.4)", background: "rgba(56,211,240,0.08)" }}>
-        <i className="fa-solid fa-bolt" />
-      </div>
-      <div className="mt-5 font-display text-6xl md:text-7xl font-bold leading-none text-[var(--fg)]">
-        {countTps}
-      </div>
-      <p className="mt-3 text-sm text-[var(--emerald)]">tick rate · butter smooth</p>
-      <div className="mt-5 w-full max-w-xs h-1.5 rounded-full bg-[var(--bg-3)] overflow-hidden">
-        <div
-          className="h-full rounded-full bg-gradient-to-r from-[var(--emerald)] to-[var(--diamond)] transition-all duration-1000"
-          style={{ width: active === 1 ? "100%" : "0%" }}
-        />
-      </div>
-    </div>,
-    // 3 — Uptime
-    <div key="uptime" className="card stat-slide">
-      <div className="stat-slide-icon">
-        <i className="fa-solid fa-clock" />
-      </div>
-      <div className="mt-5 font-display text-6xl md:text-7xl font-bold leading-none text-[var(--fg)]">
-        {countUptime}
-        <span className="text-[var(--muted-2)] text-3xl">d</span>
-      </div>
-      <p className="mt-3 text-sm text-[var(--muted)]">days of uninterrupted uptime</p>
-      <p className="mt-2 text-xs text-[var(--muted-2)]">
-        in-game time now: <span className="text-[var(--accent)] font-display text-sm">{time}</span>
-      </p>
-    </div>,
-    // 4 — World
-    <div key="world" className="card stat-slide">
-      <div className="stat-slide-icon">
-        <i className="fa-solid fa-cube" />
-      </div>
-      <div className="mt-5 font-display text-6xl md:text-7xl font-bold leading-none text-[var(--fg)]">
-        {countWorld}
-        <span className="text-[var(--muted-2)] text-3xl">GB</span>
-      </div>
-      <p className="mt-3 text-sm text-[var(--muted)]">map size · {stats.mapSize}</p>
-      <p className="mt-2 text-xs text-[var(--muted-2)]">{siteConfig.software} · {siteConfig.version}</p>
-    </div>,
-  ];
+  const tpsPct = Math.min(100, Math.round((parseFloat(stats.tps) / 20) * 100));
 
   return (
     <SubPage className="mx-auto max-w-7xl pt-6 pb-16">
@@ -170,13 +74,92 @@ export default function StatusPage() {
           </div>
         </div>
 
-        {/* Stats slideshow */}
-        <Carousel
-          slides={slides}
-          label="Server statistics"
-          interval={6000}
-          onIndexChange={setActive}
-        />
+        {/* Console stat cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5">
+          {/* Players */}
+          <div className="card stat-card p-5 flex flex-col">
+            <div className="stat-icon">
+              <i className="fa-solid fa-users" />
+            </div>
+            <div className="mt-4 flex items-baseline gap-1.5">
+              <span className="stat-number">{players}</span>
+              <span className="font-display text-lg text-[var(--muted-2)]">/{max}</span>
+            </div>
+            <div className="mt-1 text-xs text-[var(--muted)] uppercase tracking-wider">
+              players online
+            </div>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {playerList.length > 0 ? (
+                playerList.map((name) => (
+                  <span key={name} className="tag tag-emerald">{name}</span>
+                ))
+              ) : (
+                <span className="text-xs text-[var(--muted-2)]">The realm is quiet right now.</span>
+              )}
+            </div>
+          </div>
+
+          {/* TPS */}
+          <div className="card stat-card p-5 flex flex-col">
+            <div
+              className="stat-icon"
+              style={{
+                color: "var(--diamond)",
+                borderColor: "rgba(56,211,240,0.4)",
+                background: "rgba(56,211,240,0.08)",
+              }}
+            >
+              <i className="fa-solid fa-bolt" />
+            </div>
+            <div className="mt-4 flex items-baseline gap-1.5">
+              <span className="stat-number">{stats.tps}</span>
+            </div>
+            <div className="mt-1 text-xs text-[var(--muted)] uppercase tracking-wider">
+              tick rate
+            </div>
+            <div className="mt-3 h-1.5 rounded-full bg-[var(--bg-3)] overflow-hidden">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-[var(--emerald)] to-[var(--diamond)]"
+                style={{ width: `${tpsPct}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Uptime */}
+          <div className="card stat-card p-5 flex flex-col">
+            <div className="stat-icon">
+              <i className="fa-solid fa-clock" />
+            </div>
+            <div className="mt-4 flex items-baseline gap-1.5">
+              <span className="stat-number">{stats.uptimeDays}</span>
+              <span className="font-display text-lg text-[var(--muted-2)]">d</span>
+            </div>
+            <div className="mt-1 text-xs text-[var(--muted)] uppercase tracking-wider">
+              days of uptime
+            </div>
+            <div className="mt-3 text-xs text-[var(--muted-2)]">
+              in-game time now:{" "}
+              <span className="font-display text-sm text-[var(--accent)]">{time}</span>
+            </div>
+          </div>
+
+          {/* World */}
+          <div className="card stat-card p-5 flex flex-col">
+            <div className="stat-icon">
+              <i className="fa-solid fa-cube" />
+            </div>
+            <div className="mt-4 flex items-baseline gap-1.5">
+              <span className="stat-number">{stats.worldSize}</span>
+              <span className="font-display text-lg text-[var(--muted-2)]">GB</span>
+            </div>
+            <div className="mt-1 text-xs text-[var(--muted)] uppercase tracking-wider">
+              map size · {stats.mapSize}
+            </div>
+            <div className="mt-3 text-xs text-[var(--muted-2)]">
+              {siteConfig.software} · {siteConfig.version}
+            </div>
+          </div>
+        </div>
 
         {/* Connection info */}
         <div className="grid lg:grid-cols-3 gap-6 mt-10">

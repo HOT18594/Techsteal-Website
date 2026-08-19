@@ -3,11 +3,19 @@
 import Image from "next/image";
 import type { CSSProperties } from "react";
 import { siteConfig } from "@/lib/site";
+import { fallbackMembers, fallbackGallery, fallbackStatus } from "@/lib/fallback-data";
+import type { GalleryItem, Member, ServerStatus } from "@/types";
+import { Avatar } from "@/components/Avatar";
 import { useToast } from "@/components/Toast";
+import { useApi } from "@/lib/use-api";
 import Link from "next/link";
 
 export function HeroClient() {
   const { show } = useToast();
+  // Live previews for the three feature tiles (console style — no slideshow).
+  const { data: status } = useApi<ServerStatus>("/api/status", fallbackStatus);
+  const { data: members } = useApi<Member[]>("/api/members", fallbackMembers);
+  const { data: gallery } = useApi<GalleryItem[]>("/api/gallery", fallbackGallery);
 
   const copyIP = async () => {
     try {
@@ -149,10 +157,22 @@ export function HeroClient() {
                   Open <i className="fa-solid fa-arrow-right" />
                 </span>
                 <div className="mt-8 w-full">
-                  <div className="asset-placeholder aspect-[4/3] rounded-xl w-full">
-                    <div className="asset-placeholder-content">
-                      <i className="fa-solid fa-chart-line asset-placeholder-icon" />
-                      <span className="asset-placeholder-hint">Screenshot</span>
+                  {/* Live status preview (console style) */}
+                  <div className="aspect-[4/3] w-full rounded-xl border border-[var(--border)] bg-[var(--bg-2)] p-4 flex flex-col overflow-hidden">
+                    <div className={`status-pill ${status.online ? "" : "offline"}`}>
+                      <span className={`pulse-dot ${status.online ? "" : "muted"}`} />
+                      {status.online ? "Online" : "Offline"}
+                    </div>
+                    <div className="mt-auto">
+                      <div className="font-display text-4xl font-bold leading-none text-[var(--fg)]">
+                        {status.players ?? 0}
+                        <span className="text-[var(--muted-2)] text-xl">
+                          /{status.max ?? siteConfig.maxPlayers}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 text-xs text-[var(--muted)] uppercase tracking-wider">
+                        players online
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -170,12 +190,32 @@ export function HeroClient() {
                   Open <i className="fa-solid fa-arrow-right" />
                 </span>
                 <div className="mt-8 w-full">
-                  <div className="asset-placeholder aspect-[4/3] rounded-xl w-full">
-                    <div className="asset-placeholder-content">
-                      <i className="fa-solid fa-user-group asset-placeholder-icon" />
-                      <span className="asset-placeholder-hint">Photo</span>
+                  {/* Live members preview (console style) */}
+                  {members.length === 0 ? (
+                    <div className="asset-placeholder aspect-[4/3] rounded-xl w-full">
+                      <div className="asset-placeholder-content">
+                        <i className="fa-solid fa-user-group asset-placeholder-icon" />
+                        <span className="asset-placeholder-hint">No members yet</span>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="aspect-[4/3] w-full rounded-xl border border-[var(--border)] bg-[var(--bg-2)] p-4 flex flex-col justify-center gap-3 overflow-hidden">
+                      {members.slice(0, 3).map((m) => (
+                        <div key={m.id ?? m.name} className="flex items-center gap-3">
+                          <Avatar
+                            name={m.name}
+                            size="sm"
+                            color={m.color}
+                            online={m.status === "online"}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-semibold truncate">{m.name}</div>
+                            <div className="text-xs text-[var(--muted)] truncate">{m.role}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </Link>
@@ -191,12 +231,35 @@ export function HeroClient() {
                   Open <i className="fa-solid fa-arrow-right" />
                 </span>
                 <div className="mt-8 w-full">
-                  <div className="asset-placeholder aspect-[4/3] rounded-xl w-full">
-                    <div className="asset-placeholder-content">
-                      <i className="fa-solid fa-cube asset-placeholder-icon" />
-                      <span className="asset-placeholder-hint">Builds</span>
+                  {/* Live gallery preview (console style) */}
+                  {gallery.length === 0 ? (
+                    <div className="asset-placeholder aspect-[4/3] rounded-xl w-full">
+                      <div className="asset-placeholder-content">
+                        <i className="fa-solid fa-cube asset-placeholder-icon" />
+                        <span className="asset-placeholder-hint">No builds yet</span>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="aspect-[4/3] w-full rounded-xl border border-[var(--border)] bg-[var(--bg-2)] p-1.5 grid grid-cols-3 gap-1.5 overflow-hidden">
+                      {gallery.slice(0, 3).map((g) => (
+                        <div
+                          key={g.id ?? g.title}
+                          className="relative rounded-lg overflow-hidden border border-[var(--border)]"
+                        >
+                          <img
+                            src={g.image}
+                            alt={g.title}
+                            loading="lazy"
+                            className="w-full h-full object-cover"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-[rgba(5,7,15,0.85)] via-transparent to-transparent" />
+                          <span className="absolute bottom-1.5 left-1.5 right-1.5 text-[10px] font-bold text-white truncate">
+                            {g.title}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </Link>
