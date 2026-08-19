@@ -234,7 +234,11 @@ body {
   align-items: center;
   gap: 10px;
   position: fixed;
-  top: 18px;
+  /* Same top + height as .nav-actions so the wordmark's vertical center
+     (top 14 + height 56 / 2 = 42px) lines up exactly with the toolbar's
+     center, instead of floating higher than it. */
+  top: 14px;
+  height: 56px;
   left: 20px;
   z-index: 56; /* above the nav-scrim (55) so it stays clickable while the menu is open */
   font-family: var(--font-pixel), monospace;
@@ -252,10 +256,11 @@ body {
 .nav-wordmark i {
   color: var(--accent-bright);
   font-size: 1.45rem;
-  /* Measured from a live Chromium screenshot: Minecraftia's glyphs render
-     ~10px HIGH in their line box, so a centered FA icon lands below the
-     letters. Bump the cube to letter size and pull it up to match. */
-  transform: translateY(-10px);
+  /* Pixel-font glyphs render high in their line box, so a centered FA icon
+     sits slightly below the text's optical center. A small lift aligns the
+     cube with the wordmark letters (now that the wordmark is vertically
+     centered to match the toolbar). */
+  transform: translateY(-2px);
 }
 
 .nav-actions {
