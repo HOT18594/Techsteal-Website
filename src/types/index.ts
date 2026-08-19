@@ -12,6 +12,8 @@ export interface Member {
   status: "online" | "offline";
   joined: string;
   playtime: string;
+  /** In-game Minecraft username, if the member linked one. */
+  minecraftUsername?: string | null;
 }
 
 export interface ForumThread {
@@ -114,6 +116,8 @@ export interface SessionUser {
   permissions: Permission[];
   /** Discord CDN profile picture URL, if the user has one. */
   avatarUrl?: string;
+  /** True once the user finished onboarding. Re-read from the DB by /api/auth/me. */
+  onboarded?: boolean;
 }
 
 export interface ServerStatus {

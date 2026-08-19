@@ -60,6 +60,7 @@ export async function GET() {
       status: online ? "online" : "offline",
       joined: row.createdAt ?? "",
       playtime: row.discordVerified ? "verified" : "member",
+      minecraftUsername: mcName ?? null,
     };
   });
 

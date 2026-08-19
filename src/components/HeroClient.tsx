@@ -5,7 +5,7 @@ import type { CSSProperties } from "react";
 import { siteConfig } from "@/lib/site";
 import { fallbackMembers, fallbackGallery, fallbackStatus } from "@/lib/fallback-data";
 import type { GalleryItem, Member, ServerStatus } from "@/types";
-import { Avatar } from "@/components/Avatar";
+import { MemberSlideshow } from "@/components/MemberSlideshow";
 import { useToast } from "@/components/Toast";
 import { useApi } from "@/lib/use-api";
 import Link from "next/link";
@@ -190,33 +190,9 @@ export function HeroClient() {
                   Open <i className="fa-solid fa-arrow-right" />
                 </span>
                 <div className="mt-8 w-full">
-                  {/* Live members preview (console style) */}
-                  {members.length === 0 ? (
-                    <div className="asset-placeholder aspect-[4/3] rounded-xl w-full">
-                      <div className="asset-placeholder-content">
-                        <i className="fa-solid fa-user-group asset-placeholder-icon" />
-                        <span className="asset-placeholder-hint">No members yet</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="aspect-[4/3] w-full rounded-xl border border-[var(--border)] bg-[var(--bg-2)] p-4 flex flex-col justify-center gap-3 overflow-hidden">
-                      {members.slice(0, 3).map((m) => (
-                        <div key={m.id ?? m.name} className="flex items-center gap-3">
-                          <Avatar
-                            name={m.name}
-                            src={m.avatarUrl}
-                            size="sm"
-                            color={m.color}
-                            online={m.status === "online"}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-semibold leading-snug break-words">{m.name}</div>
-                            <div className="text-xs text-[var(--muted)] leading-snug break-words">{m.role}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  {/* Live members preview — passive slideshow of members
+                      who've linked a Minecraft account (name + PFP). */}
+                  <MemberSlideshow members={members} />
                 </div>
               </div>
             </Link>
