@@ -176,6 +176,7 @@ export function Navbar() {
           role="menu"
           aria-label="Profile menu"
           aria-hidden={!profileOpen}
+          inert={!profileOpen}
           className={`nav-popover ${profileOpen ? "open" : ""}`}
         >
           <div className="px-4 py-3 border-b border-[var(--border)] flex items-center gap-3">
@@ -232,6 +233,7 @@ export function Navbar() {
         role="navigation"
         aria-label="Main navigation"
         aria-hidden={!menuOpen}
+        inert={!menuOpen}
         className={`nav-popover ${menuOpen ? "open" : ""}`}
       >
         {NAV_LINKS.map((link) => (

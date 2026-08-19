@@ -16,11 +16,20 @@ export type Db = PostgresJsDatabase<typeof schema>;
  * `prepare: false` keeps the client compatible with Supabase's
  * connection pooler (transaction mode), which does not support
  * prepared statements.
+ *
+ * The client is cached at module level: on serverless platforms (Vercel)
+ * the same warm instance serves many requests, and creating a fresh
+ * `postgres()` client per request without ever calling `end()` would
+ * leak connections until the pooler maxes out and the site goes down.
  */
+let cachedClient: Db | null = null;
+
 export function createDb(url = process.env.DATABASE_URL): Db {
   if (!url) throw new Error("DATABASE_URL is not set");
+  if (cachedClient) return cachedClient;
   const client = postgres(url, { prepare: false, max: 1 });
-  return drizzle(client, { schema });
+  cachedClient = drizzle(client, { schema });
+  return cachedClient;
 }
 
 /**

@@ -28,6 +28,9 @@ export async function PATCH(request: Request) {
 
   if (typeof body.minecraftUsername === "string") {
     patch.minecraftUsername = body.minecraftUsername.trim();
+  } else if (body.minecraftUsername === null) {
+    // Explicitly clearing the field (settings sends `null`).
+    patch.minecraftUsername = null;
   }
   if (typeof body.onboarded === "boolean") patch.onboarded = body.onboarded;
   if (typeof body.discordVerified === "boolean") patch.discordVerified = body.discordVerified;

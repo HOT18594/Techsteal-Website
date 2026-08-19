@@ -74,6 +74,13 @@ function OnboardingContent() {
     setVerifyState("checking");
     try {
       const res = await fetch("/api/auth/discord/verify");
+      if (!res.ok) {
+        // Auth failure / server error — NOT "not configured". Re-check so
+        // the user can try again instead of being told setup is missing.
+        setVerifyState("idle");
+        show("Couldn't verify", "Something went wrong — try again in a moment.");
+        return;
+      }
       const data = (await res.json()) as { configured: boolean; verified: boolean };
       if (!data.configured) {
         setVerifyState("not_configured");

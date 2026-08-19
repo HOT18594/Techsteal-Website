@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { getSessionUser } from "./auth";
 import { getDb } from "./db";
 import { profiles } from "./schema";
 import type { Account, Permission, SessionUser, UserRole } from "@/types";
@@ -68,8 +69,8 @@ export async function updateAccount(
   patch: Partial<
     Pick<
       Account,
-      "role" | "permissions" | "username" | "email" | "avatarUrl" | "minecraftUsername" | "discordVerified" | "onboarded"
-    >
+      "role" | "permissions" | "username" | "email" | "avatarUrl" | "discordVerified" | "onboarded"
+    > & { minecraftUsername?: string | null }
   >
 ): Promise<Account | null> {
   const db = getDb();
@@ -149,4 +150,25 @@ export function hasPermission(account: Account | undefined, permission: Permissi
   if (!account) return false;
   if (account.role === "admin") return true;
   return account.permissions.includes(permission);
+}
+
+/**
+ * Admin check with the CURRENT database role, not the session cookie.
+ *
+ * The session JWT lives for 7 days, so `user.role` from the cookie goes
+ * stale the moment an admin is demoted (or removed) in the Manage Panel —
+ * without this, a demoted admin keeps admin powers (and a removed one
+ * keeps the role) until the cookie expires. Re-reading the account from
+ * the database makes role changes take effect immediately, matching what
+ * `/api/auth/me` already does for the client UI.
+ *
+ * Falls back to the session role when no database is configured, so the
+ * site still works in "no DB yet" mode.
+ */
+export async function isAdminUser(): Promise<boolean> {
+  const user = await getSessionUser();
+  if (!user || user.role !== "admin") return false;
+  if (!getDb()) return true; // no database — trust the signed session
+  const account = await findAccount(user.id).catch(() => null);
+  return account?.role === "admin";
 }

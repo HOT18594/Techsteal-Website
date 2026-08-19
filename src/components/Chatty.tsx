@@ -60,7 +60,10 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
       id: 0,
       role: "assistant",
       text: `Hey — I'm ${ai.name}, ${siteConfig.name}'s assistant. Ask me about the server, rules, members, or how to join.`,
-      time: nowTime(),
+      // `time` is filled in after mount: calling nowTime() here would run
+      // on the server (Vercel, UTC) AND the browser (local timezone) with
+      // different results, causing a hydration mismatch on every load.
+      time: "",
     },
   ]);
   const [input, setInput] = useState("");
@@ -82,6 +85,10 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
     if (history && history.length > 0) {
       setMessages(history);
       nextId.current = Math.max(...history.map((m) => m.id), 0) + 1;
+    } else {
+      // No saved chat — stamp the welcome message with the browser's time
+      // (client-only, so it can never mismatch the server-rendered frame).
+      setMessages((m) => m.map((msg) => (msg.id === 0 ? { ...msg, time: nowTime() } : msg)));
     }
     setHydrated(true);
   }, []);

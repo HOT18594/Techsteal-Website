@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { forumReplies, forumThreads } from "@/lib/schema";
 import { fallbackThreads } from "@/lib/fallback-data";
 import { getSessionUser } from "@/lib/auth";
+import { isAdminUser } from "@/lib/accounts";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 
 export const dynamic = "force-dynamic";
@@ -75,8 +76,7 @@ export async function POST(request: NextRequest) {
 // Admin moderation: pin/unpin a thread.
 // Body: { id, pinned }
 export async function PATCH(request: NextRequest) {
-  const user = await getSessionUser();
-  if (!user || user.role !== "admin") {
+  if (!(await isAdminUser())) {
     return NextResponse.json({ error: "Admins only." }, { status: 403 });
   }
 
@@ -104,8 +104,7 @@ export async function PATCH(request: NextRequest) {
 
 // Admin moderation: delete a thread.
 export async function DELETE(request: NextRequest) {
-  const user = await getSessionUser();
-  if (!user || user.role !== "admin") {
+  if (!(await isAdminUser())) {
     return NextResponse.json({ error: "Admins only." }, { status: 403 });
   }
 

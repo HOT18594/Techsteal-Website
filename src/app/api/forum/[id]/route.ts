@@ -3,6 +3,7 @@ import { asc, desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { forumReplies, forumThreads } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
+import { isAdminUser } from "@/lib/accounts";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 
 export const dynamic = "force-dynamic";
@@ -114,8 +115,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await getSessionUser();
-  if (!user || user.role !== "admin") {
+  if (!(await isAdminUser())) {
     return NextResponse.json({ error: "Admins only." }, { status: 403 });
   }
 
@@ -155,8 +155,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const user = await getSessionUser();
-  if (!user || user.role !== "admin") {
+  if (!(await isAdminUser())) {
     return NextResponse.json({ error: "Admins only." }, { status: 403 });
   }
 
