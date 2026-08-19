@@ -24,8 +24,11 @@ const NAV_LINKS = [
 
 export function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null);
+  const profileBtnRef = useRef<HTMLButtonElement>(null);
   const { show } = useToast();
   const router = useRouter();
   const pathname = usePathname();
@@ -33,23 +36,30 @@ export function Navbar() {
   // Live status from /api/status (falls back to placeholder until configured).
   const { data: status } = useApi<ServerStatus>("/api/status", fallbackStatus);
 
-  // Close on route change.
+  // Close popovers on route change.
   useEffect(() => {
     setMenuOpen(false);
+    setProfileOpen(false);
   }, [pathname]);
 
   // Close on outside click / Escape — but NEVER when the toggle button
   // itself was clicked: the toggle's onClick is the single source of truth.
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!menuOpen && !profileOpen) return;
     const onClick = (e: MouseEvent) => {
       const target = e.target as Node;
-      const insideMenu = menuRef.current?.contains(target);
+      const inMenu = menuRef.current?.contains(target);
+      const inProfile = profileRef.current?.contains(target);
       const onToggle = toggleRef.current?.contains(target);
-      if (!insideMenu && !onToggle) setMenuOpen(false);
+      const onProfileBtn = profileBtnRef.current?.contains(target);
+      if (menuOpen && !inMenu && !onToggle) setMenuOpen(false);
+      if (profileOpen && !inProfile && !onProfileBtn) setProfileOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenuOpen(false);
+      if (e.key === "Escape") {
+        setMenuOpen(false);
+        setProfileOpen(false);
+      }
     };
     document.addEventListener("mousedown", onClick);
     document.addEventListener("keydown", onKey);
@@ -57,11 +67,12 @@ export function Navbar() {
       document.removeEventListener("mousedown", onClick);
       document.removeEventListener("keydown", onKey);
     };
-  }, [menuOpen]);
+  }, [menuOpen, profileOpen]);
 
   const handleLogout = async () => {
     await logout();
     show("Signed out", "See you later.");
+    setProfileOpen(false);
     if (pathname === "/admin") router.push("/");
   };
 
@@ -103,16 +114,20 @@ export function Navbar() {
                 <span className="hidden md:inline">Admin</span>
               </Link>
             ) : null}
+            {/* Profile — click opens a menu; logout lives inside it */}
             <button
-              className="h-11 px-3 flex items-center gap-2 border border-[var(--border-strong)] rounded-lg text-[var(--fg)] hover:border-[var(--accent)] transition"
-              onClick={() => void handleLogout()}
-              aria-label="Sign out"
-              title="Sign out"
+              ref={profileBtnRef}
+              className="h-11 px-2.5 flex items-center gap-2 border border-[var(--border-strong)] rounded-lg text-[var(--fg)] hover:border-[var(--accent)] transition"
+              onClick={() => setProfileOpen((o) => !o)}
+              aria-label="Profile menu"
+              aria-expanded={profileOpen}
+              aria-controls="profile-popover"
+              title="Profile"
             >
               <span className="w-7 h-7 rounded-md bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center font-display font-bold text-white text-sm">
                 {user.username.charAt(0).toUpperCase()}
               </span>
-              <span className="hidden lg:inline text-sm">{user.username}</span>
+              <i className={`fa-solid ${profileOpen ? "fa-chevron-up" : "fa-chevron-down"} text-[10px] text-[var(--muted)]`} />
             </button>
           </>
         ) : (
@@ -142,6 +157,60 @@ export function Navbar() {
       {/* Cinematic scrim behind the popover */}
       {menuOpen ? (
         <div className="nav-scrim" onClick={() => setMenuOpen(false)} aria-hidden="true" />
+      ) : null}
+
+      {/* Profile popover */}
+      {user ? (
+        <div
+          id="profile-popover"
+          ref={profileRef}
+          role="menu"
+          aria-label="Profile menu"
+          aria-hidden={!profileOpen}
+          className={`nav-popover ${profileOpen ? "open" : ""}`}
+        >
+          <div className="px-4 py-3 border-b border-[var(--border)]">
+            <div className="font-display font-bold text-base truncate">{user.username}</div>
+            <div className="text-xs text-[var(--muted)] mt-0.5 capitalize">
+              {user.role === "admin" ? "Admin" : "Member"}
+            </div>
+          </div>
+          <div className="pt-1.5">
+            <Link
+              href="/settings"
+              className="nav-popover-link"
+              onClick={() => setProfileOpen(false)}
+            >
+              <i className="fa-solid fa-user-gear" aria-hidden="true" />
+              Profile & Settings
+            </Link>
+            <Link
+              href="/onboarding"
+              className="nav-popover-link"
+              onClick={() => setProfileOpen(false)}
+            >
+              <i className="fa-solid fa-route" aria-hidden="true" />
+              Onboarding
+            </Link>
+            {user.role === "admin" ? (
+              <Link
+                href="/admin"
+                className="nav-popover-link"
+                onClick={() => setProfileOpen(false)}
+              >
+                <i className="fa-solid fa-shield-halved" aria-hidden="true" />
+                Admin Panel
+              </Link>
+            ) : null}
+            <button
+              className="nav-popover-link w-full text-left text-[var(--redstone)] hover:text-[var(--redstone)]"
+              onClick={() => void handleLogout()}
+            >
+              <i className="fa-solid fa-right-from-bracket" aria-hidden="true" />
+              Log out
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {/* Compact popover menu */}
@@ -180,14 +249,14 @@ export function Navbar() {
                 </Link>
               ) : null}
               <button
-                className="nav-popover-link w-full text-left"
+                className="nav-popover-link w-full text-left text-[var(--redstone)] hover:text-[var(--redstone)]"
                 onClick={() => {
                   setMenuOpen(false);
                   void handleLogout();
                 }}
               >
                 <i className="fa-solid fa-right-from-bracket" aria-hidden="true" />
-                Sign out ({user.username})
+                Log out ({user.username})
               </button>
             </>
           ) : (

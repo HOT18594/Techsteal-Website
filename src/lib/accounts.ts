@@ -1,102 +1,101 @@
+import { eq } from "drizzle-orm";
+import { getDb } from "./db";
+import { profiles } from "./schema";
 import type { Account, Permission, SessionUser, UserRole } from "@/types";
 
 // ------------------------------------------------------------------
-// Demo account store
-//
-// Discord OAuth isn't wired up yet, so these seed accounts let the role
-// system actually work. Admins can promote/demote and grant permissions
-// from the /admin panel.
-//
-// NOTE: this is an in-memory store (resets when the server restarts).
-// Swap it for the DB once DATABASE_URL is configured — the API surface
-// (getAllAccounts / findAccount / updateAccount / removeAccount) is the
-// same shape you'd implement against Postgres.
+// Account store — backed by the `profiles` table in Postgres
+// (Supabase). Accounts are created by Discord OAuth and extended by
+// onboarding. No demo accounts — every account is a real person.
 // ------------------------------------------------------------------
 
-const SEED_ACCOUNTS: Account[] = [
-  {
-    id: "admin",
-    username: "Admin",
-    email: "admin@techsteal.space",
-    role: "admin",
-    permissions: ["server_control", "ai_access"],
-    createdAt: "2026-08-18",
-  },
-  {
-    id: "alex",
-    username: "Alex",
-    email: "alex@example.com",
-    role: "member",
-    permissions: ["ai_access"],
-    createdAt: "2026-08-18",
-  },
-  {
-    id: "sam",
-    username: "Sam",
-    email: "sam@example.com",
-    role: "member",
-    permissions: [],
-    createdAt: "2026-08-18",
-  },
-  {
-    id: "riley",
-    username: "Riley",
-    email: "riley@example.com",
-    role: "member",
-    permissions: [],
-    createdAt: "2026-08-18",
-  },
-];
-
-let accounts: Account[] = [...SEED_ACCOUNTS];
-
-export function getAllAccounts(): Account[] {
-  return accounts.map((a) => ({ ...a, permissions: [...a.permissions] }));
+function rowToAccount(row: typeof profiles.$inferSelect): Account {
+  return {
+    id: row.id,
+    username: row.username,
+    email: row.email ?? undefined,
+    role: (row.role === "admin" ? "admin" : "member") as UserRole,
+    permissions: (row.permissions ?? []) as Permission[],
+    minecraftUsername: row.minecraftUsername ?? undefined,
+    discordVerified: row.discordVerified ?? false,
+    onboarded: row.onboarded ?? false,
+    createdAt: row.createdAt ?? undefined,
+  };
 }
 
-export function findAccount(id: string): Account | undefined {
-  return accounts.find((a) => a.id === id);
+export async function getAllAccounts(): Promise<Account[]> {
+  const db = getDb();
+  if (!db) return [];
+  const rows = await db.select().from(profiles);
+  return rows.map(rowToAccount);
 }
 
-export function addAccount(input: {
+export async function findAccount(id: string): Promise<Account | null> {
+  const db = getDb();
+  if (!db) return null;
+  const rows = await db.select().from(profiles).where(eq(profiles.id, id)).limit(1);
+  return rows[0] ? rowToAccount(rows[0]) : null;
+}
+
+export async function addAccount(input: {
   id: string;
   username: string;
   email?: string;
   role: UserRole;
   permissions?: Permission[];
-}): Account {
-  const account: Account = {
-    id: input.id,
-    username: input.username,
-    email: input.email,
-    role: input.role,
-    permissions: input.permissions ?? [],
-    createdAt: new Date().toISOString().slice(0, 10),
-  };
-  accounts.push(account);
-  return { ...account, permissions: [...account.permissions] };
+}): Promise<Account> {
+  const db = getDb();
+  if (!db) throw new Error("Database not configured");
+  const rows = await db
+    .insert(profiles)
+    .values({
+      id: input.id,
+      username: input.username,
+      email: input.email,
+      role: input.role,
+      permissions: input.permissions ?? [],
+      createdAt: new Date().toISOString().slice(0, 10),
+    })
+    .returning();
+  return rowToAccount(rows[0]);
 }
 
-export function updateAccount(
+export async function updateAccount(
   id: string,
-  patch: Partial<Pick<Account, "role" | "permissions" | "username" | "email">>
-): Account | null {
-  const idx = accounts.findIndex((a) => a.id === id);
-  if (idx === -1) return null;
-  accounts[idx] = {
-    ...accounts[idx],
-    ...patch,
-    permissions: patch.permissions
-      ? [...patch.permissions]
-      : [...accounts[idx].permissions],
-  };
-  return { ...accounts[idx], permissions: [...accounts[idx].permissions] };
+  patch: Partial<
+    Pick<
+      Account,
+      "role" | "permissions" | "username" | "email" | "minecraftUsername" | "discordVerified" | "onboarded"
+    >
+  >
+): Promise<Account | null> {
+  const db = getDb();
+  if (!db) return null;
+  const rows = await db
+    .update(profiles)
+    .set({
+      ...(patch.username !== undefined ? { username: patch.username } : {}),
+      ...(patch.email !== undefined ? { email: patch.email } : {}),
+      ...(patch.role !== undefined ? { role: patch.role } : {}),
+      ...(patch.permissions !== undefined ? { permissions: patch.permissions } : {}),
+      ...(patch.minecraftUsername !== undefined
+        ? { minecraftUsername: patch.minecraftUsername }
+        : {}),
+      ...(patch.discordVerified !== undefined
+        ? { discordVerified: patch.discordVerified }
+        : {}),
+      ...(patch.onboarded !== undefined ? { onboarded: patch.onboarded } : {}),
+    })
+    .where(eq(profiles.id, id))
+    .returning();
+  return rows[0] ? rowToAccount(rows[0]) : null;
 }
 
-export function removeAccount(id: string): boolean {
-  const before = accounts.length;
-  accounts = accounts.filter((a) => a.id !== id);
-  return accounts.length < before;
+export async function removeAccount(id: string): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+  const rows = await db.delete(profiles).where(eq(profiles.id, id)).returning();
+  return rows.length > 0;
 }
 
 /** Shape a stored Account into the SessionUser carried in the cookie. */
@@ -111,24 +110,28 @@ export function toSessionUser(account: Account): SessionUser {
 
 /**
  * Find an account by Discord user id, creating one on first login.
- * Accounts are keyed `discord:<id>` so they never collide with demo
- * accounts. New sign-ins start as members with AI access.
+ * Accounts are keyed `discord:<id>` so they never collide with anything.
+ * New sign-ins start as members with AI access and onboarded=false, so
+ * they get sent through onboarding.
  */
-export function findOrCreateDiscordAccount(input: {
+export async function findOrCreateDiscordAccount(input: {
   id: string;
   username: string;
-}): Account {
+}): Promise<Account> {
   const id = `discord:${input.id}`;
-  const existing = findAccount(id);
+  const existing = await findAccount(id);
   if (existing) return existing;
-
-  const account: Account = {
+  return addAccount({
     id,
     username: input.username,
     role: "member",
     permissions: ["ai_access"],
-    createdAt: new Date().toISOString().slice(0, 10),
-  };
-  accounts.push(account);
-  return { ...account, permissions: [...account.permissions] };
+  });
+}
+
+/** True if this account can do the given thing. */
+export function hasPermission(account: Account | undefined, permission: Permission): boolean {
+  if (!account) return false;
+  if (account.role === "admin") return true;
+  return account.permissions.includes(permission);
 }

@@ -61,3 +61,16 @@ export const ruleSections = pgTable("rule_sections", {
   title: text("title").notNull(),
   rules: jsonb("rules").$type<string[]>().notNull().default([]),
 });
+
+// User accounts — created by Discord OAuth, extended by onboarding.
+export const profiles = pgTable("profiles", {
+  id: text("id").primaryKey(), // "discord:<id>"
+  username: text("username").notNull(),
+  email: text("email"),
+  role: text("role").notNull().default("member"),
+  permissions: jsonb("permissions").$type<string[]>().notNull().default([]),
+  minecraftUsername: text("minecraft_username"),
+  discordVerified: boolean("discord_verified").notNull().default(false),
+  onboarded: boolean("onboarded").notNull().default(false),
+  createdAt: text("created_at"),
+});

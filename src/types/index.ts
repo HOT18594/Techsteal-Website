@@ -61,15 +61,20 @@ export type UserRole = "admin" | "member";
 /** Fine-grained capabilities that admins can grant per-member. */
 export type Permission = "server_control" | "ai_access";
 
-/** A user account (demo store until Discord OAuth is wired up). */
+/** A user account (created by Discord OAuth, extended by onboarding). */
 export interface Account {
   id: string;
   username: string;
   email?: string;
   role: UserRole;
   permissions: Permission[];
-  /** Demo accounts are seeded; admins can add more later. */
   createdAt?: string;
+  /** Minecraft username set during onboarding / profile settings. */
+  minecraftUsername?: string;
+  /** True once the user verified membership in the Discord server. */
+  discordVerified?: boolean;
+  /** True once the user finished onboarding. */
+  onboarded?: boolean;
 }
 
 /** The authenticated user, as carried in the session cookie / JWT. */

@@ -9,7 +9,7 @@ const STATE_COOKIE = "discord_oauth_state";
 
 // Callback after Discord's consent screen: verify the state cookie,
 // exchange the code for a token, load the user, sign them in, redirect
-// back to the site.
+// back to the site (to onboarding on first login).
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code") ?? "";
@@ -37,7 +37,7 @@ export async function GET(request: Request) {
   try {
     const accessToken = await exchangeCodeForToken(code, redirectUri);
     const discordUser = await fetchDiscordUser(accessToken);
-    const account = findOrCreateDiscordAccount({
+    const account = await findOrCreateDiscordAccount({
       id: discordUser.id,
       username: discordUser.username,
     });
@@ -48,7 +48,10 @@ export async function GET(request: Request) {
       permissions: account.permissions,
     });
 
-    const res = NextResponse.redirect(new URL("/", request.url));
+    // First-time users land on onboarding; returning users go home.
+    const destination = account.onboarded ? "/" : "/onboarding";
+
+    const res = NextResponse.redirect(new URL(destination, request.url));
     res.cookies.set(STATE_COOKIE, "", { path: "/", maxAge: 0 });
     return res;
   } catch (err) {

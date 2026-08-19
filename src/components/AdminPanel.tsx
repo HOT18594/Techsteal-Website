@@ -16,12 +16,6 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  // Add-account form state.
-  const [showAdd, setShowAdd] = useState(false);
-  const [newId, setNewId] = useState("");
-  const [newUsername, setNewUsername] = useState("");
-  const [newRole, setNewRole] = useState<"member" | "admin">("member");
-
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/members");
@@ -86,91 +80,25 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
     }
   };
 
-  const addAccount = async () => {
-    const id = newId.trim();
-    const username = newUsername.trim();
-    if (!id || !username) {
-      show("Fill in all fields", "id and username are required.");
-      return;
-    }
-    try {
-      const res = await fetch("/api/admin/members", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ create: true, id, username, role: newRole }),
-      });
-      if (!res.ok) throw new Error();
-      setNewId("");
-      setNewUsername("");
-      setShowAdd(false);
-      await load();
-      show("Added", `${username} is now a member.`);
-    } catch {
-      show("Couldn't add", "Something went wrong.");
-    }
-  };
-
   return (
     <SubPage className="mx-auto max-w-4xl pt-6 pb-16">
       <div className="max-w-4xl mx-auto w-full">
         {/* Header */}
-        <div className="page-header rowed mb-8">
-          <div>
-            <span className="page-kicker">
-              <i className="fa-solid fa-shield-halved" aria-hidden="true" />
-              Admin · Manage
-            </span>
-            <h1 className="page-title">Manage Panel</h1>
-          </div>
-          <button className="btn-secondary py-2.5! px-5! text-xs!" onClick={() => setShowAdd((s) => !s)}>
-            <i className="fa-solid fa-user-plus" />
-            Add Member
-          </button>
+        <div className="page-header mb-8">
+          <span className="page-kicker">
+            <i className="fa-solid fa-shield-halved" aria-hidden="true" />
+            Admin · Manage
+          </span>
+          <h1 className="page-title">Manage Panel</h1>
         </div>
-
-        {/* Add member form */}
-        {showAdd ? (
-          <div className="card p-6 mb-8 space-y-4">
-            <h3 className="font-display text-lg font-bold">Add Member</h3>
-            <div className="grid sm:grid-cols-3 gap-3">
-              <input
-                className="w-full bg-[var(--bg-2)] border border-[var(--border)] px-4 py-2.5 text-sm rounded-lg outline-none focus:border-[var(--accent)] transition placeholder:text-[var(--muted-2)]"
-                placeholder="Account id (e.g. jordan)"
-                value={newId}
-                onChange={(e) => setNewId(e.target.value)}
-              />
-              <input
-                className="w-full bg-[var(--bg-2)] border border-[var(--border)] px-4 py-2.5 text-sm rounded-lg outline-none focus:border-[var(--accent)] transition placeholder:text-[var(--muted-2)]"
-                placeholder="Username"
-                value={newUsername}
-                onChange={(e) => setNewUsername(e.target.value)}
-              />
-              <select
-                className="w-full bg-[var(--bg-2)] border border-[var(--border)] px-4 py-2.5 text-sm rounded-lg outline-none focus:border-[var(--accent)] transition"
-                value={newRole}
-                onChange={(e) => setNewRole(e.target.value as "member" | "admin")}
-              >
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-            <div className="flex gap-3">
-              <button className="btn-primary py-2.5! px-5! text-xs!" onClick={() => void addAccount()}>
-                <i className="fa-solid fa-check" />
-                Create
-              </button>
-              <button className="btn-secondary py-2.5! px-5! text-xs!" onClick={() => setShowAdd(false)}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : null}
 
         {/* Accounts */}
         {loading ? (
           <p className="text-sm text-[var(--muted)] text-center py-12">Loading…</p>
         ) : accounts.length === 0 ? (
-          <p className="text-sm text-[var(--muted)] text-center py-12">No members yet.</p>
+          <p className="text-sm text-[var(--muted)] text-center py-12">
+            No members yet — accounts are created when people sign in with Discord.
+          </p>
         ) : (
           <div className="space-y-3">
             {accounts.map((account) => {
@@ -193,7 +121,14 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
                           <span className="ml-2 text-xs text-[var(--muted)]">(you)</span>
                         ) : null}
                       </div>
-                      <div className="text-xs text-[var(--muted)]">id · {account.id}</div>
+                      <div className="text-xs text-[var(--muted)]">
+                        {account.minecraftUsername ? (
+                          <>
+                            MC · <span className="text-[var(--fg-2)]">{account.minecraftUsername}</span> ·
+                          </>
+                        ) : null}{" "}
+                        id · {account.id}
+                      </div>
                     </div>
                   </div>
 
@@ -261,7 +196,7 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
         {/* Info note */}
         <p className="text-xs text-[var(--muted-2)] mt-8">
           Signed in as <span className="text-[var(--accent)]">{currentUser.username}</span> ·
-          Demo account store — connects to the real DB (and Discord roles) later.
+          Accounts are stored in the database and created on Discord sign-in.
         </p>
       </div>
     </SubPage>
