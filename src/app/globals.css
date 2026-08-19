@@ -347,6 +347,65 @@ body.scrolled .nav-actions {
   background: var(--accent-dim);
 }
 
+/* ---------- Onboarding reminder banner ---------- */
+/* Persistent, fixed below the navbar for signed-in users who haven't finished
+   onboarding. Keeps nagging until they complete it (no dismiss). */
+.onboarding-reminder {
+  position: fixed;
+  top: 78px; /* clears the floating navbar */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 54; /* above scrim-ish content but below navbar/popovers */
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: auto;
+  max-width: calc(100% - 2rem);
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(56, 211, 240, 0.14), rgba(56, 211, 240, 0.05)),
+    var(--card);
+  border: 1px solid rgba(56, 211, 240, 0.35);
+  box-shadow: 0 12px 34px -14px rgba(0, 0, 0, 0.7), 0 0 24px -10px var(--diamond);
+  font-size: 0.875rem;
+  color: var(--fg-2);
+  animation: onboardingReminderIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.onboarding-reminder i {
+  color: var(--diamond);
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.onboarding-reminder-link {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: var(--diamond);
+  color: #04121a;
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  transition: filter 0.2s, transform 0.2s;
+}
+.onboarding-reminder-link:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+@keyframes onboardingReminderIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
 /* ---------- Nav popover (cinematic glass panel, right-anchored) ---------- */
 .nav-scrim {
   position: fixed;
@@ -1196,6 +1255,28 @@ body.scrolled .nav-actions {
 }
 .toast.show {
   transform: translateX(0);
+}
+
+/* ---------- Member slideshow (home tile) ---------- */
+/* Each slide (avatar + name + MC line) fades + rises in as it becomes the
+   active member. Keyed re-mount per index replays this for a smooth,
+   crossfade-like rotation. */
+.member-slide {
+  animation: memberSlideIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: opacity, transform;
+}
+.member-slide-avatar {
+  box-shadow: 0 12px 30px -14px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+}
+@keyframes memberSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* ---------- Scrollbar ---------- */
