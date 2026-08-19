@@ -70,7 +70,8 @@ function LoginContent() {
 
           {/* Note */}
           <p className="text-center text-xs text-[var(--muted-2)] mt-6">
-            First time here? You&apos;ll set up your profile right after signing in.
+            First time here? You&apos;ll be nudged to link your Minecraft account after
+            signing in.
           </p>
         </div>
       </div>

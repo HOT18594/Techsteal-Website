@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import type { CSSProperties } from "react";
+import { useRef, useState } from "react";
 import { siteConfig } from "@/lib/site";
 import { fallbackMembers, fallbackGallery, fallbackStatus } from "@/lib/fallback-data";
 import type { GalleryItem, Member, ServerStatus } from "@/types";
@@ -17,16 +18,19 @@ export function HeroClient() {
   const { data: members } = useApi<Member[]>("/api/members", fallbackMembers);
   const { data: gallery } = useApi<GalleryItem[]>("/api/gallery", fallbackGallery);
 
+  // "Copied!" flash handled in React state so BOTH copy buttons (the hero
+  // kicker pill and the Copy IP button) get their own feedback, instead of
+  // DOM surgery that always rewrote one button and raced its own timer.
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const copyIP = async () => {
     try {
       await navigator.clipboard.writeText(siteConfig.address);
       show("Server address copied", siteConfig.address);
-      const btn = document.getElementById("hero-copy-ip");
-      if (btn) {
-        const original = btn.innerHTML;
-        btn.innerHTML = '<i class="fa-solid fa-check"></i><span>Copied!</span>';
-        setTimeout(() => (btn.innerHTML = original), 2000);
-      }
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+      setCopied(true);
+      copiedTimer.current = setTimeout(() => setCopied(false), 2000);
     } catch {
       show("Couldn't copy address", siteConfig.address);
     }
@@ -67,7 +71,7 @@ export function HeroClient() {
           >
             <span className="hero-kicker-text">{siteConfig.address}</span>
             <span className="hero-kicker-copy" aria-hidden="true">
-              <i className="fa-regular fa-copy" />
+              <i className={copied ? "fa-solid fa-check" : "fa-regular fa-copy"} />
             </span>
           </button>
 
@@ -96,12 +100,20 @@ export function HeroClient() {
             </Link>
             <button
               className="btn-secondary w-full sm:w-auto justify-center hero-cta"
-              id="hero-copy-ip"
               onClick={() => void copyIP()}
               style={{ "--i": 1 } as CSSProperties}
             >
-              <i className="fa-solid fa-copy" />
-              <span>Copy IP</span>
+              {copied ? (
+                <>
+                  <i className="fa-solid fa-check" />
+                  <span>Copied!</span>
+                </>
+              ) : (
+                <>
+                  <i className="fa-solid fa-copy" />
+                  <span>Copy IP</span>
+                </>
+              )}
             </button>
             <Link
               href="/status"

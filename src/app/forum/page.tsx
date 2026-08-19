@@ -9,6 +9,7 @@ import { SubPage } from "@/components/SubPage";
 import { useApi } from "@/lib/use-api";
 import { useToast } from "@/components/Toast";
 import { useSession } from "@/lib/use-session";
+import { timeAgo } from "@/lib/time";
 
 export default function ForumPage() {
   const { show } = useToast();
@@ -112,6 +113,26 @@ export default function ForumPage() {
             });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
+        if (res.status === 503) {
+          // No database configured — threads live only in client state, so
+          // the server can't moderate them. Mirror the action locally so the
+          // admin isn't stuck with an unpinnable/undeletable thread.
+          if (action === "delete") {
+            setFresh((prev) => prev.filter((t) => t.id !== thread.id));
+            show("Deleted", `"${thread.title}" was removed.`);
+          } else {
+            setFresh((prev) =>
+              prev.map((t) =>
+                t.id === thread.id ? { ...t, pinned: !t.pinned } : t
+              )
+            );
+            show(
+              thread.pinned ? "Unpinned" : "Pinned",
+              `"${thread.title}" ${thread.pinned ? "is no longer pinned" : "is now pinned"}.`
+            );
+          }
+          return;
+        }
         show("Couldn't update", data.error ?? "The server rejected the request.");
         return;
       }
@@ -206,7 +227,7 @@ export default function ForumPage() {
                             </span>
                           ) : null}
                           <span className={`tag ${t.tagClass}`}>{t.category}</span>
-                          <span className="text-xs text-[var(--muted-2)]">· {t.last}</span>
+                          <span className="text-xs text-[var(--muted-2)]">· {timeAgo(t.last)}</span>
                         </div>
                         <h3 className="mt-1.5 text-[15px] font-bold text-[var(--fg)] leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition">
                           {t.title}

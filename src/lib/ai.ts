@@ -15,7 +15,7 @@
 import { desc } from "drizzle-orm";
 import { siteConfig } from "./site";
 import { getDb } from "./db";
-import { forumThreads, galleryItems, members, ruleSections, timelineEvents } from "./schema";
+import { forumThreads, galleryItems, profiles, ruleSections, timelineEvents } from "./schema";
 import { getServerStatus } from "./mcsrv";
 import { formatSearchResults, webSearch } from "./web-search";
 
@@ -127,7 +127,10 @@ async function buildServerKnowledge(): Promise<{ text: string; hasDb: boolean }>
   try {
     const [rules, memberRows, timeline, gallery, threads] = await Promise.all([
       db.select().from(ruleSections).limit(3),
-      db.select().from(members).limit(30),
+      // Members come from the real account store (profiles), matching the
+      // /api/members page — NOT the legacy static `members` table, which is
+      // seeded empty and has no API route.
+      db.select().from(profiles).orderBy(profiles.username).limit(30),
       db.select().from(timelineEvents).orderBy(desc(timelineEvents.id)).limit(15),
       db.select().from(galleryItems).limit(10),
       db.select().from(forumThreads).orderBy(desc(forumThreads.createdAt)).limit(6),
@@ -138,12 +141,11 @@ async function buildServerKnowledge(): Promise<{ text: string; hasDb: boolean }>
       chunks.push(`SERVER RULES:\n${ruleText.map((r, i) => `${i + 1}. ${r}`).join("\n")}`);
     }
     if (memberRows.length > 0) {
-      const onlineCount = memberRows.filter((m) => m.status === "online").length;
       chunks.push(
-        `MEMBERS (${memberRows.length} listed; ${onlineCount} shown online — name — role — status):\n${memberRows
+        `MEMBERS (${memberRows.length} registered — username — role — verified):\n${memberRows
           .map(
             (m) =>
-              `- ${m.name} — ${m.role} — ${m.status === "online" ? "online" : "offline"}${m.joined ? ` (joined ${m.joined}, ${m.playtime} playtime)` : ""}`
+              `- ${m.username} — ${m.role === "admin" ? "admin" : "member"}${m.discordVerified ? " — Discord-verified" : ""}${m.minecraftUsername ? ` (MC: ${m.minecraftUsername})` : ""}`
           )
           .join("\n")}`
       );

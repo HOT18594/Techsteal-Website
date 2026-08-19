@@ -27,7 +27,10 @@ function useClock() {
 export default function StatusPage() {
   const time = useClock();
   const { show } = useToast();
-  const { data: STATUS, refetch } = useApi<ServerStatus>("/api/status", fallbackStatus);
+  const { data: STATUS, refetch, loading: statusLoading } = useApi<ServerStatus>(
+    "/api/status",
+    fallbackStatus
+  );
 
   // Auto-refresh the live status every 60s so the page stays current.
   useEffect(() => {
@@ -44,10 +47,13 @@ export default function StatusPage() {
     }
   };
 
-  const online = STATUS.online;
-  const players = STATUS.players ?? 0;
+  // Only trust numbers that came from the live match query — when the status
+  // API is unreachable we show "offline / unavailable" instead of pretending.
+  const statusLive = STATUS.source === "live";
+  const online = statusLive && STATUS.online;
+  const players = statusLive ? (STATUS.players ?? 0) : 0;
   const max = STATUS.max ?? siteConfig.maxPlayers;
-  const playerList = STATUS.playerList ?? [];
+  const playerList = statusLive ? (STATUS.playerList ?? []) : [];
   const stats = siteConfig.stats;
   const tpsPct = Math.min(100, Math.round((parseFloat(stats.tps) / 20) * 100));
 
@@ -69,7 +75,7 @@ export default function StatusPage() {
             </button>
             <div className={`status-pill ${online ? "" : "offline"}`}>
               <span className={`pulse-dot ${online ? "" : "muted"}`} />
-              <span>{online ? "Online" : "Offline"}</span>
+              <span>{statusLoading ? "Checking…" : online ? "Online" : "Offline"}</span>
             </div>
           </div>
         </div>
@@ -94,7 +100,11 @@ export default function StatusPage() {
                   <span key={name} className="tag tag-emerald">{name}</span>
                 ))
               ) : (
-                <span className="text-xs text-[var(--muted-2)]">The realm is quiet right now.</span>
+                <span className="text-xs text-[var(--muted-2)]">
+                  {statusLive
+                    ? "The realm is quiet right now."
+                    : "Status data unavailable right now."}
+                </span>
               )}
             </div>
           </div>
@@ -138,7 +148,7 @@ export default function StatusPage() {
               days of uptime
             </div>
             <div className="mt-3 text-xs text-[var(--muted-2)]">
-              in-game time now:{" "}
+              your local time:{" "}
               <span className="font-display text-sm text-[var(--accent)]">{time}</span>
             </div>
           </div>

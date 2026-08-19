@@ -41,6 +41,14 @@ export async function POST(request: Request) {
   if (body.role === "admin" || body.role === "member") patch.role = body.role;
   if (Array.isArray(body.permissions)) patch.permissions = sanitizePermissions(body.permissions);
 
+  // An empty patch would emit a malformed `UPDATE … SET  WHERE id = …`.
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json(
+      { error: "Nothing to update — send role and/or permissions." },
+      { status: 400 }
+    );
+  }
+
   const updated = await updateAccount(id, patch);
   if (!updated) return NextResponse.json({ error: "Account not found" }, { status: 404 });
   return NextResponse.json({ account: updated });

@@ -2,6 +2,7 @@ import { config } from "dotenv";
 import { createDb } from "../src/lib/db";
 import { seedData } from "../src/lib/fallback-data";
 import {
+  forumReplies,
   forumThreads,
   galleryItems,
   members,
@@ -19,6 +20,9 @@ async function main() {
   await db.delete(ruleSections);
   await db.delete(timelineEvents);
   await db.delete(galleryItems);
+  // Replies first — they reference threads, so they must be cleared before
+  // (or together with) the threads to avoid orphaned rows.
+  await db.delete(forumReplies);
   await db.delete(forumThreads);
   await db.delete(members);
 

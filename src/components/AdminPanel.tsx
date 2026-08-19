@@ -64,6 +64,8 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
   };
 
   const remove = async (account: Account) => {
+    // One stray click must not permanently delete an account.
+    if (!window.confirm(`Permanently remove ${account.username}?`)) return;
     setBusyId(account.id);
     try {
       const res = await fetch("/api/admin/members", {

@@ -23,6 +23,7 @@ export async function GET(request: Request) {
   const res = NextResponse.redirect(authorizeUrl);
   res.cookies.set(STATE_COOKIE, state, {
     httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",
     maxAge: 600, // 10 minutes — enough to click through Discord's consent

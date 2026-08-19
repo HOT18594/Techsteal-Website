@@ -11,7 +11,8 @@ export interface Member {
   color: string;
   status: "online" | "offline";
   joined: string;
-  playtime: string;
+  /** Whether the member verified membership in the official Discord server. */
+  verified?: boolean;
   /** In-game Minecraft username, if the member linked one. */
   minecraftUsername?: string | null;
 }

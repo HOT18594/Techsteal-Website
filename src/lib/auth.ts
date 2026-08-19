@@ -5,9 +5,21 @@ import type { SessionUser } from "@/types";
 const COOKIE_NAME = "techsteal_session";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
-/** Secret for signing session JWTs. Falls back to a dev secret locally. */
+/** Secret for signing session JWTs. */
 function getSecret(): Uint8Array {
-  const secret = process.env.SESSION_SECRET ?? "dev-session-secret-change-me";
+  let secret = process.env.SESSION_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      // Never fall back to a public default in production — anyone could
+      // forge a session. Fail closed: sessions just don't work until
+      // SESSION_SECRET is set, rather than quietly becoming forgeable.
+      throw new Error(
+        "SESSION_SECRET is not set. Refusing to use session auth with a public default in production."
+      );
+    }
+    // Local dev only: a fixed secret is fine (no real users).
+    secret = "dev-session-secret-change-me";
+  }
   return new TextEncoder().encode(secret);
 }
 

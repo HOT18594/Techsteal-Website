@@ -7,6 +7,7 @@ import { Avatar } from "@/components/Avatar";
 import { useToast } from "@/components/Toast";
 import { SubPage } from "@/components/SubPage";
 import { useSession } from "@/lib/use-session";
+import { timeAgo } from "@/lib/time";
 import type { ForumReply, ForumThread } from "@/types";
 
 /** Pinned comments first, then oldest. */
@@ -16,18 +17,6 @@ function sortReplies(rs: ForumReply[]): ForumReply[] {
       Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) ||
       (a.id ?? 0) - (b.id ?? 0)
   );
-}
-
-/** Compact X-style relative time for reply timestamps. */
-function formatTime(iso?: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const diff = Date.now() - d.getTime();
-  if (diff < 60_000) return "just now";
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h`;
-  if (diff < 604_800_000) return `${Math.floor(diff / 86_400_000)}d`;
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 export default function ThreadPage() {
@@ -231,7 +220,7 @@ export default function ThreadPage() {
                     {thread.title}
                   </h1>
                   <div className="text-xs text-[var(--muted)] mt-2">
-                    by <span className="text-[var(--fg-2)]">{thread.author}</span> · {thread.last}
+                    by <span className="text-[var(--fg-2)]">{thread.author}</span> · {timeAgo(thread.last)}
                   </div>
                 </div>
               </div>
@@ -272,7 +261,7 @@ export default function ThreadPage() {
                                 {r.author}
                               </span>
                               <span className="text-xs text-[var(--muted-2)]">
-                                {formatTime(r.createdAt)}
+                                {timeAgo(r.createdAt)}
                               </span>
                               {r.pinned ? (
                                 <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[var(--accent)] border border-[var(--accent)] rounded px-1.5 py-0.5">

@@ -205,7 +205,10 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
         setTyping(false);
         setDots(false);
       }
-      controllerRef.current = null;
+      // Only clear OUR controller — a newer send may have installed its own
+      // controllerRef while this request was finishing, and nulling that
+      // would make Stop a no-op until the next stream chunk.
+      if (controllerRef.current === controller) controllerRef.current = null;
     }
   };
 

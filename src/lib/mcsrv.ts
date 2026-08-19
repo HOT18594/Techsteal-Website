@@ -46,11 +46,15 @@ export async function getServerStatus(): Promise<ServerStatus> {
       source: "live",
     };
   } catch {
+    // Status API is unreachable. We don't actually know the state of the
+    // server, so never fabricate a player list or claim it's online — the
+    // UI treats `source !== "live"` as "status unavailable" (see the Status
+    // page and Navbar).
     return {
-      online: true,
-      players: 2,
+      online: false,
+      players: 0,
       max: siteConfig.maxPlayers,
-      playerList: ["Alex", "Sam"],
+      playerList: [],
       version: siteConfig.version,
       hostname: host,
       source: "fallback",

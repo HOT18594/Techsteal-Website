@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { findAccount, updateAccount } from "@/lib/accounts";
 import { getSessionUser, setSession } from "@/lib/auth";
-import { ADMIN_CODE } from "@/lib/admin-code";
+import { getAdminCode } from "@/lib/admin-code";
+import { isRateLimited } from "@/lib/rate-limit";
 import type { Account } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -16,30 +17,71 @@ export async function GET() {
   return NextResponse.json({ profile: account });
 }
 
+// Valid Minecraft usernames: 1–16 chars of letters, digits or underscore.
+// (Since 2022 Mojang allows any length ≥1 and prefixes like "." are illegal.)
+const MC_NAME_RE = /^[A-Za-z0-9_]{1,16}$/;
+
 // Update profile fields. Body may include:
-//   { minecraftUsername?, onboarded?, discordVerified?, adminCode? }
+//   { minecraftUsername?, onboarded?, adminCode? }
+//
+// NOTE: `discordVerified` is intentionally NOT settable here — it's a trust
+// badge that can only be flipped by the server after a real Discord
+// guild-membership check (`/api/auth/discord/verify`), never by the client.
+//
 // Passing the correct adminCode promotes the account to admin.
-export async function PATCH(request: Request) {
+export async function PATCH(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const ip =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    "unknown";
 
   const body = await request.json().catch(() => ({}));
   const patch: Parameters<typeof updateAccount>[1] = {};
 
   if (typeof body.minecraftUsername === "string") {
-    patch.minecraftUsername = body.minecraftUsername.trim();
+    const name = body.minecraftUsername.trim();
+    if (name.length > 0 && !MC_NAME_RE.test(name)) {
+      return NextResponse.json(
+        { error: "Minecraft usernames can only use letters, numbers and underscores (1–16 chars)." },
+        { status: 400 }
+      );
+    }
+    // An empty string means "clear" — same as sending null.
+    patch.minecraftUsername = name.length ? name : null;
   } else if (body.minecraftUsername === null) {
     // Explicitly clearing the field (settings sends `null`).
     patch.minecraftUsername = null;
   }
   if (typeof body.onboarded === "boolean") patch.onboarded = body.onboarded;
-  if (typeof body.discordVerified === "boolean") patch.discordVerified = body.discordVerified;
 
   const account: Account | null = await findAccount(user.id);
   if (!account) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Admin code claim — exact match promotes to admin.
-  if (typeof body.adminCode === "string" && body.adminCode.trim() === ADMIN_CODE) {
+  // Admin code claim — exact match promotes to admin. Failures are explicit
+  // (403, rate-limited) so onboarding can tell a wrong code apart from a
+  // success, and slow down brute-forcing.
+  if (typeof body.adminCode === "string" && body.adminCode.trim().length > 0) {
+    if (isRateLimited(`admincode:${ip}`, 10, 10 * 60 * 1000)) {
+      return NextResponse.json(
+        { error: "Too many attempts — wait a bit before trying the admin code again." },
+        { status: 429 }
+      );
+    }
+    if (!getAdminCode()) {
+      return NextResponse.json(
+        { error: "The admin code isn't configured on this server yet." },
+        { status: 403 }
+      );
+    }
+    if (body.adminCode.trim() !== getAdminCode()) {
+      return NextResponse.json(
+        { error: "That admin code isn't right." },
+        { status: 403 }
+      );
+    }
     patch.role = "admin";
     const perms = new Set(account.permissions);
     perms.add("server_control");

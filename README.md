@@ -29,6 +29,8 @@ Website/
 │   │   ├── rules/                 # Rules + acknowledge (fires emoji confetti 🎉)
 │   │   ├── join/                  # How-to-join steps
 │   │   ├── login/                 # Member/admin login
+│   │   ├── onboarding/            # First-time setup (admin code, Discord, MC name)
+│   │   ├── settings/              # Profile & settings (MC name, admin code, verify)
 │   │   ├── admin/                 # Admin panel (manage members)
 │   │   ├── assistant/             # Chatty Jr. AI assistant
 │   │   └── api/                   # Serverless API routes (Vercel functions)
@@ -38,14 +40,16 @@ Website/
 │   │       └── admin/members/
 │   ├── components/                # One purpose per component
 │   │   ├── Navbar, Footer, BackToTop, Toast, SubPage
-│   │   ├── HeroClient, PageEnter, RevealObserver
+│   │   ├── HeroClient, PageEnter, RevealObserver, MemberSlideshow
+│   │   ├── Avatar, OnboardingReminder, Chatty (AI chat UI)
 │   │   └── ScrollFx (cinematic eased scroll), CursorFx (custom cursor),
 │   │       AdminPanel
 │   ├── lib/                       # site config, db, auth, AI, helpers,
 │   │                              # fallback content, hooks
 │   └── types/                     # Shared TypeScript types
 ├── public/
-│   └── techsteal-hero.jpeg        # Hero background (all public assets live here)
+│   ├── techsteal-hero.jpeg        # Hero background (all public assets live here)
+│   └── fonts/                     # Self-hosted Minecraft fonts (TTF)
 ├── drizzle/
 │   ├── seed.ts                    # Seeds placeholder content into the DB
 │   └── (generated migrations)
@@ -146,11 +150,11 @@ bun run build      # production build
 | `AI_BASE_URL` | no | Endpoint base URL (default OpenRouter) |
 | `AI_MODEL` | no | Model name (default `google/gemma-4-26b-a4b-it:free`) |
 | `SESSION_SECRET` | **yes (prod)** | Strong random value signing the session cookie. Falls back to a dev secret locally — set a real one before deploying or sessions can be forged. |
+| `ADMIN_CODE` | **yes (prod)** | Code that promotes a member to admin. In production the site refuses to unlock admin without this variable (it used to be a hardcoded constant — that was a security hole). |
 | `DISCORD_CLIENT_ID` | for Discord login | OAuth client id |
 | `DISCORD_CLIENT_SECRET` | for Discord login | OAuth client secret |
 | `DISCORD_BOT_TOKEN` | no | Bot token to verify server membership during onboarding |
 | `DISCORD_GUILD_ID` | no | Official server id for membership verification |
-| `NEXT_PUBLIC_SITE_URL` | no | Public site URL |
 
 ---
 
@@ -159,7 +163,9 @@ bun run build      # production build
 - **Branding, IP, links** → `src/lib/site.ts` (one file, everything reads from it).
 - **Placeholder content** → `src/lib/fallback-data.ts`, or edit directly in the DB.
 - **Colors & theme** → CSS variables at the top of `src/app/globals.css`.
-- **Fonts** → `src/app/layout.tsx` (Google Fonts via `next/font`).
+- **Fonts** → the Minecraft fonts are self-hosted in `public/fonts` and wired
+  up via `@font-face` in `src/app/globals.css`; the body font (Space Grotesk)
+  is a Google Font loaded in `src/app/layout.tsx`.
 - **Site effects** (custom cursor, cinematic scroll, hero title animation,
   emoji confetti) → `src/components/CursorFx.tsx`, `src/components/ScrollFx.tsx`,
   `src/components/HeroClient.tsx`, and the effects section of `globals.css`.

@@ -56,7 +56,9 @@ function OnboardingContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ adminCode: adminCode.trim() }),
       });
-      if (res.ok) {
+      // Double-check the server actually promoted us (not just a 200).
+      const data = (await res.json().catch(() => ({}))) as { profile?: { role?: string } };
+      if (res.ok && data.profile?.role === "admin") {
         setAdminDone(true);
         await refresh();
         show("Admin unlocked", "Welcome to the admin team. 🔑");
@@ -85,12 +87,8 @@ function OnboardingContent() {
       if (!data.configured) {
         setVerifyState("not_configured");
       } else if (data.verified) {
+        // The verify endpoint persists the badge server-side — no PATCH.
         setVerifyState("verified");
-        await fetch("/api/profile", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ discordVerified: true }),
-        });
       } else {
         setVerifyState("idle"); // offer a manual re-check
         show("Not in the server yet", "Join the official server, then verify.");

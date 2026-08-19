@@ -35,7 +35,7 @@ export function Footer() {
           <div className="md:col-span-2">
             <div className="flex items-center gap-3 mb-4">
               <i
-                className="fa-solid fa-cube pixel-text-icon text-2xl text-[var(--accent-bright)]"
+                className="fa-solid fa-cube text-2xl text-[var(--accent-bright)]"
                 aria-hidden="true"
               />
               <span className="font-display text-2xl tracking-wider text-[var(--fg)]">

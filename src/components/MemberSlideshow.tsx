@@ -68,7 +68,11 @@ export function MemberSlideshow({ members }: { members: Member[] }) {
     );
   }
 
-  const current = slides[index];
+  // Clamp at render time, not just in an effect: if `slides` shrinks (refetch)
+  // the pre-effect render must not read `slides[index]` out of bounds. The
+  // effect below only keeps the dot indicator in sync.
+  const safeIndex = Math.min(index, slides.length - 1);
+  const current = slides[safeIndex];
 
   return (
     <div
@@ -117,7 +121,7 @@ export function MemberSlideshow({ members }: { members: Member[] }) {
             <span
               key={s.id ?? s.name}
               className={`h-1.5 rounded-full transition-all duration-300 ${
-                i === index
+                i === safeIndex
                   ? "w-4 bg-[var(--accent)]"
                   : "w-1.5 bg-[var(--muted-2)]/60"
               }`}

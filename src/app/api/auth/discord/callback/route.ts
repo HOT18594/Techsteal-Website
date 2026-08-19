@@ -13,7 +13,8 @@ const STATE_COOKIE = "discord_oauth_state";
 
 // Callback after Discord's consent screen: verify the state cookie,
 // exchange the code for a token, load the user, sign them in, redirect
-// back to the site (to onboarding on first login).
+// back to the site (everyone lands home; a banner nudges them to /settings
+// until they finish onboarding).
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code") ?? "";

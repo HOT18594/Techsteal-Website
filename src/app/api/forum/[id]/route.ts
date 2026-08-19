@@ -3,7 +3,7 @@ import { asc, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { forumReplies, forumThreads } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
-import { isAdminUser } from "@/lib/accounts";
+import { findAccount, isAdminUser } from "@/lib/accounts";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 
 export const dynamic = "force-dynamic";
@@ -67,10 +67,24 @@ export async function POST(
     return NextResponse.json({ error: "Invalid thread id" }, { status: 400 });
   }
 
+  // A deleted/de-powered account (cookie still valid) must not keep replying.
+  if (getDb()) {
+    const account = await findAccount(user.id).catch(() => null);
+    if (!account) {
+      return NextResponse.json(
+        { error: "Your account no longer exists on this server." },
+        { status: 403 }
+      );
+    }
+  }
+
   const body = await request.json().catch(() => ({}));
   const content = typeof body.content === "string" ? body.content.trim() : "";
   if (!content) {
     return NextResponse.json({ error: "A reply can't be empty." }, { status: 400 });
+  }
+  if (content.length > 4000) {
+    return NextResponse.json({ error: "Replies can be at most 4000 characters." }, { status: 400 });
   }
 
   const db = getDb();
@@ -101,9 +115,10 @@ export async function POST(
 
   // Atomic increment — a plain `replies + 1` read from `threads[0]` would
   // lose a count when two replies land at once (both read 5, both write 6).
+  // `last` mirrors the same moment as the new reply's timestamp.
   await db
     .update(forumThreads)
-    .set({ replies: sql`${forumThreads.replies} + 1`, last: "just now" })
+    .set({ replies: sql`${forumThreads.replies} + 1`, last: new Date().toISOString() })
     .where(eq(forumThreads.id, threadId));
 
   const avatars = await resolveAuthorAvatars([reply]);
@@ -186,17 +201,12 @@ export async function DELETE(
     return NextResponse.json({ error: "Reply not found" }, { status: 404 });
   }
 
-  const threads = await db
-    .select()
-    .from(forumThreads)
-    .where(eq(forumThreads.id, threadId))
-    .limit(1);
-  if (threads.length > 0) {
-    await db
-      .update(forumThreads)
-      .set({ replies: Math.max(0, threads[0].replies - 1) })
-      .where(eq(forumThreads.id, threadId));
-  }
+  // Atomic decrement with a 0 floor — the read-then-write form could lose
+  // updates when two deletes race (both read 5, both write 4).
+  await db
+    .update(forumThreads)
+    .set({ replies: sql`GREATEST(${forumThreads.replies} - 1, 0)` })
+    .where(eq(forumThreads.id, threadId));
 
   return NextResponse.json({ ok: true });
 }

@@ -55,8 +55,12 @@ export default function MembersPage() {
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-[var(--muted)]">
-                    Joined <span className="text-[var(--fg-2)]">{m.joined}</span> ·{" "}
-                    <span className="text-[var(--fg-2)]">{m.playtime}</span> playtime
+                    Joined <span className="text-[var(--fg-2)]">{m.joined}</span>
+                    {m.verified ? (
+                      <>
+                        {" "}· <span className="text-[var(--diamond)]">Discord-verified</span>
+                      </>
+                    ) : null}
                   </p>
                   <div
                     className={`mt-3 flex items-center gap-2 text-xs uppercase tracking-wider ${

@@ -106,13 +106,23 @@ function SettingsContent() {
     if (!adminCode.trim() || adminBusy) return;
     setAdminBusy(true);
     try {
-      const updated = await patch({ adminCode: adminCode.trim() });
+      // Direct fetch (not `patch`, which throws away the error body) so a
+      // wrong code shows the server's message — the API now 403s on a miss.
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminCode: adminCode.trim() }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        profile?: Account;
+        error?: string;
+      };
       setAdminCode("");
-      await refresh();
-      if (updated.role === "admin") {
+      if (res.ok && data.profile?.role === "admin") {
+        await refresh();
         show("Admin unlocked", "Welcome to the admin team. 🔑");
       } else {
-        show("Wrong code", "That admin code isn't right.");
+        show("Wrong code", data.error ?? "That admin code isn't right.");
       }
     } catch {
       show("Couldn't check code", "Try again in a moment.");
@@ -125,12 +135,17 @@ function SettingsContent() {
     setVerifyState("checking");
     try {
       const res = await fetch("/api/auth/discord/verify");
+      if (!res.ok) {
+        setVerifyState("idle");
+        show("Couldn't verify", "Something went wrong — try again in a moment.");
+        return;
+      }
       const data = (await res.json()) as { configured: boolean; verified: boolean };
       if (!data.configured) {
         setVerifyState("not_configured");
       } else if (data.verified) {
+        // The verify endpoint persists the badge itself — no PATCH needed.
         setVerifyState("verified");
-        await patch({ discordVerified: true });
         show("Verified", "You're a member of the official server.");
       } else {
         setVerifyState("idle");

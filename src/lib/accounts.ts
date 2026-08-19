@@ -60,8 +60,15 @@ export async function addAccount(input: {
       permissions: input.permissions ?? [],
       createdAt: new Date().toISOString().slice(0, 10),
     })
+    // Two simultaneous first logins for the same Discord id must not both
+    // try to insert (primary-key violation → one login fails). If we lost
+    // the race the second INSERT is a no-op and we fall back to the read.
+    .onConflictDoNothing({ target: profiles.id })
     .returning();
-  return rowToAccount(rows[0]);
+  if (rows[0]) return rowToAccount(rows[0]);
+  const existing = await findAccount(input.id);
+  if (existing) return existing;
+  throw new Error("Account creation failed");
 }
 
 export async function updateAccount(
@@ -75,6 +82,11 @@ export async function updateAccount(
 ): Promise<Account | null> {
   const db = getDb();
   if (!db) return null;
+  // An empty patch would emit a malformed `UPDATE … SET  WHERE id = …`.
+  // Skip the write and just return the current row.
+  if (Object.keys(patch).length === 0) {
+    return findAccount(id);
+  }
   const rows = await db
     .update(profiles)
     .set({

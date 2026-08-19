@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { streamChatReply } from "@/lib/ai";
 import { getSessionUser } from "@/lib/auth";
 import { findAccount, hasPermission } from "@/lib/accounts";
+import { getDb } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -22,6 +23,14 @@ export async function POST(request: NextRequest) {
   if (!message) {
     return new Response("Please send a message.", { headers: TEXT_HEADERS, status: 400 });
   }
+  // Cap the message so one request can't blast a megabyte at the AI (which
+  // is billed per token and also runs web searches on every turn).
+  if (message.length > 2000) {
+    return new Response(
+      "That's a little long for me — try breaking it into shorter messages.",
+      { headers: TEXT_HEADERS, status: 400 }
+    );
+  }
 
   const user = await getSessionUser();
   if (!user) {
@@ -32,6 +41,13 @@ export async function POST(request: NextRequest) {
   }
 
   const account = await findAccount(user.id).catch(() => null);
+  if (!account && getDb()) {
+    // The account was deleted after login — the cookie must not keep working.
+    return new Response(
+      "Your account no longer exists on this server.",
+      { headers: TEXT_HEADERS, status: 403 }
+    );
+  }
   const allowed = account
     ? hasPermission(account, "ai_access")
     : user.role === "admin" || user.permissions.includes("ai_access");

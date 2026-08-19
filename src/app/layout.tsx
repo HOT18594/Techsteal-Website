@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import localFont from "next/font/local";
 import { Space_Grotesk } from "next/font/google";
 import type { ReactNode } from "react";
 import { BackToTop } from "@/components/BackToTop";
@@ -14,22 +13,12 @@ import { ToastProvider } from "@/components/Toast";
 import { siteConfig } from "@/lib/site";
 import "./globals.css";
 
-// Minecraft-style pixel font (Minecraftia — the classic free Minecraft clone)
-// used for general display text: page titles, nav, stat numbers.
-const minecraft = localFont({
-  src: "./fonts/Minecraftia-Regular.ttf",
-  variable: "--font-pixel",
-  display: "swap",
-});
-
-// The Minecraft logo font — the bold, blocky "Minecraft" typeface.
-// Used for the hero wordmark (and hero kicker) so TECHSTEAL reads like
-// the game's logo instead of plain pixel text.
-const minecraftLogo = localFont({
-  src: "./fonts/Minecraft.ttf",
-  variable: "--font-minecraft-logo",
-  display: "swap",
-});
+// The two Minecraft fonts are self-hosted in public/fonts and wired up via
+// @font-face in globals.css (`--font-pixel` and `--font-minecraft-logo`).
+// Minecraftia's built-in metrics put every glyph ~37.5% of em-size above the
+// line box's optical center (the font's metrics report phantom space under
+// the glyphs that doesn't exist), so globals.css overrides ascent/descent to
+// optically center it — see the @font-face rule there.
 
 const grotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -48,7 +37,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${minecraft.variable} ${minecraftLogo.variable} ${grotesk.variable}`}>
+    <html lang="en" className={grotesk.variable}>
       <head>
         <link
           rel="stylesheet"

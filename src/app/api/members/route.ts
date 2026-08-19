@@ -59,7 +59,7 @@ export async function GET() {
       color: colorFor(row.id),
       status: online ? "online" : "offline",
       joined: row.createdAt ?? "",
-      playtime: row.discordVerified ? "verified" : "member",
+      verified: row.discordVerified ?? false,
       minecraftUsername: mcName ?? null,
     };
   });

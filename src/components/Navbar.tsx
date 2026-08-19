@@ -35,7 +35,7 @@ export function Navbar() {
   const pathname = usePathname();
   const { user, loading: sessionLoading, logout } = useSession();
   // Live status from /api/status (falls back to placeholder until configured).
-  const { data: status } = useApi<ServerStatus>("/api/status", fallbackStatus);
+  const { data: status, loading: statusLoading } = useApi<ServerStatus>("/api/status", fallbackStatus);
 
   // Close popovers on route change.
   useEffect(() => {
@@ -87,8 +87,11 @@ export function Navbar() {
     if (pathname === "/admin") router.push("/");
   };
 
-  const online = status.online;
-  const players = status.players ?? 0;
+  // Only trust the pill when the live match query actually answered — a
+  // fallback (API unreachable) shows "Offline" instead of fake numbers.
+  const statusLive = status.source === "live";
+  const online = statusLive && status.online;
+  const players = statusLive ? (status.players ?? 0) : 0;
   const max = status.max ?? siteConfig.maxPlayers;
 
   return (
@@ -104,7 +107,8 @@ export function Navbar() {
         <div className={`status-pill hidden sm:inline-flex ${online ? "" : "offline"}`}>
           <span className={`pulse-dot ${online ? "" : "muted"}`} />
           <span>
-            {online ? "Online" : "Offline"} · {players}/{max}
+            {statusLoading ? "Checking…" : online ? "Online" : "Offline"}
+            {!statusLoading && statusLive ? ` · ${players}/${max}` : ""}
           </span>
         </div>
         <Link href="/join" className="btn-primary hidden sm:inline-flex" aria-label="How to join">
@@ -182,7 +186,7 @@ export function Navbar() {
           <div className="px-4 py-3 border-b border-[var(--border)] flex items-center gap-3">
             <Avatar name={user.username} src={user.avatarUrl} size="sm" />
             <div className="min-w-0">
-              <div className="font-display font-bold text-base truncate leading-snug pt-1">
+              <div className="font-display font-bold text-base truncate leading-snug">
                 {user.username}
               </div>
               <div className="text-xs text-[var(--muted)] capitalize">
@@ -268,14 +272,16 @@ export function Navbar() {
               </button>
             </>
           ) : (
-            <Link
-              href="/login"
-              className={`nav-popover-link ${pathname === "/login" ? "active" : ""}`}
-              onClick={() => setMenuOpen(false)}
-            >
-              <i className="fa-solid fa-user" aria-hidden="true" />
-              Log in / Sign up
-            </Link>
+            !sessionLoading && (
+              <Link
+                href="/login"
+                className={`nav-popover-link ${pathname === "/login" ? "active" : ""}`}
+                onClick={() => setMenuOpen(false)}
+              >
+                <i className="fa-solid fa-user" aria-hidden="true" />
+                Log in / Sign up
+              </Link>
+            )
           )}
         </div>
       </div>

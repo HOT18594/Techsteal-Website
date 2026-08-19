@@ -4,7 +4,7 @@ import { getDb } from "@/lib/db";
 import { forumReplies, forumThreads } from "@/lib/schema";
 import { fallbackThreads } from "@/lib/fallback-data";
 import { getSessionUser } from "@/lib/auth";
-import { isAdminUser } from "@/lib/accounts";
+import { findAccount, isAdminUser } from "@/lib/accounts";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 
 export const dynamic = "force-dynamic";
@@ -38,6 +38,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "You must be signed in to post." }, { status: 401 });
   }
 
+  // A deleted/de-powered account (cookie still valid) must not keep posting.
+  if (getDb()) {
+    const account = await findAccount(user.id).catch(() => null);
+    if (!account) {
+      return NextResponse.json(
+        { error: "Your account no longer exists on this server." },
+        { status: 403 }
+      );
+    }
+  }
+
   const body = await request.json().catch(() => ({}));
   const title = typeof body.title === "string" ? body.title.trim() : "";
   const content = typeof body.content === "string" ? body.content.trim() : "";
@@ -45,6 +56,15 @@ export async function POST(request: NextRequest) {
 
   if (!title) {
     return NextResponse.json({ error: "A title is required." }, { status: 400 });
+  }
+  // Server-side caps (the client enforces these too, but the API must not
+  // trust the client — otherwise a hammering client bloats the DB and every
+  // future AI prompt that read thread content).
+  if (title.length > 120) {
+    return NextResponse.json({ error: "Titles can be at most 120 characters." }, { status: 400 });
+  }
+  if (content.length > 4000) {
+    return NextResponse.json({ error: "Threads can be at most 4000 characters." }, { status: 400 });
   }
 
   const db = getDb();
@@ -62,12 +82,21 @@ export async function POST(request: NextRequest) {
     // No database configured yet — nothing persists. Return an id so the
     // client can optimistically render the new thread.
     return NextResponse.json(
-      { id: Date.now(), ...values, replies: 0, last: "just now", pinned: false },
+      {
+        id: Date.now(),
+        ...values,
+        replies: 0,
+        last: new Date().toISOString(),
+        pinned: false,
+      },
       { status: 201 }
     );
   }
 
-  const [created] = await db.insert(forumThreads).values(values).returning();
+  const [created] = await db
+    .insert(forumThreads)
+    .values({ ...values, last: new Date().toISOString() })
+    .returning();
   const avatars = await resolveAuthorAvatars([created]);
   const info = avatarInfoFor(avatars, created);
   return NextResponse.json({ ...created, avatarUrl: info?.avatarUrl ?? null }, { status: 201 });

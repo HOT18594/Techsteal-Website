@@ -1,10 +1,55 @@
 @import "tailwindcss";
 
 /* ============================================================
+   Self-hosted Minecraft fonts (public/fonts)
+   ============================================================
+   Minecraftia (the pixel/display font) ships with broken vertical
+   metrics: every glyph is drawn +50%..+150% of em above the baseline
+   (measured from the TTF), yet the font reports ascent 175% / descent
+   37.5%. The result: the font's line-metric center sits ~37.5% BELOW the
+   visible glyphs, so pixel text renders high in any centered/flex context
+   and overflows its line box at the top.
+
+   We fix it globally at the font-metric layer (no per-element hacks):
+   for glyphs to be optically centered the baseline must sit such that
+   (ascent − descent) = 2 × glyph-center-above-baseline = 212.5% for the
+   caps/digits this font is used for (headings, nav, stat numbers, logos).
+   Ascent/descent overrides apply to every element using this font at once,
+   for any line-height, and compose with every transform/animation on the
+   page.
+   */
+@font-face {
+  font-family: "Minecraft Pixel";
+  src: url("/fonts/Minecraftia-Regular.ttf") format("truetype");
+  font-display: swap;
+  font-weight: 400 700;
+  /* Minecraftia's glyphs sit +106.25% (optical center) above baseline but
+     its metrics claim only +68.75% average — the 37.5% phantom gap below.
+     Raise ascent / zero descent so the visual center lands dead on the
+     layout center. */
+  ascent-override: 212.5%;
+  descent-override: 0%;
+}
+
+/* The bold "Minecraft" logo typeface — its own metrics are already
+   optically centered (glyph band −25%..+75%, ascent 75 / descent 25), so
+   no override is needed. */
+@font-face {
+  font-family: "Minecraft Logo";
+  src: url("/fonts/Minecraft.ttf") format("truetype");
+  font-display: swap;
+  font-weight: 400;
+}
+
+/* ============================================================
    TECHSTEAL design system — Bold Dark-Blue Dashboard
    ============================================================ */
 
 :root {
+  /* Rewired from next/font/local variables to the self-hosted families */
+  --font-pixel: "Minecraft Pixel", monospace;
+  --font-minecraft-logo: "Minecraft Logo", var(--font-pixel), monospace;
+
   /* Base — deep navy, darker than before so text pops */
   --bg: #05070f;
   --bg-2: #090e1c;
@@ -256,11 +301,8 @@ body {
 .nav-wordmark i {
   color: var(--accent-bright);
   font-size: 1.45rem;
-  /* Pixel-font glyphs render high in their line box, so a centered FA icon
-     sits slightly below the text's optical center. A small lift aligns the
-     cube with the wordmark letters (now that the wordmark is vertically
-     centered to match the toolbar). */
-  transform: translateY(-2px);
+  /* The @font-face metric override now optically centers the pixel text, so
+     a flex-centered FA icon lines up with the letters with no manual lift. */
 }
 
 .nav-actions {
@@ -1503,11 +1545,6 @@ button:focus-visible {
   opacity: 0.75;
   display: inline-flex;
   align-items: center;
-}
-/* Any FA icon sitting next to uppercase pixel text (footer brand, etc.) —
-   same measured ~10px correction as the nav wordmark. */
-.pixel-text-icon {
-  transform: translateY(-10px);
 }
 
 
