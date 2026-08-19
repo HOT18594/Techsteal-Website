@@ -779,9 +779,18 @@ body.scrolled .nav-actions {
   font-size: 0.9rem;
   color: var(--accent);
   text-shadow: 0 0 14px var(--accent-glow);
-  /* Measured from a live Chromium screenshot: the server glyph renders
-     ~5px below the lowercase pill text's visual center. */
-  transform: translateY(-5px);
+  /* Flex alignment on the pill centers this vertically with the text —
+     no manual translate needed once the text has a controlled line-height. */
+  display: inline-flex;
+  align-items: center;
+}
+/* The address text: constrain the pixel font's tall line box to line-height 1
+   so the glyph's visible center matches the flex axis, letting the pill's
+   `align-items: center` align it with the icons instead of sitting off-center. */
+.hero-kicker-text {
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
 }
 .hero-title {
   /* Minecraft logo font — the bold blocky typeface, not the thin pixel one */
@@ -1403,10 +1412,8 @@ button:focus-visible {
   margin-left: 0.6rem;
   font-size: 0.85rem;
   opacity: 0.75;
-  display: inline-block;
-  /* Measured from a live Chromium screenshot: the regular-weight copy
-     glyph renders ~11px below the lowercase pill text. */
-  transform: translateY(-11px);
+  display: inline-flex;
+  align-items: center;
 }
 /* Any FA icon sitting next to uppercase pixel text (footer brand, etc.) —
    same measured ~10px correction as the nav wordmark. */

@@ -65,7 +65,7 @@ export function HeroClient() {
             title="Click to copy the server address"
             aria-label={`${siteConfig.address} — click to copy`}
           >
-            {siteConfig.address}
+            <span className="hero-kicker-text">{siteConfig.address}</span>
             <span className="hero-kicker-copy" aria-hidden="true">
               <i className="fa-regular fa-copy" />
             </span>
