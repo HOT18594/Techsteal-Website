@@ -49,24 +49,16 @@ export function HeroClient() {
 
         {/* Layer 3 — content, drifting slightly faster for depth */}
         <div className="hero-content" data-parallax="-0.05">
-          {/* IP — same letter fly-in as the title, click to copy */}
+          {/* IP — one pill, rises in after the title, click to copy */}
           <button
-            className="hero-kicker cursor-pointer"
+            className="hero-kicker hero-cta cursor-pointer"
+            style={{ "--i": 0 } as CSSProperties}
             onClick={() => void copyIP()}
             title="Click to copy the server address"
             aria-label={`${siteConfig.address} — click to copy`}
           >
-            {siteConfig.address.split("").map((ch, i) => (
-              <span
-                key={i}
-                className="hero-letter"
-                style={{ "--i": i + siteConfig.name.length + 1 } as CSSProperties}
-                aria-hidden="true"
-              >
-                {ch}
-              </span>
-            ))}
-            <span className="hero-letter hero-kicker-copy" style={{ "--i": siteConfig.name.length + siteConfig.address.length + 2 } as CSSProperties} aria-hidden="true">
+            {siteConfig.address}
+            <span className="hero-kicker-copy" aria-hidden="true">
               <i className="fa-regular fa-copy" />
             </span>
           </button>

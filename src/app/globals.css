@@ -680,9 +680,10 @@ body.scrolled .nav-actions {
   text-shadow: 0 0 14px var(--accent-glow);
 }
 .hero-title {
-  font-family: var(--font-pixel), monospace;
+  /* Minecraft logo font — the bold blocky typeface, not the thin pixel one */
+  font-family: var(--font-minecraft-logo), var(--font-pixel), monospace;
   font-size: clamp(3rem, 10vw, 7.5rem);
-  font-weight: 700;
+  font-weight: 400; /* the logo font has its own weight */
   letter-spacing: 0.01em;
   line-height: 1;
   color: var(--fg);
@@ -1263,13 +1264,24 @@ button:focus-visible {
   }
 }
 
-/* CTA buttons fly in with the same motion, staggered after the letters.
-   `backwards` (not `both`) so once the animation ends, the button's own
-   hover transform/transition takes over again. */
+/* CTA elements (IP kicker + buttons) rise in gently after the title
+   letters finish. A soft fade + 26px rise — no scale/rotate, so they
+   never overlap the title or each other. `backwards` lets the button's
+   own hover transform take over once the animation ends. */
 .hero-cta {
-  animation: heroLetterIn 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
-  animation-delay: calc(var(--i) * 0.12s + 1.15s);
-  will-change: transform, opacity, filter;
+  animation: heroRise 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: calc(var(--i) * 0.12s + 1.05s);
+  will-change: transform, opacity;
+}
+@keyframes heroRise {
+  0% {
+    opacity: 0;
+    transform: translateY(26px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Copy icon inside the IP kicker */
@@ -1522,8 +1534,9 @@ html.custom-cursor.cursor-on-text .cursor-ring {
   #scroll-progress {
     display: none;
   }
-  /* Skip the entrance stagger so the title never sits invisible */
-  .hero-letter {
+  /* Skip the entrance stagger so the title/CTAs never sit invisible */
+  .hero-letter,
+  .hero-cta {
     animation-delay: 0s !important;
   }
 }
