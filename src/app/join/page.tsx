@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Chatty } from "@/components/Chatty";
+import Link from "next/link";
 import { siteConfig } from "@/lib/site";
 import { useToast } from "@/components/Toast";
 import { SubPage } from "@/components/SubPage";
@@ -84,20 +84,25 @@ export default function JoinPage() {
           ))}
         </div>
 
-        {/* Need help? Chatty Jr. is right here! */}
-        <div className="mt-10">
-          <div className="text-center mb-6">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] text-white text-2xl mb-4">
-              <i className="fa-solid fa-robot" />
-            </div>
-            <h2 className="font-display text-2xl font-bold mb-2">Need help? Ask {siteConfig.assistant.name}!</h2>
-            <p className="text-[var(--muted)] max-w-md mx-auto">
-              Stuck on a step, or have another question about the server?{" "}
-              {siteConfig.assistant.name} can answer right here.
-            </p>
+        {/* Need help? Arrow straight to Chatty Jr. */}
+        <Link
+          href="/assistant?ask=How+do+I+join%3F"
+          className="mt-10 card p-8 text-center block hover:border-[var(--accent)] hover:-translate-y-0.5 transition group"
+        >
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] text-white text-2xl mb-4">
+            <i className="fa-solid fa-robot" />
           </div>
-          <Chatty variant="embedded" />
-        </div>
+          <h2 className="font-display text-2xl font-bold mb-2">Need help? Ask {siteConfig.assistant.name}!</h2>
+          <p className="text-[var(--muted)] max-w-md mx-auto mb-6">
+            Stuck on a step, or have another question about the server?{" "}
+            {siteConfig.assistant.name} can help.
+          </p>
+          <span className="btn-primary w-full sm:w-auto justify-center">
+            <i className="fa-solid fa-comment-dots" />
+            Ask {siteConfig.assistant.name}
+            <i className="fa-solid fa-arrow-right transition-transform group-hover:translate-x-1" />
+          </span>
+        </Link>
       </div>
     </SubPage>
   );

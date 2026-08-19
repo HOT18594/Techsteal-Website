@@ -158,7 +158,7 @@ export function HeroClient() {
                 </span>
                 <div className="mt-8 w-full">
                   {/* Live status preview (console style) */}
-                  <div className="aspect-[4/3] w-full rounded-xl border border-[var(--border)] bg-[var(--bg-2)] p-4 flex flex-col overflow-hidden">
+                  <div className="aspect-[4/3] w-full rounded-xl border border-[var(--border)] bg-[var(--bg-2)] p-4 flex flex-col items-center text-center overflow-hidden">
                     <div className={`status-pill ${status.online ? "" : "offline"}`}>
                       <span className={`pulse-dot ${status.online ? "" : "muted"}`} />
                       {status.online ? "Online" : "Offline"}
@@ -209,8 +209,8 @@ export function HeroClient() {
                             online={m.status === "online"}
                           />
                           <div className="flex-1 min-w-0">
-                            <div className="text-sm font-semibold truncate">{m.name}</div>
-                            <div className="text-xs text-[var(--muted)] truncate">{m.role}</div>
+                            <div className="text-sm font-semibold leading-snug break-words">{m.name}</div>
+                            <div className="text-xs text-[var(--muted)] leading-snug break-words">{m.role}</div>
                           </div>
                         </div>
                       ))}

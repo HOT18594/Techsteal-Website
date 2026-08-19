@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { forumReplies } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
-import { resolveAuthorAvatars } from "@/lib/forum-avatars";
+import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 
 export const dynamic = "force-dynamic";
 
@@ -57,10 +57,11 @@ export async function POST(
     .returning();
 
   const avatars = await resolveAuthorAvatars([updated]);
+  const info = avatarInfoFor(avatars, updated);
   return NextResponse.json({
     reply: {
       ...updated,
-      avatarUrl: avatars.get(updated.authorId ?? "")?.avatarUrl ?? null,
+      avatarUrl: info?.avatarUrl ?? null,
     },
     liked: !liked,
   });

@@ -252,9 +252,9 @@ body {
 .nav-wordmark i {
   color: var(--accent-bright);
   font-size: 1.1rem;
-  /* Minecraftia's glyphs sit high in their em box — pull the icon up
-     ~0.1em so the cube lines up with the text's visual center. */
-  transform: translateY(-0.1em);
+  /* Measured: FA solid glyphs sit ~0.016em above uppercase Minecraftia
+     text on a shared baseline — a hair of downward nudge centers them. */
+  transform: translateY(0.02em);
 }
 
 .nav-actions {
@@ -739,7 +739,9 @@ body.scrolled .nav-actions {
   font-size: 0.9rem;
   color: var(--accent);
   text-shadow: 0 0 14px var(--accent-glow);
-  transform: translateY(-0.1em); /* line the icon up with the pixel text */
+  /* Measured: the server glyph sits ~0.11em above the lowercase pixel
+     text's visual center — push it down to match. */
+  transform: translateY(0.11em);
 }
 .hero-title {
   /* Minecraft logo font — the bold blocky typeface, not the thin pixel one */
@@ -1344,7 +1346,13 @@ button:focus-visible {
   font-size: 0.85rem;
   opacity: 0.75;
   display: inline-block;
-  transform: translateY(-0.1em); /* match the leading icon's alignment */
+  /* Measured: the regular-weight copy glyph sits ~0.21em above the
+     lowercase pixel text — push it down to match. */
+  transform: translateY(0.21em);
+}
+/* Any FA icon sitting next to uppercase pixel text (footer brand, etc.) */
+.pixel-text-icon {
+  transform: translateY(0.02em);
 }
 
 

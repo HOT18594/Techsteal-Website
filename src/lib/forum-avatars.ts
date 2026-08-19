@@ -5,7 +5,7 @@
 // accounts without one fall back to their Minecraft skin head (via
 // minotar — no key needed), then to a letter tile.
 
-import { inArray } from "drizzle-orm";
+import { inArray, or } from "drizzle-orm";
 import { getDb } from "./db";
 import { profiles } from "./schema";
 
@@ -39,11 +39,13 @@ function colorFor(id: string): string {
 }
 
 /**
- * Given forum rows (threads or replies) that carry `authorId`, fetch the
- * matching profiles and return a map of authorId → avatar info.
+ * Given forum rows (threads or replies), fetch the matching profiles and
+ * return a map of avatar info. Keyed by account id when available, and
+ * ALSO by lowercase username so legacy posts (which predate authorId)
+ * still resolve their author's Discord profile picture.
  */
 export async function resolveAuthorAvatars(
-  rows: Array<{ authorId?: string | null }>
+  rows: Array<{ authorId?: string | null; author?: string | null }>
 ): Promise<Map<string, AuthorAvatar>> {
   const db = getDb();
   const map = new Map<string, AuthorAvatar>();
@@ -52,25 +54,56 @@ export async function resolveAuthorAvatars(
   const ids = [
     ...new Set(rows.map((r) => r.authorId).filter((x): x is string => Boolean(x))),
   ];
-  if (ids.length === 0) return map;
+  const names = [
+    ...new Set(
+      rows
+        .filter((r) => !r.authorId)
+        .map((r) => r.author?.trim())
+        .filter((x): x is string => Boolean(x))
+    ),
+  ];
+  if (ids.length === 0 && names.length === 0) return map;
+
+  const conditions = [];
+  if (ids.length > 0) conditions.push(inArray(profiles.id, ids));
+  if (names.length > 0) conditions.push(inArray(profiles.username, names));
 
   const found = await db
     .select({
       id: profiles.id,
+      username: profiles.username,
       minecraftUsername: profiles.minecraftUsername,
       avatarUrl: profiles.avatarUrl,
     })
     .from(profiles)
-    .where(inArray(profiles.id, ids));
+    .where(conditions.length === 1 ? conditions[0] : or(...conditions));
 
-  const byAuthor = new Map(found.map((f) => [f.id, f]));
-  for (const id of ids) {
-    const p = byAuthor.get(id);
-    map.set(id, {
-      // Discord profile picture first, Minecraft skin head as fallback.
-      avatarUrl: p?.avatarUrl ?? (p?.minecraftUsername ? minotarUrl(p.minecraftUsername) : null),
-      color: colorFor(id),
-    });
+  const byId = new Map(found.map((f) => [f.id, f]));
+  const byName = new Map(found.map((f) => [f.username.toLowerCase(), f]));
+
+  const infoFor = (p: (typeof found)[number] | undefined, key: string) => ({
+    // Discord profile picture first, Minecraft skin head as fallback.
+    avatarUrl: p?.avatarUrl ?? (p?.minecraftUsername ? minotarUrl(p.minecraftUsername) : null),
+    color: colorFor(key),
+  });
+
+  for (const id of ids) map.set(id, infoFor(byId.get(id), id));
+  for (const name of names) {
+    const p = byName.get(name.toLowerCase());
+    if (p) map.set(name.toLowerCase(), infoFor(p, p.id));
   }
   return map;
+}
+
+/** Look up a forum row's avatar info — by account id first, then username. */
+export function avatarInfoFor(
+  map: Map<string, AuthorAvatar>,
+  row: { authorId?: string | null; author?: string | null }
+): AuthorAvatar | undefined {
+  if (row.authorId) {
+    const byId = map.get(row.authorId);
+    if (byId) return byId;
+  }
+  if (row.author) return map.get(row.author.trim().toLowerCase());
+  return undefined;
 }

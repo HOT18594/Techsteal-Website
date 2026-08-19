@@ -9,6 +9,7 @@ const NAVIGATE = [
 ];
 
 const CONNECT = [
+  { href: "/join", label: "How to Join" },
   { href: "/members", label: "Members" },
   { href: "/gallery", label: "Gallery" },
   { href: "/rules", label: "Rules" },
@@ -33,7 +34,10 @@ export function Footer() {
         <div className="grid md:grid-cols-4 gap-10 mb-12">
           <div className="md:col-span-2">
             <div className="flex items-center gap-3 mb-4">
-              <i className="fa-solid fa-cube text-[var(--accent-bright)]" aria-hidden="true" />
+              <i
+                className="fa-solid fa-cube pixel-text-icon text-[var(--accent-bright)]"
+                aria-hidden="true"
+              />
               <span className="font-display text-2xl tracking-wider text-[var(--fg)]">
                 {siteConfig.name}
               </span>
@@ -93,7 +97,14 @@ export function Footer() {
 
         <div className="pt-8 border-t border-[var(--border)] flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="text-xs text-[var(--muted-2)]">
-            © 2025 {siteConfig.name} · Not affiliated with Mojang or Microsoft
+            © {new Date().getFullYear()} {siteConfig.name} · Not affiliated with Mojang or Microsoft
+          </div>
+          <div className="text-xs text-[var(--muted-2)] flex items-center gap-3 flex-wrap justify-center">
+            <span className="text-[var(--fg-2)]">{siteConfig.season}</span>
+            <span aria-hidden="true">·</span>
+            <span>Minecraft {siteConfig.version}</span>
+            <span aria-hidden="true">·</span>
+            <span>{siteConfig.software}</span>
           </div>
         </div>
       </div>

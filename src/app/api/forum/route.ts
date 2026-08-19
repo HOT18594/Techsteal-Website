@@ -4,7 +4,7 @@ import { getDb } from "@/lib/db";
 import { forumReplies, forumThreads } from "@/lib/schema";
 import { fallbackThreads } from "@/lib/fallback-data";
 import { getSessionUser } from "@/lib/auth";
-import { resolveAuthorAvatars } from "@/lib/forum-avatars";
+import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 
 export const dynamic = "force-dynamic";
 
@@ -18,11 +18,14 @@ export async function GET() {
     .orderBy(desc(forumThreads.pinned), desc(forumThreads.createdAt));
   const avatars = await resolveAuthorAvatars(rows);
   return NextResponse.json(
-    rows.map((row) => ({
-      ...row,
-      avatarUrl: avatars.get(row.authorId ?? "")?.avatarUrl ?? null,
-      color: avatars.get(row.authorId ?? "")?.color ?? row.color,
-    }))
+    rows.map((row) => {
+      const info = avatarInfoFor(avatars, row);
+      return {
+        ...row,
+        avatarUrl: info?.avatarUrl ?? null,
+        color: info?.color ?? row.color,
+      };
+    })
   );
 }
 
@@ -65,10 +68,8 @@ export async function POST(request: NextRequest) {
 
   const [created] = await db.insert(forumThreads).values(values).returning();
   const avatars = await resolveAuthorAvatars([created]);
-  return NextResponse.json(
-    { ...created, avatarUrl: avatars.get(created.authorId ?? "")?.avatarUrl ?? null },
-    { status: 201 }
-  );
+  const info = avatarInfoFor(avatars, created);
+  return NextResponse.json({ ...created, avatarUrl: info?.avatarUrl ?? null }, { status: 201 });
 }
 
 // Admin moderation: pin/unpin a thread.

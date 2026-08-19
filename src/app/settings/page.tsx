@@ -166,7 +166,7 @@ function SettingsContent() {
             className="!w-16 !h-16 flex-shrink-0"
           />
           <div className="min-w-0">
-            <div className="font-display text-xl font-bold truncate">{profile?.username ?? user?.username}</div>
+            <div className="font-display text-xl font-bold break-words leading-snug">{profile?.username ?? user?.username}</div>
             <div className="flex flex-wrap items-center gap-2 mt-1">
               <span
                 className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-md border ${

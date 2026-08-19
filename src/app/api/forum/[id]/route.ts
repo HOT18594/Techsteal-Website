@@ -3,7 +3,7 @@ import { asc, desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { forumReplies, forumThreads } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
-import { resolveAuthorAvatars } from "@/lib/forum-avatars";
+import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 
 export const dynamic = "force-dynamic";
 
@@ -39,10 +39,10 @@ export async function GET(
     .orderBy(desc(forumReplies.pinned), asc(forumReplies.createdAt));
 
   const avatars = await resolveAuthorAvatars([threads[0], ...replies]);
-  const enrich = (row: { authorId?: string | null; color: string }) => ({
-    avatarUrl: avatars.get(row.authorId ?? "")?.avatarUrl ?? null,
-    color: avatars.get(row.authorId ?? "")?.color ?? row.color,
-  });
+  const enrich = (row: { authorId?: string | null; author?: string | null; color: string }) => {
+    const info = avatarInfoFor(avatars, row);
+    return { avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? row.color };
+  };
 
   return NextResponse.json({
     thread: { ...threads[0], ...enrich(threads[0]) },
@@ -104,10 +104,8 @@ export async function POST(
     .where(eq(forumThreads.id, threadId));
 
   const avatars = await resolveAuthorAvatars([reply]);
-  return NextResponse.json(
-    { ...reply, avatarUrl: avatars.get(reply.authorId ?? "")?.avatarUrl ?? null },
-    { status: 201 }
-  );
+  const info = avatarInfoFor(avatars, reply);
+  return NextResponse.json({ ...reply, avatarUrl: info?.avatarUrl ?? null }, { status: 201 });
 }
 
 // Admin moderation: pin/unpin a comment (reply).
@@ -148,10 +146,8 @@ export async function PATCH(
   }
 
   const avatars = await resolveAuthorAvatars([rows[0]]);
-  return NextResponse.json({
-    ...rows[0],
-    avatarUrl: avatars.get(rows[0].authorId ?? "")?.avatarUrl ?? null,
-  });
+  const info = avatarInfoFor(avatars, rows[0]);
+  return NextResponse.json({ ...rows[0], avatarUrl: info?.avatarUrl ?? null });
 }
 
 // Delete a reply (admin only). Body: { replyId }

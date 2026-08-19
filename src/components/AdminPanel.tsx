@@ -115,7 +115,7 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
                       className="!w-10 !h-10 flex-shrink-0"
                     />
                     <div className="min-w-0">
-                      <div className="font-medium truncate">
+                      <div className="font-medium break-words leading-snug">
                         {account.username}
                         {isSelf ? (
                           <span className="ml-2 text-xs text-[var(--muted)]">(you)</span>

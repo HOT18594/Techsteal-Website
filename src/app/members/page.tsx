@@ -48,7 +48,7 @@ export default function MembersPage() {
                 />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-display text-lg font-bold truncate">{m.name}</h3>
+                    <h3 className="font-display text-lg font-bold break-words">{m.name}</h3>
                     <span className={`tag ${m.status === "online" ? "tag-emerald" : ""}`}>
                       {m.role}
                     </span>
