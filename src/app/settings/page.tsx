@@ -88,8 +88,12 @@ function SettingsContent() {
       } else {
         setMcSkin(null);
       }
-      await patch({ minecraftUsername: name || null });
+      // Setting a Minecraft username is the key onboarding step — mark the
+      // account onboarded so the reminder banner stops nagging. (Explicitly
+      // clearing it to empty still counts, matching "done enough".)
+      await patch({ minecraftUsername: name || null, onboarded: true });
       setMcSaved(true);
+      await refresh();
       show("Saved", name ? `Minecraft: ${name}` : "Minecraft username cleared.");
     } catch {
       show("Couldn't save", "Something went wrong.");
@@ -186,13 +190,14 @@ function SettingsContent() {
               >
                 {profile?.discordVerified ? "Discord verified" : "Discord unverified"}
               </span>
-              {profile?.onboarded ? null : (
-                <Link
-                  href="/onboarding"
-                  className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-md border border-[var(--diamond)]/40 text-[var(--diamond)] hover:bg-[var(--diamond)]/10 transition"
-                >
-                  Finish setup
-                </Link>
+              {profile?.onboarded ? (
+                <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-md border border-[var(--emerald)]/40 text-[var(--emerald)]">
+                  Onboarded
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-md border border-[var(--diamond)]/40 text-[var(--diamond)]">
+                  Setup incomplete
+                </span>
               )}
             </div>
           </div>

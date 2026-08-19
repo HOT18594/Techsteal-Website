@@ -197,14 +197,6 @@ export function Navbar() {
               <i className="fa-solid fa-user-gear" aria-hidden="true" />
               Profile & Settings
             </Link>
-            <Link
-              href="/onboarding"
-              className="nav-popover-link"
-              onClick={() => setProfileOpen(false)}
-            >
-              <i className="fa-solid fa-route" aria-hidden="true" />
-              Onboarding
-            </Link>
             {user.role === "admin" ? (
               <Link
                 href="/admin"

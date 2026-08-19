@@ -23,6 +23,7 @@ export async function GET() {
       avatarUrl: account.avatarUrl ?? user.avatarUrl,
       role: account.role,
       permissions: account.permissions,
+      onboarded: account.onboarded ?? false,
     },
   });
 }

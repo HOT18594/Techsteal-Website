@@ -54,10 +54,10 @@ export async function GET(request: Request) {
       avatarUrl: account.avatarUrl,
     });
 
-    // First-time users land on onboarding; returning users go home.
-    const destination = account.onboarded ? "/" : "/onboarding";
-
-    const res = NextResponse.redirect(new URL(destination, request.url));
+    // Everyone lands home after login. Users who haven't finished onboarding
+    // get a persistent reminder banner on every page instead of being forced
+    // through the flow — they can complete it anytime from Profile & Settings.
+    const res = NextResponse.redirect(new URL("/", request.url));
     res.cookies.set(STATE_COOKIE, "", { path: "/", maxAge: 0 });
     return res;
   } catch (err) {
