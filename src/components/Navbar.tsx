@@ -182,8 +182,10 @@ export function Navbar() {
           <div className="px-4 py-3 border-b border-[var(--border)] flex items-center gap-3">
             <Avatar name={user.username} src={user.avatarUrl} size="sm" />
             <div className="min-w-0">
-              <div className="font-display font-bold text-base truncate">{user.username}</div>
-              <div className="text-xs text-[var(--muted)] mt-0.5 capitalize">
+              <div className="font-display font-bold text-base truncate leading-snug pt-1">
+                {user.username}
+              </div>
+              <div className="text-xs text-[var(--muted)] capitalize">
                 {user.role === "admin" ? "Admin" : "Member"}
               </div>
             </div>
