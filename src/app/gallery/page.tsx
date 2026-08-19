@@ -49,7 +49,7 @@ export default function GalleryPage() {
           </div>
         ) : (
           /* Console-style thumbnail grid */
-          <div className="gallery-grid">
+          <div className="gallery-grid stagger">
             {visible.map((g) => (
               <div key={g.id ?? g.title} className="gallery-item aspect-[4/3]">
                 <img src={g.image} alt={g.title} loading="lazy" className="aspect-[4/3] object-cover" />

@@ -37,7 +37,7 @@ export default function MembersPage() {
           </div>
         ) : (
           /* Console-style member cards */
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 stagger">
             {members.map((m) => (
               <div key={m.id ?? m.name} className="member-card flex items-start gap-4">
                 <Avatar

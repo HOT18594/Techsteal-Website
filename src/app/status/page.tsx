@@ -75,7 +75,7 @@ export default function StatusPage() {
         </div>
 
         {/* Console stat cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-5 stagger">
           {/* Players */}
           <div className="card stat-card p-5 flex flex-col">
             <div className="stat-icon">

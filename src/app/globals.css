@@ -634,15 +634,17 @@ body.scrolled .nav-actions {
 }
 
 /* ---------- Reveal animations ---------- */
+/* Single elements: a cinematic fade + rise + subtle scale. Uses `transform`
+   (home wraps these on non-hovering elements, so no hover conflict). */
 .reveal {
   opacity: 0;
-  transform: translateY(28px);
+  transform: translateY(28px) scale(0.965);
   transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
     transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .reveal.visible {
   opacity: 1;
-  transform: translateY(0);
+  transform: translateY(0) scale(1);
 }
 .reveal-delay-1 {
   transition-delay: 0.08s;
@@ -656,6 +658,38 @@ body.scrolled .nav-actions {
 .reveal-delay-4 {
   transition-delay: 0.32s;
 }
+
+/* ---------- Staggered list reveals ---------- */
+/* Add `.stagger` to a grid/list container. Its children cascade in
+   (fade + rise + scale) with a per-position delay when the container
+   enters the viewport. Crucially this uses the standalone `translate` and
+   `scale` properties — NOT `transform` — so it composes cleanly with any
+   hover `transform` (lifts, scales) the children already have, instead of
+   fighting or overriding them. */
+.stagger > * {
+  opacity: 0;
+  translate: 0 30px;
+  scale: 0.97;
+  transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+    translate 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+    scale 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stagger.visible > * {
+  opacity: 1;
+  translate: 0 0;
+  scale: 1;
+}
+/* Per-child delay so items cascade in sequence. Capped at 12 — longer
+   lists keep the last delay so the tail doesn't lag behind. */
+.stagger.visible > *:nth-child(1) { transition-delay: 0.02s; }
+.stagger.visible > *:nth-child(2) { transition-delay: 0.08s; }
+.stagger.visible > *:nth-child(3) { transition-delay: 0.14s; }
+.stagger.visible > *:nth-child(4) { transition-delay: 0.20s; }
+.stagger.visible > *:nth-child(5) { transition-delay: 0.26s; }
+.stagger.visible > *:nth-child(6) { transition-delay: 0.32s; }
+.stagger.visible > *:nth-child(7) { transition-delay: 0.38s; }
+.stagger.visible > *:nth-child(8) { transition-delay: 0.44s; }
+.stagger.visible > *:nth-child(n + 9) { transition-delay: 0.48s; }
 
 /* ---------- Hero ---------- */
 .hero {
@@ -1059,6 +1093,24 @@ body.scrolled .nav-actions {
   align-items: center;
   justify-content: center;
   padding: 24px;
+  animation: modalFade 0.25s ease both;
+}
+.modal-backdrop > * {
+  animation: modalPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes modalFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes modalPop {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* ---------- Asset placeholder ---------- */

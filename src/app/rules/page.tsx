@@ -77,7 +77,7 @@ export default function RulesPage() {
         </p>
 
         {/* Rules list */}
-        <div className="mt-10 space-y-4">
+        <div className="mt-10 space-y-4 stagger">
           {RULES.map((rule, i) => (
             <div
               key={i}

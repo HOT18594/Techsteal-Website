@@ -48,7 +48,7 @@ export default function HistoryPage() {
 
           {/* Timeline */}
           <div className="lg:col-span-9">
-            <div className="timeline">
+            <div className="timeline stagger">
               {events.length === 0 ? (
                 <p className="text-sm text-[var(--muted)] py-10 text-center">
                   No events recorded yet.

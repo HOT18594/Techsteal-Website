@@ -97,7 +97,7 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
             No members yet — accounts are created when people sign in with Discord.
           </p>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3 stagger">
             {accounts.map((account) => {
               const isSelf = account.id === currentUser.id;
               const busy = busyId === account.id;

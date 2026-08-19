@@ -178,7 +178,7 @@ export default function ForumPage() {
               </div>
             </div>
 
-            <div id="forum-threads">
+            <div id="forum-threads" className="stagger">
               {visible.length === 0 ? (
                 <p className="text-sm text-[var(--muted)] py-10 text-center">
                   No threads yet — start the first discussion!
