@@ -19,10 +19,6 @@ export default function HistoryPage() {
       <div className="max-w-7xl mx-auto w-full">
         {/* Header */}
         <div className="page-header mb-8">
-          <span className="page-kicker">
-            <i className="fa-solid fa-clock-rotate-left" aria-hidden="true" />
-            Chronicle · History
-          </span>
           <h1 className="page-title">Server History</h1>
         </div>
 

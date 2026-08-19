@@ -61,10 +61,6 @@ export default function RulesPage() {
       <div className="max-w-3xl mx-auto w-full">
         {/* Header */}
         <div className="page-header mb-8">
-          <span className="page-kicker">
-            <i className="fa-solid fa-gavel" aria-hidden="true" />
-            Code of Conduct · Rules
-          </span>
           <h1 className="page-title">Techsteal Server Rules</h1>
         </div>
 

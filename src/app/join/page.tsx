@@ -45,10 +45,6 @@ export default function JoinPage() {
       <div className="max-w-3xl mx-auto w-full">
         {/* Header */}
         <div className="page-header mb-8">
-          <span className="page-kicker">
-            <i className="fa-solid fa-compass" aria-hidden="true" />
-            Getting Started · {siteConfig.season}
-          </span>
           <h1 className="page-title">How to Join</h1>
         </div>
 

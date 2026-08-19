@@ -85,10 +85,6 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
       <div className="max-w-4xl mx-auto w-full">
         {/* Header */}
         <div className="page-header mb-8">
-          <span className="page-kicker">
-            <i className="fa-solid fa-shield-halved" aria-hidden="true" />
-            Admin · Manage
-          </span>
           <h1 className="page-title">Manage Panel</h1>
         </div>
 

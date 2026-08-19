@@ -153,10 +153,6 @@ function SettingsContent() {
       <div className="w-full">
         {/* Header */}
         <div className="page-header mb-8">
-          <span className="page-kicker">
-            <i className="fa-solid fa-user-gear" aria-hidden="true" />
-            Account · Settings
-          </span>
           <h1 className="page-title">Profile &amp; Settings</h1>
         </div>
 

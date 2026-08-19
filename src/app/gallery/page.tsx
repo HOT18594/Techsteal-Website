@@ -53,13 +53,7 @@ export default function GalleryPage() {
       <div className="max-w-7xl mx-auto w-full">
         {/* Header */}
         <div className="page-header rowed mb-8">
-          <div>
-            <span className="page-kicker">
-              <i className="fa-solid fa-images" aria-hidden="true" />
-              Community · Gallery
-            </span>
-            <h1 className="page-title">Gallery</h1>
-          </div>
+          <h1 className="page-title">Gallery</h1>
           {categories.length > 1 ? (
             <div className="flex gap-2 flex-wrap">
               {categories.map((c) => (

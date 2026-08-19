@@ -38,13 +38,7 @@ export default function MembersPage() {
       <div className="max-w-7xl mx-auto w-full">
         {/* Header */}
         <div className="page-header rowed mb-8">
-          <div>
-            <span className="page-kicker">
-              <i className="fa-solid fa-users" aria-hidden="true" />
-              Community · Members
-            </span>
-            <h1 className="page-title">Members</h1>
-          </div>
+          <h1 className="page-title">Members</h1>
           <div className="flex items-center gap-6 text-sm text-[var(--muted)]">
             <span className="flex items-center gap-2">
               <span className="w-2 h-2 bg-[var(--emerald)] rounded-full shadow-[0_0_8px_var(--emerald-glow)]" />

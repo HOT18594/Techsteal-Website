@@ -139,10 +139,6 @@ function OnboardingContent() {
       <div className="w-full">
         {/* Header */}
         <div className="page-header mb-8">
-          <span className="page-kicker">
-            <i className="fa-solid fa-route" aria-hidden="true" />
-            Welcome · Setup
-          </span>
           <h1 className="page-title">Let&apos;s get you set up</h1>
           <p className="text-sm text-[var(--muted)]">
             A few optional steps — you can change everything later in{" "}

@@ -19,6 +19,7 @@ export default function ForumPage() {
   const [filter, setFilter] = useState<"all" | "pinned" | "hot">("all");
   const [modalOpen, setModalOpen] = useState(false);
   const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
   const [category, setCategory] = useState("General");
   const [submitting, setSubmitting] = useState(false);
   const [busyThread, setBusyThread] = useState<number | null>(null);
@@ -50,27 +51,27 @@ export default function ForumPage() {
         : [...threads].sort((a, b) => b.replies - a.replies);
 
   const openModal = () => {
-    if (!user) {
-      show("Sign in to post", "Log in with Discord to create threads.");
-      return;
-    }
+    // If the session is still loading, just open the modal — the composer
+    // section inside decides what to show once we know who this is.
     setModalOpen(true);
   };
 
   const submit = async () => {
     const t = title.trim();
+    const c = content.trim();
     if (!t || submitting) return;
     setSubmitting(true);
     try {
       const res = await fetch("/api/forum", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: t, category }),
+        body: JSON.stringify({ title: t, content: c, category }),
       });
       if (res.ok) {
         const created = (await res.json()) as ForumThread;
         setFresh((prev) => [created, ...prev]);
         setTitle("");
+        setContent("");
         setModalOpen(false);
       } else if (res.status === 401) {
         show("Sign in to post", "Log in with Discord to create threads.");
@@ -114,7 +115,10 @@ export default function ForumPage() {
         setFresh((prev) =>
           prev.map((t) => (t.id === updated.id ? { ...t, pinned: updated.pinned } : t))
         );
-        show(updated.pinned ? "Pinned" : "Unpinned", `"${thread.title}" ${updated.pinned ? "is now pinned" : "is no longer pinned"}.`);
+        show(
+          updated.pinned ? "Pinned" : "Unpinned",
+          `"${thread.title}" ${updated.pinned ? "is now pinned" : "is no longer pinned"}.`
+        );
       }
     } catch {
       show("Couldn't update", "Check your connection and try again.");
@@ -131,13 +135,7 @@ export default function ForumPage() {
       <div className="max-w-7xl mx-auto w-full">
         {/* Header */}
         <div className="page-header rowed mb-8">
-          <div>
-            <span className="page-kicker">
-              <i className="fa-solid fa-comments" aria-hidden="true" />
-              Community · Forum
-            </span>
-            <h1 className="page-title">Forum</h1>
-          </div>
+          <h1 className="page-title">Forum</h1>
           <button
             className="btn-secondary py-2.5! px-5! text-xs!"
             onClick={openModal}
@@ -172,7 +170,7 @@ export default function ForumPage() {
             <div id="forum-threads">
               {visible.length === 0 ? (
                 <p className="text-sm text-[var(--muted)] py-10 text-center">
-                  No threads yet.
+                  No threads yet — start the first discussion!
                 </p>
               ) : (
                 visible.map((t) => (
@@ -188,9 +186,12 @@ export default function ForumPage() {
                         ) : null}
                         <span className={`tag ${t.tagClass}`}>{t.category}</span>
                       </div>
-                      <div className="thread-title text-[var(--fg)] font-medium truncate">
+                      <Link
+                        href={`/forum/${t.id ?? ""}`}
+                        className="thread-title text-[var(--fg)] font-medium truncate hover:text-[var(--accent)] transition"
+                      >
                         {t.title}
-                      </div>
+                      </Link>
                       <div className="text-xs text-[var(--muted)] mt-1">
                         by {t.author} · {t.last}
                       </div>
@@ -228,7 +229,7 @@ export default function ForumPage() {
             </div>
           </div>
 
-          {/* Categories sidebar */}
+          {/* Sidebar */}
           <div>
             <div className="card p-6">
               <h3 className="font-display text-base font-bold mb-4">Categories</h3>
@@ -272,7 +273,7 @@ export default function ForumPage() {
                 <>
                   <h3 className="font-display text-base font-bold mb-1">Want to post?</h3>
                   <p className="text-sm text-[var(--muted)] mb-3">
-                    Sign in with Discord to create threads.
+                    Sign in with Discord to create threads and reply.
                   </p>
                   <Link href="/login" className="btn-primary w-full py-2.5! text-xs! justify-center">
                     <i className="fa-brands fa-discord" />
@@ -290,41 +291,70 @@ export default function ForumPage() {
         <div className="modal-backdrop" onClick={() => setModalOpen(false)}>
           <div className="card p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-display text-xl font-bold mb-5">New Thread</h3>
-            <div className="space-y-3">
-              <input
-                ref={titleRef}
-                className={inputClass}
-                placeholder="Thread title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-              />
-              {user ? (
+
+            {user ? (
+              <div className="space-y-3">
+                <input
+                  ref={titleRef}
+                  className={inputClass}
+                  placeholder="Thread title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  maxLength={120}
+                />
+                <textarea
+                  className={`${inputClass} min-h-[120px] resize-y`}
+                  placeholder="What's on your mind? (optional)"
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  maxLength={4000}
+                />
                 <div className="flex items-center gap-2 px-1 text-xs text-[var(--muted)]">
                   <span className="w-5 h-5 rounded bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center font-display font-bold text-white text-[10px]">
                     {user.username.charAt(0).toUpperCase()}
                   </span>
                   Posting as <span className="text-[var(--fg-2)] font-medium">{user.username}</span>
                 </div>
-              ) : null}
-              <select className={inputClass} value={category} onChange={(e) => setCategory(e.target.value)}>
-                <option value="General">General</option>
-                {["Announcements", "Ideas", "Builds", "Redstone", "Technical", "Off-topic"].map(
-                  (c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  )
-                )}
-              </select>
-              <div className="flex gap-3 pt-1">
-                <button className="btn-primary w-full" onClick={() => void submit()} disabled={submitting || !title.trim()}>
-                  {submitting ? "Posting…" : "Create Thread"}
-                </button>
-                <button className="btn-secondary w-full" onClick={() => setModalOpen(false)}>
+                <select className={inputClass} value={category} onChange={(e) => setCategory(e.target.value)}>
+                  <option value="General">General</option>
+                  {["Announcements", "Ideas", "Builds", "Redstone", "Technical", "Off-topic"].map(
+                    (c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    )
+                  )}
+                </select>
+                <div className="flex gap-3 pt-1">
+                  <button
+                    className="btn-primary w-full"
+                    onClick={() => void submit()}
+                    disabled={submitting || !title.trim()}
+                  >
+                    {submitting ? "Posting…" : "Create Thread"}
+                  </button>
+                  <button className="btn-secondary w-full" onClick={() => setModalOpen(false)}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : sessionLoading ? (
+              <p className="text-sm text-[var(--muted)] text-center py-6">Checking session…</p>
+            ) : (
+              <div className="text-center py-4">
+                <i className="fa-brands fa-discord text-3xl text-[#5865F2] mb-4 block" />
+                <p className="text-sm text-[var(--muted)] mb-5">
+                  Sign in with Discord to create a thread.
+                </p>
+                <Link href="/login" className="btn-primary w-full justify-center">
+                  <i className="fa-brands fa-discord" />
+                  Log in
+                </Link>
+                <button className="btn-ghost w-full mt-2" onClick={() => setModalOpen(false)}>
                   Cancel
                 </button>
               </div>
-            </div>
+            )}
           </div>
         </div>
       ) : null}

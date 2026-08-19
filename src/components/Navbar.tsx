@@ -42,6 +42,16 @@ export function Navbar() {
     setProfileOpen(false);
   }, [pathname]);
 
+  // Only one popover at a time — opening one closes the other.
+  const toggleMenu = (open: boolean) => {
+    setMenuOpen(open);
+    if (open) setProfileOpen(false);
+  };
+  const toggleProfile = (open: boolean) => {
+    setProfileOpen(open);
+    if (open) setMenuOpen(false);
+  };
+
   // Close on outside click / Escape — but NEVER when the toggle button
   // itself was clicked: the toggle's onClick is the single source of truth.
   useEffect(() => {
@@ -118,7 +128,7 @@ export function Navbar() {
             <button
               ref={profileBtnRef}
               className="h-11 px-2.5 flex items-center gap-2 border border-[var(--border-strong)] rounded-lg text-[var(--fg)] hover:border-[var(--accent)] transition"
-              onClick={() => setProfileOpen((o) => !o)}
+              onClick={() => toggleProfile(!profileOpen)}
               aria-label="Profile menu"
               aria-expanded={profileOpen}
               aria-controls="profile-popover"
@@ -145,7 +155,7 @@ export function Navbar() {
         <button
           ref={toggleRef}
           className="nav-toggle"
-          onClick={() => setMenuOpen((open) => !open)}
+          onClick={() => toggleMenu(!menuOpen)}
           aria-label={menuOpen ? "Close menu" : "Open menu"}
           aria-expanded={menuOpen}
           aria-controls="nav-popover"

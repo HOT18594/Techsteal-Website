@@ -152,13 +152,7 @@ export default function StatusPage() {
       <div className="max-w-7xl mx-auto w-full">
         {/* Header */}
         <div className="page-header rowed mb-8">
-          <div>
-            <span className="page-kicker">
-              <i className="fa-solid fa-signal" aria-hidden="true" />
-              Live · Server Status
-            </span>
-            <h1 className="page-title">Server Status</h1>
-          </div>
+          <h1 className="page-title">Server Status</h1>
           <div className="flex items-center gap-3">
             <button
               className="btn-ghost py-2! px-3!"

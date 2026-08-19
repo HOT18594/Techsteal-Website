@@ -15,6 +15,7 @@ export interface Member {
 export interface ForumThread {
   id?: number;
   title: string;
+  content?: string;
   author: string;
   avatar: string;
   color: string;
@@ -23,6 +24,16 @@ export interface ForumThread {
   replies: number;
   last: string;
   pinned: boolean;
+}
+
+export interface ForumReply {
+  id?: number;
+  threadId: number;
+  content: string;
+  author: string;
+  avatar: string;
+  color: string;
+  createdAt?: string | null;
 }
 
 export interface GalleryItem {

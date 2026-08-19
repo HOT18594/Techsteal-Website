@@ -26,6 +26,7 @@ export const members = pgTable("members", {
 export const forumThreads = pgTable("forum_threads", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
+  content: text("content").notNull().default(""),
   author: text("author").notNull(),
   avatar: text("avatar").notNull().default("P"),
   color: text("color").notNull().default("avatar-1"),
@@ -34,6 +35,16 @@ export const forumThreads = pgTable("forum_threads", {
   replies: integer("replies").notNull().default(0),
   last: text("last").notNull().default("just now"),
   pinned: boolean("pinned").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const forumReplies = pgTable("forum_replies", {
+  id: serial("id").primaryKey(),
+  threadId: integer("thread_id").notNull(),
+  content: text("content").notNull(),
+  author: text("author").notNull(),
+  avatar: text("avatar").notNull().default("R"),
+  color: text("color").notNull().default("avatar-2"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

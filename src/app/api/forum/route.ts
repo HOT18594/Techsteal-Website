@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { forumThreads } from "@/lib/schema";
+import { forumReplies, forumThreads } from "@/lib/schema";
 import { fallbackThreads } from "@/lib/fallback-data";
 import { getSessionUser } from "@/lib/auth";
 
@@ -25,6 +25,7 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({}));
   const title = typeof body.title === "string" ? body.title.trim() : "";
+  const content = typeof body.content === "string" ? body.content.trim() : "";
   const category = typeof body.category === "string" ? body.category : "General";
 
   if (!title) {
@@ -34,6 +35,7 @@ export async function POST(request: NextRequest) {
   const db = getDb();
   const values = {
     title,
+    content,
     author: user.username,
     category,
     avatar: user.username.slice(0, 1).toUpperCase(),
@@ -105,5 +107,7 @@ export async function DELETE(request: NextRequest) {
   if (rows.length === 0) {
     return NextResponse.json({ error: "Thread not found" }, { status: 404 });
   }
+  // Clean up its replies too.
+  await db.delete(forumReplies).where(eq(forumReplies.threadId, id));
   return NextResponse.json({ ok: true });
 }
