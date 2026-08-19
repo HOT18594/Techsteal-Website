@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { siteConfig } from "@/lib/site";
+import { Avatar } from "@/components/Avatar";
 import { useToast } from "@/components/Toast";
 import { SubPage } from "@/components/SubPage";
+import { useSession } from "@/lib/use-session";
 
 interface ChatMessage {
   id: number;
@@ -39,6 +41,7 @@ function loadHistory(): ChatMessage[] | null {
 
 export default function AssistantPage() {
   const { show } = useToast();
+  const { user } = useSession();
   const ai = siteConfig.assistant;
 
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -176,8 +179,8 @@ export default function AssistantPage() {
         <div className="page-header rowed mb-6">
           <div className="flex items-center gap-3">
             <div className="relative">
-              <div className="w-11 h-11 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center font-display font-bold text-white rounded-xl">
-                {ai.initial}
+              <div className="w-11 h-11 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white rounded-xl">
+                <i className="fa-solid fa-robot text-lg" />
               </div>
               <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[var(--emerald)] border-2 border-[var(--bg)] rounded-full" />
             </div>
@@ -208,8 +211,8 @@ export default function AssistantPage() {
                 <div key={m.id} className="group">
                   {m.role === "assistant" ? (
                     <div className="flex gap-3">
-                      <div className="w-8 h-8 mt-1 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center font-display font-bold text-white text-xs flex-shrink-0 rounded-lg">
-                        {ai.initial}
+                      <div className="w-8 h-8 mt-1 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white text-xs flex-shrink-0 rounded-lg">
+                        <i className="fa-solid fa-robot" />
                       </div>
                       <div className="max-w-[88%]">
                         <div className="chat-bubble-ai px-4 py-3">
@@ -248,9 +251,12 @@ export default function AssistantPage() {
                           </button>
                         </div>
                       </div>
-                      <div className="w-8 h-8 mt-1 bg-[var(--accent)] flex items-center justify-center font-display font-bold text-white text-xs flex-shrink-0 rounded-lg">
-                        YOU
-                      </div>
+                      <Avatar
+                        name={user?.username ?? "You"}
+                        src={user?.avatarUrl}
+                        size="sm"
+                        className="!w-8 !h-8 mt-1 flex-shrink-0"
+                      />
                     </div>
                   )}
                 </div>
@@ -259,8 +265,8 @@ export default function AssistantPage() {
               {/* Typing indicator */}
               {typing ? (
                 <div className="flex gap-3">
-                  <div className="w-8 h-8 mt-1 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center font-display font-bold text-white text-xs flex-shrink-0 rounded-lg">
-                    {ai.initial}
+                  <div className="w-8 h-8 mt-1 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white text-xs flex-shrink-0 rounded-lg">
+                    <i className="fa-solid fa-robot" />
                   </div>
                   <div className="chat-bubble-ai px-4 py-3 flex items-center gap-1.5">
                     <span className="typing-dot" />

@@ -84,6 +84,7 @@ export const profiles = pgTable("profiles", {
   id: text("id").primaryKey(), // "discord:<id>"
   username: text("username").notNull(),
   email: text("email"),
+  avatarUrl: text("avatar_url"), // Discord CDN profile picture
   role: text("role").notNull().default("member"),
   permissions: jsonb("permissions").$type<string[]>().notNull().default([]),
   minecraftUsername: text("minecraft_username"),

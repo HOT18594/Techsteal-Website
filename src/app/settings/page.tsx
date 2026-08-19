@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Avatar } from "@/components/Avatar";
 import { useToast } from "@/components/Toast";
 import { SubPage } from "@/components/SubPage";
 import { useSession } from "@/lib/use-session";
@@ -158,9 +159,12 @@ function SettingsContent() {
 
         {/* Identity card */}
         <div className="card p-6 mb-6 flex items-center gap-5">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center font-display font-bold text-white text-2xl flex-shrink-0">
-            {(profile?.username ?? user?.username ?? "?").charAt(0).toUpperCase()}
-          </div>
+          <Avatar
+            name={profile?.username ?? user?.username ?? "?"}
+            src={profile?.avatarUrl}
+            size="lg"
+            className="!w-16 !h-16 flex-shrink-0"
+          />
           <div className="min-w-0">
             <div className="font-display text-xl font-bold truncate">{profile?.username ?? user?.username}</div>
             <div className="flex flex-wrap items-center gap-2 mt-1">

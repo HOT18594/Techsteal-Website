@@ -18,6 +18,18 @@ function sortReplies(rs: ForumReply[]): ForumReply[] {
   );
 }
 
+/** Compact X-style relative time for reply timestamps. */
+function formatTime(iso?: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const diff = Date.now() - d.getTime();
+  if (diff < 60_000) return "just now";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h`;
+  if (diff < 604_800_000) return `${Math.floor(diff / 86_400_000)}d`;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 export default function ThreadPage() {
   const { id } = useParams<{ id: string }>();
   const { show } = useToast();
@@ -230,7 +242,7 @@ export default function ThreadPage() {
               ) : null}
             </article>
 
-            {/* Replies */}
+            {/* Replies — X-style feed: divider-separated posts */}
             <div className="mt-8">
               <h2 className="font-display text-lg font-bold mb-4 flex items-center gap-2">
                 <i className="fa-solid fa-reply text-[var(--accent)] text-sm" />
@@ -242,21 +254,26 @@ export default function ThreadPage() {
                   No replies yet — be the first!
                 </p>
               ) : (
-                <div className="space-y-4">
-                  {replies.map((r) => {
+                <div className="card overflow-hidden">
+                  {replies.map((r, i) => {
                     const liked = (r.likedBy ?? []).includes(user?.id ?? "");
                     return (
                       <div
                         key={r.id}
-                        className={`card p-5 flex items-start gap-4 ${
-                          r.pinned ? "border-[var(--accent)] shadow-[0_0_24px_-12px_var(--accent-glow)]" : ""
-                        }`}
+                        className={`flex items-start gap-4 p-5 ${
+                          i < replies.length - 1 ? "border-b border-[var(--border)]" : ""
+                        } ${r.pinned ? "bg-[var(--accent-dim)]/40" : ""}`}
                       >
                         <Avatar name={r.author} src={r.avatarUrl} size="md" color={r.color} />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium">{r.author}</span>
+                              <span className="text-sm font-semibold text-[var(--fg)]">
+                                {r.author}
+                              </span>
+                              <span className="text-xs text-[var(--muted-2)]">
+                                {formatTime(r.createdAt)}
+                              </span>
                               {r.pinned ? (
                                 <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[var(--accent)] border border-[var(--accent)] rounded px-1.5 py-0.5">
                                   <i className="fa-solid fa-thumbtack" />

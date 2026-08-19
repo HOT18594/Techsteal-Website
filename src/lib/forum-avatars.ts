@@ -1,16 +1,16 @@
 // Resolve forum authors to profile pictures.
 //
 // Threads and replies store the author's account id (`authorId`, e.g.
-// "discord:1234..."). When that account has a Minecraft username set, we
-// render their Minecraft skin head (via minotar — no key needed) as the
-// avatar; otherwise the UI falls back to a letter tile.
+// "discord:1234..."). The account's Discord profile picture is preferred;
+// accounts without one fall back to their Minecraft skin head (via
+// minotar — no key needed), then to a letter tile.
 
 import { inArray } from "drizzle-orm";
 import { getDb } from "./db";
 import { profiles } from "./schema";
 
 export interface AuthorAvatar {
-  /** Skin-head URL, or null when the author has no Minecraft username. */
+  /** Discord PFP (preferred) or skin-head URL, or null for a letter tile. */
   avatarUrl: string | null;
   /** Deterministic letter-tile color for this author. */
   color: string;
@@ -55,15 +55,20 @@ export async function resolveAuthorAvatars(
   if (ids.length === 0) return map;
 
   const found = await db
-    .select({ id: profiles.id, minecraftUsername: profiles.minecraftUsername })
+    .select({
+      id: profiles.id,
+      minecraftUsername: profiles.minecraftUsername,
+      avatarUrl: profiles.avatarUrl,
+    })
     .from(profiles)
     .where(inArray(profiles.id, ids));
 
-  const mcByAuthor = new Map(found.map((f) => [f.id, f.minecraftUsername]));
+  const byAuthor = new Map(found.map((f) => [f.id, f]));
   for (const id of ids) {
-    const mc = mcByAuthor.get(id);
+    const p = byAuthor.get(id);
     map.set(id, {
-      avatarUrl: mc ? minotarUrl(mc) : null,
+      // Discord profile picture first, Minecraft skin head as fallback.
+      avatarUrl: p?.avatarUrl ?? (p?.minecraftUsername ? minotarUrl(p.minecraftUsername) : null),
       color: colorFor(id),
     });
   }

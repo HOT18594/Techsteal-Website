@@ -52,6 +52,7 @@ export async function PATCH(request: Request) {
     username: updated.username,
     role: updated.role,
     permissions: updated.permissions,
+    avatarUrl: updated.avatarUrl,
   });
 
   return NextResponse.json({ profile: updated });

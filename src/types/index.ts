@@ -91,6 +91,8 @@ export interface Account {
   id: string;
   username: string;
   email?: string;
+  /** Discord CDN profile picture URL, if the user has one. */
+  avatarUrl?: string;
   role: UserRole;
   permissions: Permission[];
   createdAt?: string;
@@ -108,6 +110,8 @@ export interface SessionUser {
   username: string;
   role: UserRole;
   permissions: Permission[];
+  /** Discord CDN profile picture URL, if the user has one. */
+  avatarUrl?: string;
 }
 
 export interface ServerStatus {

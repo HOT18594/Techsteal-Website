@@ -64,3 +64,14 @@ export async function fetchDiscordUser(accessToken: string): Promise<DiscordUser
   if (!res.ok) throw new Error(`Discord user fetch failed (${res.status})`);
   return (await res.json()) as DiscordUser;
 }
+
+/**
+ * Discord CDN URL for a user's profile picture, or null when the user
+ * has no avatar set (then they show Discord's default — we fall back
+ * to a letter tile). Animated avatars keep their GIF.
+ */
+export function discordAvatarUrl(user: DiscordUser): string | null {
+  if (!user.avatar) return null;
+  const ext = user.avatar.startsWith("a_") ? "gif" : "png";
+  return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}?size=128`;
+}

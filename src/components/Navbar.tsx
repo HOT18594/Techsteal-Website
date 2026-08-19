@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { siteConfig } from "@/lib/site";
 import { fallbackStatus } from "@/lib/fallback-data";
 import type { ServerStatus } from "@/types";
+import { Avatar } from "./Avatar";
 import { useToast } from "./Toast";
 import { useApi } from "@/lib/use-api";
 import { useSession } from "@/lib/use-session";
@@ -134,9 +135,7 @@ export function Navbar() {
               aria-controls="profile-popover"
               title="Profile"
             >
-              <span className="w-7 h-7 rounded-md bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center font-display font-bold text-white text-sm">
-                {user.username.charAt(0).toUpperCase()}
-              </span>
+              <Avatar name={user.username} src={user.avatarUrl} size="sm" className="!w-7 !h-7" />
               <i className={`fa-solid ${profileOpen ? "fa-chevron-up" : "fa-chevron-down"} text-[10px] text-[var(--muted)]`} />
             </button>
           </>
@@ -179,10 +178,13 @@ export function Navbar() {
           aria-hidden={!profileOpen}
           className={`nav-popover ${profileOpen ? "open" : ""}`}
         >
-          <div className="px-4 py-3 border-b border-[var(--border)]">
-            <div className="font-display font-bold text-base truncate">{user.username}</div>
-            <div className="text-xs text-[var(--muted)] mt-0.5 capitalize">
-              {user.role === "admin" ? "Admin" : "Member"}
+          <div className="px-4 py-3 border-b border-[var(--border)] flex items-center gap-3">
+            <Avatar name={user.username} src={user.avatarUrl} size="sm" />
+            <div className="min-w-0">
+              <div className="font-display font-bold text-base truncate">{user.username}</div>
+              <div className="text-xs text-[var(--muted)] mt-0.5 capitalize">
+                {user.role === "admin" ? "Admin" : "Member"}
+              </div>
             </div>
           </div>
           <div className="pt-1.5">

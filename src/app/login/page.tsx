@@ -46,8 +46,8 @@ function LoginContent() {
         <div className="card p-8">
           {/* Brand */}
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] text-white text-2xl mb-4">
-              <i className="fa-solid fa-dice" />
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-[#5865F2] text-white text-3xl mb-4 shadow-[0_10px_30px_-10px_rgba(88,101,242,0.7)]">
+              <i className="fa-brands fa-discord" />
             </div>
             <h1 className="font-display text-2xl font-bold">{siteConfig.name}</h1>
             <p className="text-sm text-[var(--muted)] mt-2">

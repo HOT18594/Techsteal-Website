@@ -239,6 +239,7 @@ body {
   z-index: 56; /* above the nav-scrim (55) so it stays clickable while the menu is open */
   font-family: var(--font-pixel), monospace;
   font-size: 1.5rem;
+  line-height: 1;
   letter-spacing: 0.06em;
   color: var(--fg);
   text-shadow: 0 0 22px var(--accent-glow);
@@ -251,6 +252,9 @@ body {
 .nav-wordmark i {
   color: var(--accent-bright);
   font-size: 1.1rem;
+  /* Minecraftia's glyphs sit high in their em box — pull the icon up
+     ~0.1em so the cube lines up with the text's visual center. */
+  transform: translateY(-0.1em);
 }
 
 .nav-actions {
@@ -735,6 +739,7 @@ body.scrolled .nav-actions {
   font-size: 0.9rem;
   color: var(--accent);
   text-shadow: 0 0 14px var(--accent-glow);
+  transform: translateY(-0.1em); /* line the icon up with the pixel text */
 }
 .hero-title {
   /* Minecraft logo font — the bold blocky typeface, not the thin pixel one */
@@ -1332,6 +1337,8 @@ button:focus-visible {
   margin-left: 0.6rem;
   font-size: 0.85rem;
   opacity: 0.75;
+  display: inline-block;
+  transform: translateY(-0.1em); /* match the leading icon's alignment */
 }
 
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Avatar } from "@/components/Avatar";
 import { useToast } from "@/components/Toast";
 import { SubPage } from "@/components/SubPage";
 import type { Account, Permission, SessionUser } from "@/types";
@@ -107,9 +108,12 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
                 >
                   {/* Identity */}
                   <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center font-display font-bold text-white flex-shrink-0">
-                      {account.username.charAt(0).toUpperCase()}
-                    </div>
+                    <Avatar
+                      name={account.username}
+                      src={account.avatarUrl}
+                      size="sm"
+                      className="!w-10 !h-10 flex-shrink-0"
+                    />
                     <div className="min-w-0">
                       <div className="font-medium truncate">
                         {account.username}

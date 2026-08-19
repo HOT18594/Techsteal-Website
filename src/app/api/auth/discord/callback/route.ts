@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { setSession } from "@/lib/auth";
 import { findOrCreateDiscordAccount } from "@/lib/accounts";
-import { exchangeCodeForToken, fetchDiscordUser } from "@/lib/discord";
+import {
+  discordAvatarUrl,
+  exchangeCodeForToken,
+  fetchDiscordUser,
+} from "@/lib/discord";
 
 export const dynamic = "force-dynamic";
 
@@ -40,12 +44,14 @@ export async function GET(request: Request) {
     const account = await findOrCreateDiscordAccount({
       id: discordUser.id,
       username: discordUser.username,
+      avatarUrl: discordAvatarUrl(discordUser),
     });
     await setSession({
       id: account.id,
       username: account.username,
       role: account.role,
       permissions: account.permissions,
+      avatarUrl: account.avatarUrl,
     });
 
     // First-time users land on onboarding; returning users go home.

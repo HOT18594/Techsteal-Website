@@ -14,6 +14,7 @@ function rowToAccount(row: typeof profiles.$inferSelect): Account {
     id: row.id,
     username: row.username,
     email: row.email ?? undefined,
+    avatarUrl: row.avatarUrl ?? undefined,
     role: (row.role === "admin" ? "admin" : "member") as UserRole,
     permissions: (row.permissions ?? []) as Permission[],
     minecraftUsername: row.minecraftUsername ?? undefined,
@@ -41,6 +42,7 @@ export async function addAccount(input: {
   id: string;
   username: string;
   email?: string;
+  avatarUrl?: string;
   role: UserRole;
   permissions?: Permission[];
 }): Promise<Account> {
@@ -52,6 +54,7 @@ export async function addAccount(input: {
       id: input.id,
       username: input.username,
       email: input.email,
+      avatarUrl: input.avatarUrl,
       role: input.role,
       permissions: input.permissions ?? [],
       createdAt: new Date().toISOString().slice(0, 10),
@@ -65,7 +68,7 @@ export async function updateAccount(
   patch: Partial<
     Pick<
       Account,
-      "role" | "permissions" | "username" | "email" | "minecraftUsername" | "discordVerified" | "onboarded"
+      "role" | "permissions" | "username" | "email" | "avatarUrl" | "minecraftUsername" | "discordVerified" | "onboarded"
     >
   >
 ): Promise<Account | null> {
@@ -76,6 +79,7 @@ export async function updateAccount(
     .set({
       ...(patch.username !== undefined ? { username: patch.username } : {}),
       ...(patch.email !== undefined ? { email: patch.email } : {}),
+      ...(patch.avatarUrl !== undefined ? { avatarUrl: patch.avatarUrl } : {}),
       ...(patch.role !== undefined ? { role: patch.role } : {}),
       ...(patch.permissions !== undefined ? { permissions: patch.permissions } : {}),
       ...(patch.minecraftUsername !== undefined
@@ -105,6 +109,7 @@ export function toSessionUser(account: Account): SessionUser {
     username: account.username,
     role: account.role,
     permissions: [...account.permissions],
+    avatarUrl: account.avatarUrl,
   };
 }
 
@@ -117,13 +122,23 @@ export function toSessionUser(account: Account): SessionUser {
 export async function findOrCreateDiscordAccount(input: {
   id: string;
   username: string;
+  avatarUrl?: string | null;
 }): Promise<Account> {
   const id = `discord:${input.id}`;
   const existing = await findAccount(id);
-  if (existing) return existing;
+  if (existing) {
+    // Refresh the profile picture on every login so avatar changes on
+    // Discord show up here too.
+    if (input.avatarUrl && input.avatarUrl !== existing.avatarUrl) {
+      const updated = await updateAccount(id, { avatarUrl: input.avatarUrl });
+      if (updated) return updated;
+    }
+    return existing;
+  }
   return addAccount({
     id,
     username: input.username,
+    avatarUrl: input.avatarUrl ?? undefined,
     role: "member",
     permissions: ["ai_access"],
   });
