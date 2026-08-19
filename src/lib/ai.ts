@@ -1,9 +1,9 @@
 // AI assistant helper — Chatty Jr.
 //
 // Talks to any OpenAI-compatible /chat/completions endpoint (defaults to
-// OpenRouter, which hosts the free Gemma model used here) and streams
-// the reply back as plain text chunks. The API key lives in the server
-// environment (never the client).
+// OpenRouter, which hosts the free poolside/laguna-s-2.1 model used here)
+// and streams the reply back as plain text chunks. The API key lives in
+// the server environment (never the client).
 //
 // Chatty Jr. is the server's support assistant. It knows the actual site
 // content (rules, members, history, gallery, recent forum posts, live
@@ -260,7 +260,7 @@ export async function streamChatReply(
     /\/+$/,
     ""
   );
-  const model = process.env.AI_MODEL ?? "google/gemma-4-26b-a4b-it:free";
+  const model = process.env.AI_MODEL ?? "poolside/laguna-s-2.1:free";
 
   if (!apiKey) return textStream(NOT_CONFIGURED(message));
 
