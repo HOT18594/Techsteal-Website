@@ -84,18 +84,19 @@ export default function JoinPage() {
           ))}
         </div>
 
-        {/* Need help? Ask Nova! */}
+        {/* Need help? Ask the assistant! */}
         <div className="mt-10 card p-8 text-center" style={{ background: "var(--bg-2)" }}>
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] text-white text-2xl mb-4">
             <i className="fa-solid fa-robot" />
           </div>
-          <h2 className="font-display text-2xl font-bold mb-2">Need help? Ask Nova!</h2>
+          <h2 className="font-display text-2xl font-bold mb-2">Need help? Ask {siteConfig.assistant.name}!</h2>
           <p className="text-[var(--muted)] max-w-md mx-auto mb-6">
-            Stuck on a step, or have another question about the server? Nova can help.
+            Stuck on a step, or have another question about the server?{" "}
+            {siteConfig.assistant.name} can help.
           </p>
           <Link href="/assistant?ask=How+do+I+join%3F" className="btn-primary w-full sm:w-auto justify-center">
             <i className="fa-solid fa-comment-dots" />
-            Ask Nova
+            Ask {siteConfig.assistant.name}
           </Link>
         </div>
       </div>

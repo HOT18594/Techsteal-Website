@@ -20,8 +20,8 @@ export const siteConfig = {
   },
   season: "Season 5",
   assistant: {
-    name: "Nova",
-    initial: "N",
+    name: "Chatty Jr.",
+    initial: "C",
     tagline: "Online · responds instantly",
   },
   socials: {
