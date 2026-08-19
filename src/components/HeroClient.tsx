@@ -268,7 +268,7 @@ export function HeroClient() {
       </section>
 
       {/* ============ QUICK LINKS ============ */}
-      <section className="pt-2 pb-16 lg:pb-20 px-6 lg:px-10">
+      <section className="pt-10 lg:pt-12 pb-16 lg:pb-20 px-6 lg:px-10">
         <div className="max-w-7xl mx-auto">
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             <Link href="/assistant" className="reveal group">
