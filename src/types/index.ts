@@ -6,6 +6,8 @@ export interface Member {
   role: string;
   icon: string;
   avatar: string;
+  /** Discord PFP (preferred) or Minecraft skin head, or null for a letter tile. */
+  avatarUrl?: string | null;
   color: string;
   status: "online" | "offline";
   joined: string;

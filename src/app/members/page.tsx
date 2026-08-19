@@ -42,6 +42,7 @@ export default function MembersPage() {
               <div key={m.id ?? m.name} className="member-card flex items-start gap-4">
                 <Avatar
                   name={m.name}
+                  src={m.avatarUrl}
                   size="md"
                   color={m.color}
                   online={m.status === "online"}

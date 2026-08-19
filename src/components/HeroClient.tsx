@@ -204,6 +204,7 @@ export function HeroClient() {
                         <div key={m.id ?? m.name} className="flex items-center gap-3">
                           <Avatar
                             name={m.name}
+                            src={m.avatarUrl}
                             size="sm"
                             color={m.color}
                             online={m.status === "online"}
