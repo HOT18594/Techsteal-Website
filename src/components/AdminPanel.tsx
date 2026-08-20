@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Avatar } from "@/components/Avatar";
 import { useToast } from "@/components/Toast";
 import { SubPage } from "@/components/SubPage";
-import { minotarUrl } from "@/lib/forum-avatars";
+import { minotarUrl } from "@/lib/minotar";
 import type { Account, Permission, SessionUser } from "@/types";
 
 const PERMISSION_LABELS: Record<Permission, { label: string; icon: string }> = {
