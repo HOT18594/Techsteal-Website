@@ -39,6 +39,10 @@ next-env.d.ts
 .vercel
 .vercel-token
 
+# one-off secret handoff file (secrets.env at repo root — unrelated to dotenv)
+secrets.env
+.git-token
+
 # deployment tooling secrets reference (CODES.md lists values — keep local)
 scripts/CODES.md
 
