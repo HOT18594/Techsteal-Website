@@ -7,11 +7,12 @@
 
 import { inArray, or } from "drizzle-orm";
 import { getDb } from "./db";
+import { minotarUrl } from "./minotar";
 import { profiles } from "./schema";
 // Re-exported so server callers keep one import path; the helper itself is
 // dependency-free so client components can import it without dragging in the
 // postgres driver (which needs Node builtins).
-export { minotarUrl } from "./minotar";
+export { minotarUrl };
 
 export interface AuthorAvatar {
   /** Discord PFP (preferred) or skin-head URL, or null for a letter tile. */
@@ -30,8 +31,6 @@ const COLORS = [
   "avatar-7",
   "avatar-8",
 ];
-
-/** Skin head URL for a Minecraft username (same service as settings). */
 
 function colorFor(id: string): string {
   let h = 0;
