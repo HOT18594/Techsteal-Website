@@ -37,6 +37,10 @@ next-env.d.ts
 
 # vercel
 .vercel
+.vercel-token
+
+# deployment tooling secrets reference (CODES.md lists values — keep local)
+scripts/CODES.md
 
 # keep ignoring any env variant (incl. .env.example copies)
 .env*
