@@ -5,7 +5,7 @@ import type { Permission } from "@/types";
 
 export const dynamic = "force-dynamic";
 
-const VALID_PERMISSIONS: Permission[] = ["server_control", "ai_access"];
+const VALID_PERMISSIONS: Permission[] = ["server_control", "ai_access", "gallery_post"];
 
 // Checks the CURRENT database role, not the (up to 7-day-old) session
 // cookie, so demoting/removing an admin takes effect immediately.

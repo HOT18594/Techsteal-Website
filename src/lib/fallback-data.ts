@@ -21,7 +21,12 @@ export const fallbackThreads: ForumThread[] = [];
 
 export const fallbackGallery: GalleryItem[] = [];
 
-export const fallbackTimeline: TimelineEvent[] = [];
+export const fallbackTimeline: TimelineEvent[] = [
+  { date: "Ended", title: "Season 1", era: "Season 1", major: true, description: "This season has now passed." },
+  { date: "Ended", title: "Season 2", era: "Season 2", major: true, description: "This season has now passed." },
+  { date: "Ended", title: "Season 3", era: "Season 3", major: true, description: "This season has now passed." },
+  { date: "Ended", title: "Season 4", era: "Season 4", major: true, description: "This season has now passed." },
+];
 
 export const fallbackRules: RuleSection[] = [
   {

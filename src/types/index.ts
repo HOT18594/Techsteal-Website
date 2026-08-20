@@ -89,7 +89,7 @@ export interface RuleSection {
 export type UserRole = "admin" | "member";
 
 /** Fine-grained capabilities that admins can grant per-member. */
-export type Permission = "server_control" | "ai_access";
+export type Permission = "server_control" | "ai_access" | "gallery_post";
 
 /** A user account (created by Discord OAuth, extended by onboarding). */
 export interface Account {

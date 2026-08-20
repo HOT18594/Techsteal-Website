@@ -4,11 +4,13 @@ import { useCallback, useEffect, useState } from "react";
 import { Avatar } from "@/components/Avatar";
 import { useToast } from "@/components/Toast";
 import { SubPage } from "@/components/SubPage";
+import { minotarUrl } from "@/lib/forum-avatars";
 import type { Account, Permission, SessionUser } from "@/types";
 
 const PERMISSION_LABELS: Record<Permission, { label: string; icon: string }> = {
   server_control: { label: "Server Control", icon: "fa-server" },
   ai_access: { label: "AI Agent", icon: "fa-robot" },
+  gallery_post: { label: "Gallery Post", icon: "fa-image" },
 };
 
 export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
@@ -112,7 +114,10 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
                   <div className="flex items-center gap-3 flex-1 min-w-0">
                     <Avatar
                       name={account.username}
-                      src={account.avatarUrl}
+                      src={
+                        account.avatarUrl ??
+                        (account.minecraftUsername ? minotarUrl(account.minecraftUsername) : null)
+                      }
                       size="sm"
                       className="!w-10 !h-10 flex-shrink-0"
                     />

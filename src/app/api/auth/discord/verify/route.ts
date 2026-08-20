@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { findAccount, updateAccount } from "@/lib/accounts";
+import type { Permission } from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,15 @@ export async function GET() {
   const account = await findAccount(user.id).catch(() => null);
   if (account && account.discordVerified !== verified) {
     await updateAccount(user.id, { discordVerified: verified });
+  }
+
+  // Verified members may post to the gallery — grant the bit so it shows up
+  // (and can be toggled) in the Manage Panel. Re-granting is idempotent and
+  // harmless; the real gate reads `discordVerified` live, so leaving the
+  // server still revokes access even with the bit present.
+  if (account && verified && !account.permissions.includes("gallery_post")) {
+    const next: Permission[] = [...account.permissions, "gallery_post"];
+    await updateAccount(user.id, { permissions: next });
   }
 
   return NextResponse.json({ configured: true, verified });

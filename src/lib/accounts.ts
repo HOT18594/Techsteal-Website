@@ -165,6 +165,22 @@ export function hasPermission(account: Account | undefined, permission: Permissi
 }
 
 /**
+ * Can this account post to the gallery?
+ *
+ * Verified Discord members are always allowed (verification is the live
+ * source of truth), admins are always allowed, and an explicit `gallery_post`
+ * permission grants it too (for manual admin override). Reading
+ * `discordVerified` live means a member who leaves the server loses the
+ * ability immediately even if they were granted the bit earlier.
+ */
+export function canPostToGallery(account: Account | undefined): boolean {
+  if (!account) return false;
+  if (account.role === "admin") return true;
+  if (account.discordVerified === true) return true;
+  return account.permissions.includes("gallery_post");
+}
+
+/**
  * Admin check with the CURRENT database role, not the session cookie.
  *
  * The session JWT lives for 7 days, so `user.role` from the cookie goes

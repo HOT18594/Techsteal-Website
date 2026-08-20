@@ -260,7 +260,10 @@ export async function streamChatReply(
     /\/+$/,
     ""
   );
-  const model = process.env.AI_MODEL ?? "poolside/laguna-s-2.1:free";
+  // Primary + fallback so a rate-limited free model doesn't strand the reply.
+  const model = process.env.AI_MODEL ?? "google/gemma-4-26b-a4b-it:free";
+  const fallbackModel =
+    process.env.AI_FALLBACK_MODEL ?? "nvidia/nemotron-3-super-120b-a12b:free";
 
   if (!apiKey) return textStream(NOT_CONFIGURED(message));
 
@@ -296,18 +299,31 @@ export async function streamChatReply(
     `- Keep it short and answer directly.`,
   ].join("\n");
 
-  let res = await fetchCompletion(baseUrl, model, apiKey, system, userContent, signal);
-  if (res.status === 429) {
-    // Free models share upstream rate limits — one short retry, then a
-    // friendly streamed message instead of a hard failure.
-    await new Promise((r) => setTimeout(r, 2000));
-    if (signal?.aborted) return textStream("");
-    res = await fetchCompletion(baseUrl, model, apiKey, system, userContent, signal);
+  // Try a model, retrying once on 429 (free models share upstream rate
+  // limits). Returns null if the client aborted mid-retry — the caller then
+  // bails out quietly instead of streaming an error over a stopped chat.
+  const attempt = async (m: string): Promise<Response | null> => {
+    let r = await fetchCompletion(baseUrl, m, apiKey, system, userContent, signal);
+    if (r.status === 429) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      if (signal?.aborted) return null;
+      r = await fetchCompletion(baseUrl, m, apiKey, system, userContent, signal);
+    }
+    return r;
+  };
+
+  // Primary first, then the fallback: throttled free models fail often, so a
+  // second model (also free) usually saves the reply.
+  let res = await attempt(model);
+  if (res && (!res.ok || !res.body)) {
+    console.error("chatty: primary model failed", res.status);
+    res = await attempt(fallbackModel);
   }
 
+  if (!res) return textStream(""); // aborted — stream nothing
   if (!res.ok || !res.body) {
     const errBody = await res.text().catch(() => "");
-    console.error("chatty: openrouter status", res.status, errBody.slice(0, 300));
+    console.error("chatty: all models failed", res.status, errBody.slice(0, 300));
     return textStream(res.status === 429 ? RATE_LIMITED_MESSAGE : ERROR_MESSAGE);
   }
 

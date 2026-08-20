@@ -18,6 +18,8 @@ interface ChatMessage {
   role: "user" | "assistant";
   text: string;
   time: string;
+  /** Small diagnostics line (time-to-first-token · tokens/sec), AI replies only. */
+  stats?: string;
 }
 
 const SUGGESTIONS = [
@@ -32,6 +34,44 @@ const STORAGE_KEY = "techsteal-nova-chat-v1";
 function nowTime(): string {
   const d = new Date();
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/**
+ * Pick a short sequence of "thinking" lines for the 3-dot indicator, tuned
+ * to whatever the question is about. `dots` cycles through these while the
+ * first tokens are still on their way.
+ */
+function thinkingLinesFor(text: string): string[] {
+  const t = text.toLowerCase();
+  const lines: string[] = [];
+  if (/\brules?\b|hack|cheat|grief|raid|banned|ban\b/.test(t)) {
+    lines.push("Reviewing the server rules…");
+  }
+  if (/\bmember|staff|admin|who|player list|online\b/.test(t)) {
+    lines.push("Checking the member list…");
+  }
+  if (/\bjoin\b|address|ip\b|whitelist|how do i/.test(t)) {
+    lines.push("Looking up how to join…");
+  }
+  if (/\bversion|minecraft|java ?|update|mod\b/.test(t)) {
+    lines.push("Rooting through game knowledge…");
+  }
+  if (/\bstatus|up\b|down|offline|tps|online/.test(t)) {
+    lines.push("Querying live server status…");
+  }
+  if (/\bhistory|season|timeline|era\b/.test(t)) {
+    lines.push("Consulting server history…");
+  }
+  if (/\bgallery|build\b/.test(t)) {
+    lines.push("Flipping through the gallery…");
+  }
+  if (/\bforum|discuss|thread\b/.test(t)) {
+    lines.push("Skimming recent forum posts…");
+  }
+  // Always end with these fallbacks so the cycle stays recognizable.
+  lines.push("Searching the database…");
+  lines.push("Constructing answer…");
+  return lines;
 }
 
 function loadHistory(): ChatMessage[] | null {
@@ -69,6 +109,8 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
   const [dots, setDots] = useState(false); // 3-dot indicator while waiting for the first word
+  const [thinkLine, setThinkLine] = useState("");
+  const thinkLinesRef = useRef<string[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -109,6 +151,20 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
     }
   }, [messages, typing]);
 
+  // Cycle the "thinking" line while waiting for the first token.
+  useEffect(() => {
+    if (!dots) return;
+    const lines = thinkLinesRef.current;
+    if (lines.length === 0) return;
+    let i = 0;
+    setThinkLine(lines[0]);
+    const id = setInterval(() => {
+      i = (i + 1) % lines.length;
+      setThinkLine(lines[i]);
+    }, 1100);
+    return () => clearInterval(id);
+  }, [dots]);
+
   // Auto-ask a prefill question when navigated to with ?ask=... — only
   // after history has loaded, only if the chat is still the welcome state,
   // and only for members with AI access.
@@ -141,7 +197,13 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
       inputRef.current.style.height = "auto";
     }
     setTyping(true);
+    thinkLinesRef.current = thinkingLinesFor(text);
     setDots(true);
+
+    // Streaming diagnostics — measured from the moment the request fires.
+    const t0 = Date.now();
+    let firstTokenAt: number | null = null;
+    let chars = 0;
 
     // Appends/updates the streaming assistant bubble.
     let assistantId: number | null = null;
@@ -189,14 +251,32 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
           controller.abort(); // stopped or superseded
           return;
         }
-        acc += decoder.decode(value, { stream: true });
+        const piece = decoder.decode(value, { stream: true });
+        acc += piece;
+        chars += piece.length;
         if (acc.trim()) {
+          if (firstTokenAt === null) firstTokenAt = Date.now();
           setDots(false); // first word arrived — drop the 3-dot indicator
           updateAssistant(acc);
         }
       }
       if (gen !== genRef.current) return;
       updateAssistant(acc.trim() || "Hmm, I didn't quite catch that — could you rephrase?");
+
+      // Done streaming — stamp diagnostics onto the reply.
+      if (firstTokenAt !== null) {
+        const ttftSec = (firstTokenAt - t0) / 1000;
+        const genDuration = (Date.now() - firstTokenAt) / 1000;
+        const estTokens = chars / 4; // ~4 chars per token for English text
+        const tps = genDuration > 0 ? estTokens / genDuration : 0;
+        if (assistantId !== null) {
+          const stats =
+            `⚡ ${tps.toFixed(1)} tok/s · first token ${ttftSec.toFixed(1)}s`;
+          setMessages((m) =>
+            m.map((msg) => (msg.id === assistantId ? { ...msg, stats } : msg))
+          );
+        }
+      }
     } catch {
       if (gen !== genRef.current) return; // stopped — keep partial text
       updateAssistant("That's a good question for the server team. Check the Forum or Rules.");
@@ -333,6 +413,11 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
                           {renderText(m.text)}
                         </div>
                       </div>
+                      {m.stats ? (
+                        <div className="text-[10px] text-[var(--muted-2)] mt-0.5 px-1">
+                          {m.stats}
+                        </div>
+                      ) : null}
                       <div className="flex items-center gap-3 mt-1.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <span className="text-[11px] text-[var(--muted-2)]">{m.time}</span>
                         <button
@@ -375,13 +460,14 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
               </div>
             ))}
 
-            {/* 3-dot typing indicator — the only "thinking" shown */}
+            {/* Thinking indicator — animated dots + rotating line */}
             {dots ? (
               <div className="flex gap-3">
                 <div className="w-8 h-8 mt-1 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white text-xs flex-shrink-0 rounded-lg">
                   <i className="fa-solid fa-robot" />
                 </div>
-                <div className="chat-bubble-ai px-4 py-3 flex items-center gap-1.5">
+                <div className="chat-bubble-ai px-4 py-3 flex items-center gap-2">
+                  <span className="text-[12px] text-[var(--fg-2)] italic">{thinkLine}</span>
                   <span className="typing-dot" />
                   <span className="typing-dot" />
                   <span className="typing-dot" />

@@ -971,19 +971,18 @@ body.scrolled .nav-actions {
 
 /* ---------- Forum ---------- */
 .thread-row {
-  border-bottom: 1px solid var(--border);
+  border: 1px solid rgba(110, 168, 255, 0.24);
   border-radius: 10px;
-  transition: all 0.2s;
+  background: rgba(255, 255, 255, 0.014);
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
 }
 .thread-row:hover {
-  background: linear-gradient(90deg, rgba(63, 124, 255, 0.06), transparent);
-  border-color: var(--border-strong);
+  border-color: rgba(110, 168, 255, 0.42);
+  background: rgba(255, 255, 255, 0.035);
+  box-shadow: 0 0 0 1px rgba(110, 168, 255, 0.18);
 }
 .thread-row:hover .thread-title {
   color: var(--accent);
-}
-.thread-row:last-child {
-  border-bottom: none;
 }
 .tag {
   display: inline-block;
