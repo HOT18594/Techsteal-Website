@@ -867,31 +867,55 @@ body.scrolled .nav-actions {
   align-items: center;
   gap: 10px;
   font-family: var(--font-pixel), monospace;
-  font-size: 1.05rem;
-  letter-spacing: 0.22em;
+  font-size: 0.95rem;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--accent-bright);
-  margin-bottom: 1.75rem;
-  padding: 9px 18px;
-  border-radius: 999px;
-  background: rgba(5, 7, 15, 0.6);
+  margin-bottom: 2.75rem; /* clear air between the address chip and the title */
+  padding: 10px 14px 10px 16px;
+  border-radius: 10px; /* blocky, not a bubble */
+  background: rgba(5, 7, 15, 0.62);
   border: 1px solid var(--border-strong);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 8px 32px -10px rgba(0, 0, 0, 0.7), 0 0 24px -10px var(--accent-glow);
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
+  box-shadow: 0 8px 32px -12px rgba(0, 0, 0, 0.7);
+  transition: border-color 0.2s, box-shadow 0.2s, color 0.2s;
+  white-space: nowrap;
+  max-width: calc(100vw - 3rem);
+}
+.hero-kicker:hover {
+  border-color: rgba(63, 124, 255, 0.55);
+  color: #fff;
+  box-shadow: 0 8px 32px -12px rgba(0, 0, 0, 0.7), 0 0 26px -12px var(--accent-glow);
+}
+.hero-kicker:active {
+  transform: translateY(1px);
+}
+@media (max-width: 480px) {
+  .hero-kicker {
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
+    padding: 8px 10px 8px 12px;
+    gap: 8px;
+    margin-bottom: 2.25rem;
+  }
+  .hero-kicker-copy {
+    width: 22px;
+    height: 22px;
+  }
 }
 .hero-kicker::before {
   content: "\f233"; /* fa-server */
   font-family: "Font Awesome 6 Free";
   font-weight: 900;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   color: var(--accent);
   text-shadow: 0 0 14px var(--accent-glow);
-  /* Flex alignment on the pill centers this vertically with the text —
+  /* Flex alignment on the chip centers this vertically with the text —
      no manual translate needed once the text has a controlled line-height. */
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
 }
 /* The address text: constrain the pixel font's tall line box to line-height 1
    so the glyph's visible center matches the flex axis, letting the pill's
@@ -1537,13 +1561,27 @@ button:focus-visible {
   }
 }
 
-/* Copy icon inside the IP kicker */
+/* Copy icon inside the IP chip — a compact square button matching the
+   site's bordered button language, not a floating glyph. */
 .hero-kicker-copy {
-  margin-left: 0.6rem;
-  font-size: 0.85rem;
-  opacity: 0.75;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  margin-left: 0.4rem;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+  flex-shrink: 0;
+}
+.hero-kicker:hover .hero-kicker-copy {
+  color: var(--accent-bright);
+  border-color: rgba(63, 124, 255, 0.5);
+  background: var(--accent-dim);
 }
 
 

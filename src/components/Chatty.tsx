@@ -90,10 +90,15 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
   const { show } = useToast();
   const { user, loading: sessionLoading } = useSession();
   const ai = siteConfig.assistant;
-  // Chatty Jr. is a member perk: sign in with Discord and hold the
-  // `ai_access` permission (admins always have it).
+  // Chatty Jr. is a perk of verifying in the Discord server: verified
+  // members can chat, plus anyone with an explicit `ai_access` grant, and
+  // admins always can. The server re-checks on every message; this gate
+  // just decides which UI to show.
   const hasAccess =
-    user !== null && (user.role === "admin" || user.permissions.includes("ai_access"));
+    user !== null &&
+    (user.role === "admin" ||
+      user.discordVerified === true ||
+      user.permissions.includes("ai_access"));
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -359,7 +364,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
         </button>
       </div>
 
-      {/* Chat card — member perk: sign-in + ai_access required */}
+      {/* Chat card — member perk: signed in Discord + verified */}
       {sessionLoading ? (
         <div className="card p-8 text-center min-h-[26rem] flex items-center justify-center">
           <p className="text-sm text-[var(--muted)]">Checking session…</p>
@@ -383,11 +388,15 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
           <div className="w-14 h-14 rounded-2xl bg-[var(--accent-dim)] border border-[var(--border-strong)] text-[var(--accent)] flex items-center justify-center text-2xl mb-4">
             <i className="fa-solid fa-lock" />
           </div>
-          <h2 className="font-display text-xl font-bold mb-2">No AI access yet</h2>
+          <h2 className="font-display text-xl font-bold mb-2">Not verified yet</h2>
           <p className="text-sm text-[var(--muted)] max-w-sm">
-            Your account doesn&apos;t have the AI permission yet — ask an admin to grant it in the
-            Manage Panel.
+            Verify you&apos;re in the official Discord server to unlock the AI assistant,
+            Gallery posting, and Server Control.
           </p>
+          <Link href="/settings" className="btn-primary justify-center mt-6">
+            <i className="fa-solid fa-user-check" />
+            Verify in Settings
+          </Link>
         </div>
       ) : (
       <div

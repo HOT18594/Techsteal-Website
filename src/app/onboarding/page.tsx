@@ -236,9 +236,9 @@ function OnboardingContent() {
             </div>
             <h2 className="font-display text-2xl font-bold mb-2">Are you in the official server?</h2>
             <p className="text-sm text-[var(--muted)] mb-6">
-              We can check if you&apos;re a member of the official {siteConfig.name} Discord
-              server. Not in it yet — or don&apos;t care? Skip; the status just shows
-              &quot;unverified&quot; on your profile.
+              Verifying unlocks all member perks — the AI assistant, Gallery posting, and
+              Server Control. We can check right now if you&apos;re in the official{" "}
+              {siteConfig.name} Discord server. Not in it yet? Join first, then verify.
             </p>
 
             <div

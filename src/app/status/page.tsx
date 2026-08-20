@@ -7,6 +7,8 @@ import type { ServerStatus } from "@/types";
 import { useToast } from "@/components/Toast";
 import { SubPage } from "@/components/SubPage";
 import { useApi } from "@/lib/use-api";
+import { useSession } from "@/lib/use-session";
+import Link from "next/link";
 
 function useClock() {
   const [time, setTime] = useState("--:--");
@@ -27,10 +29,66 @@ function useClock() {
 export default function StatusPage() {
   const time = useClock();
   const { show } = useToast();
+  const { user, loading: sessionLoading } = useSession();
   const { data: STATUS, refetch, loading: statusLoading } = useApi<ServerStatus>(
     "/api/status",
     fallbackStatus
   );
+
+  // Server control capability (start/stop via Exaroton).
+  const [control, setControl] = useState<{
+    configured: boolean;
+    allowed: boolean;
+  } | null>(null);
+  const [controlBusy, setControlBusy] = useState<"start" | "stop" | null>(null);
+
+  useEffect(() => {
+    if (!user && !sessionLoading) {
+      setControl(null);
+      return;
+    }
+    let cancelled = false;
+    fetch("/api/server/control")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { configured?: boolean; allowed?: boolean } | null) => {
+        if (!cancelled && d) setControl({ configured: !!d.configured, allowed: !!d.allowed });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [user, sessionLoading]);
+
+  const runControl = async (action: "start" | "stop") => {
+    if (controlBusy) return;
+    if (action === "stop" && !window.confirm("Stop the server? Players will be kicked off.")) {
+      return;
+    }
+    setControlBusy(action);
+    try {
+      const res = await fetch("/api/server/control", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        show("Couldn't " + (action === "start" ? "start" : "stop"), data.error ?? "Try again soon.");
+        return;
+      }
+      show(
+        action === "start" ? "Server starting" : "Server stopping",
+        action === "start"
+          ? "Kicking it up — give it a minute to come online."
+          : "Shutting down — players have been kicked."
+      );
+      void refetch();
+    } catch {
+      show("Couldn't " + (action === "start" ? "start" : "stop"), "Something went wrong.");
+    } finally {
+      setControlBusy(null);
+    }
+  };
 
   // Auto-refresh the live status every 60s so the page stays current.
   useEffect(() => {
@@ -227,6 +285,70 @@ export default function StatusPage() {
             </ol>
           </div>
         </div>
+
+        {/* Server Control — start/stop the Minecraft server (verified members) */}
+        {control && control.configured && (
+          <div className="card p-6 mt-10">
+            <h2 className="font-display text-xl font-bold mb-1 flex items-center gap-2">
+              <i className="fa-solid fa-power-off text-[var(--accent)]" />
+              Server Control
+            </h2>
+            <p className="text-sm text-[var(--muted)] mb-5">
+              Start or stop the Minecraft server. Requires Discord verification.
+            </p>
+            {control.allowed ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  className="btn-primary"
+                  onClick={() => void runControl("start")}
+                  disabled={controlBusy !== null || online}
+                >
+                  {controlBusy === "start" ? (
+                    <i className="fa-solid fa-spinner fa-spin" />
+                  ) : (
+                    <i className="fa-solid fa-play" />
+                  )}
+                  Start Server
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={() => void runControl("stop")}
+                  disabled={controlBusy !== null || !online}
+                >
+                  {controlBusy === "stop" ? (
+                    <i className="fa-solid fa-spinner fa-spin" />
+                  ) : (
+                    <i className="fa-solid fa-stop" />
+                  )}
+                  Stop Server
+                </button>
+                <span className="text-xs text-[var(--muted-2)]">
+                  {online ? "Waiting for the status check to settle…" : "The server is offline right now."}
+                </span>
+              </div>
+            ) : user ? (
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <p className="text-sm text-[var(--muted)]">
+                  Verify you&apos;re in the official Discord server to control the server.
+                </p>
+                <Link href="/settings" className="btn-primary sm:ml-auto shrink-0 justify-center">
+                  <i className="fa-solid fa-user-check" />
+                  Verify in Settings
+                </Link>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <p className="text-sm text-[var(--muted)]">
+                  Sign in with Discord to control the server.
+                </p>
+                <Link href="/login" className="btn-primary sm:ml-auto shrink-0 justify-center">
+                  <i className="fa-brands fa-discord" />
+                  Log in with Discord
+                </Link>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </SubPage>
   );

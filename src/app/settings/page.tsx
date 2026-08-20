@@ -274,8 +274,8 @@ function SettingsContent() {
             Discord
           </h2>
           <p className="text-sm text-[var(--muted)] mb-5">
-            Verify you&apos;re a member of the official server — the badge shows on
-            your profile.
+            Verify you&apos;re a member of the official server — it unlocks AI access,
+            Gallery posting, and Server Control, and shows the badge on your profile.
           </p>
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
             <div

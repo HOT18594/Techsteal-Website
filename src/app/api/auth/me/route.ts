@@ -24,6 +24,7 @@ export async function GET() {
       role: account.role,
       permissions: account.permissions,
       onboarded: account.onboarded ?? false,
+      discordVerified: account.discordVerified ?? false,
     },
   });
 }

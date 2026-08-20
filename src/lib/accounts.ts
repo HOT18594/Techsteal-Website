@@ -148,12 +148,15 @@ export async function findOrCreateDiscordAccount(input: {
     }
     return existing;
   }
+  // New members start with NO permissions — everything is earned:
+  // verifying they're in the official Discord server unlocks AI, Gallery
+  // posting, and Server Control, and the admin code promotes to admin.
   return addAccount({
     id,
     username: input.username,
     avatarUrl: input.avatarUrl ?? undefined,
     role: "member",
-    permissions: ["ai_access"],
+    permissions: [],
   });
 }
 
@@ -162,6 +165,32 @@ export function hasPermission(account: Account | undefined, permission: Permissi
   if (!account) return false;
   if (account.role === "admin") return true;
   return account.permissions.includes(permission);
+}
+
+/**
+ * Permissions a member earns by verifying they're in the official Discord
+ * server. Verification is the live source of truth for these three
+ * capabilities — see each `can*` helper below.
+ */
+export const VERIFIED_PERMISSIONS: Permission[] = [
+  "ai_access",
+  "gallery_post",
+  "server_control",
+];
+
+/**
+ * Can this account chat with the AI assistant?
+ *
+ * Admins always can. Otherwise: verified Discord members can, and an
+ * explicit `ai_access` permission grants it too (admin override). Reading
+ * `discordVerified` live means a member who leaves the server loses AI
+ * access immediately even if the bit was granted earlier.
+ */
+export function canUseAiAssistant(account: Account | undefined): boolean {
+  if (!account) return false;
+  if (account.role === "admin") return true;
+  if (account.discordVerified === true) return true;
+  return account.permissions.includes("ai_access");
 }
 
 /**
@@ -178,6 +207,19 @@ export function canPostToGallery(account: Account | undefined): boolean {
   if (account.role === "admin") return true;
   if (account.discordVerified === true) return true;
   return account.permissions.includes("gallery_post");
+}
+
+/**
+ * Can this account start/stop the Minecraft server?
+ *
+ * Same rule as AI + gallery: admins always, verified members always,
+ * or an explicit `server_control` grant (admin override).
+ */
+export function canControlServer(account: Account | undefined): boolean {
+  if (!account) return false;
+  if (account.role === "admin") return true;
+  if (account.discordVerified === true) return true;
+  return account.permissions.includes("server_control");
 }
 
 /**

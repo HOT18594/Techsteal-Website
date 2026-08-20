@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { findAccount, updateAccount } from "@/lib/accounts";
+import { findAccount, updateAccount, VERIFIED_PERMISSIONS } from "@/lib/accounts";
 import type { Permission } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -24,30 +24,38 @@ export async function GET() {
 
   const discordId = user.id.replace(/^discord:/, "");
   let verified = false;
+  let checked = false; // true only when Discord actually answered
   try {
     const res = await fetch(
       `https://discord.com/api/guilds/${encodeURIComponent(guildId)}/members/${encodeURIComponent(discordId)}`,
       { headers: { Authorization: `Bot ${botToken}` } }
     );
+    checked = true;
     verified = res.ok;
   } catch {
-    verified = false;
+    checked = false; // Discord outage — leave stored state untouched
   }
 
-  // Persist the badge only when the server actually ran the membership
-  // check (so a flaky Discord outage doesn't wipe an existing badge).
+  // Verified membership is the live permission source: verified members
+  // earn AI, Gallery posting, and Server Control; anyone no longer in the
+  // server loses them. (Admins bypass via role.) Only mutate when Discord
+  // actually answered, so a flaky outage never wipes an existing badge.
   const account = await findAccount(user.id).catch(() => null);
-  if (account && account.discordVerified !== verified) {
-    await updateAccount(user.id, { discordVerified: verified });
-  }
-
-  // Verified members may post to the gallery — grant the bit so it shows up
-  // (and can be toggled) in the Manage Panel. Re-granting is idempotent and
-  // harmless; the real gate reads `discordVerified` live, so leaving the
-  // server still revokes access even with the bit present.
-  if (account && verified && !account.permissions.includes("gallery_post")) {
-    const next: Permission[] = [...account.permissions, "gallery_post"];
-    await updateAccount(user.id, { permissions: next });
+  if (account && checked) {
+    if (verified) {
+      // Idempotent: badge true + every verified perk present.
+      const next: Permission[] = [
+        ...new Set([...account.permissions, ...VERIFIED_PERMISSIONS]),
+      ];
+      await updateAccount(user.id, { discordVerified: true, permissions: next });
+    } else {
+      // Discord answered "not a member" → wipe the badge and the perks
+      // they earned from it.
+      const next: Permission[] = account.permissions.filter(
+        (p) => !VERIFIED_PERMISSIONS.includes(p)
+      );
+      await updateAccount(user.id, { discordVerified: false, permissions: next });
+    }
   }
 
   return NextResponse.json({ configured: true, verified });

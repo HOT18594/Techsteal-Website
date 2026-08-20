@@ -119,6 +119,8 @@ export interface SessionUser {
   avatarUrl?: string;
   /** True once the user finished onboarding. Re-read from the DB by /api/auth/me. */
   onboarded?: boolean;
+  /** True once the user verified membership in the Discord server. Re-read from the DB by /api/auth/me. */
+  discordVerified?: boolean;
 }
 
 export interface ServerStatus {
