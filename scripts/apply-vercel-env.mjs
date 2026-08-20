@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 /**
- * Push local env vars to the Vercel project (encrypted, production+preview+dev).
+ * Push env vars to the Vercel project (encrypted, production+preview+dev).
  *
- * It never embeds secrets: the token comes from the VERCEL_TOKEN env var or
- * the `.vercel-token` file, and the variables come from `.env.local` plus
- * `.env.vercel` (the latter wins on conflicts and can add keys that don't
- * belong in the local dev file).
+ * Source of truth: the `.env.vercel` file at the repo root. Only the keys
+ * listed there are pushed — NOT `.env.local`, so dev-only values
+ * (e.g. the localhost NEXT_PUBLIC_SITE_URL, or the dev SESSION_SECRET
+ * fallback) can never overwrite the real production ones.
+ *
+ * Secrets never live in this script: the token comes from the VERCEL_TOKEN
+ * env var or the `.vercel-token` file.
  *
  * Usage:
  *   node scripts/apply-vercel-env.mjs
@@ -40,7 +43,7 @@ const token = process.env.VERCEL_TOKEN?.trim() ||
 const project = JSON.parse(readFileSync(join(root, ".vercel", "project.json"), "utf8"));
 const projectId = project.projectId;
 
-const merged = { ...loadEnv(".env.local"), ...loadEnv(".env.vercel") };
+const merged = loadEnv(".env.vercel"); // explicit list — see header comment
 
 if (!token) { console.error("✗ No token: set VERCEL_TOKEN or create .vercel-token"); process.exit(1); }
 if (!projectId) { console.error("✗ No projectId in .vercel/project.json"); process.exit(1); }
