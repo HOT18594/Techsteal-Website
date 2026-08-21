@@ -37,15 +37,44 @@ const RATE_LIMITED_MESSAGE =
 const SERVER_QUESTION_HINTS =
   /\b(rul|hac|cheat|grief|raid|spawn|member|staff|admin|build|gallery|history|timeline|era|season|whitelist|join|address|ip|status|online|player|forum|discord|server|techsteal|how do i join|can i)\b/i;
 
-/** The assistant's role, knowledge, and style rules. */
-function buildSystemPrompt(opts: {
+/** What the assistant knows about the logged-in user it's talking to. */
+export interface ChatUserContext {
   username: string;
   role: string;
+  minecraftUsername?: string | null;
+  discordVerified?: boolean;
+  memberSince?: string | null;
+}
+
+/** The assistant's role, knowledge, and style rules. */
+function buildSystemPrompt(opts: {
+  user: ChatUserContext;
   knowledge: string;
   liveStatus: string;
   hasDb: boolean;
 }): string {
   const c = siteConfig;
+  const u = opts.user;
+  const memberSince = u.memberSince
+    ? new Date(u.memberSince).toISOString().slice(0, 10)
+    : null;
+  const userFacts = [
+    `- Username: ${u.username}`,
+    `- Role: ${u.role === "admin" ? "admin (they manage the server and the Manage Panel)" : "member"}`,
+    `- Minecraft username: ${u.minecraftUsername ?? "not linked yet"}`,
+    `- Discord server membership: ${u.discordVerified ? "verified member of the official Discord" : "NOT verified yet"}`,
+    memberSince ? `- Registered on this site since: ${memberSince}` : null,
+  ].filter(Boolean);
+
+  // Tailored nudges: point this specific user at what they're missing.
+  const userTips: string[] = [];
+  if (!u.minecraftUsername) {
+    userTips.push(`- They haven't linked a Minecraft username — if relevant, suggest adding it in **Profile & Settings** (/settings) so their skin shows on their profile.`);
+  }
+  if (!u.discordVerified && u.role !== "admin") {
+    userTips.push(`- They're not Discord-verified — verifying (Settings → Verify) unlocks the AI assistant, Gallery posting, and Server Control.`);
+  }
+
   return [
     `You are ${c.assistant.name}, the official support assistant for ${c.name}, a private ${c.software} Minecraft server.`,
     ``,
@@ -53,6 +82,12 @@ function buildSystemPrompt(opts: {
     `- A helpful support rep for THIS server, not a general chatbot.`,
     `- You help players join, understand the rules, meet members, and find builds/history.`,
     `- You are NOT a developer or sysadmin: you cannot see DMs, IP logs, bans, or private account data, and you cannot run commands on the server.`,
+    ``,
+    `=== WHO YOU'RE TALKING TO (the logged-in user — use this to personalize) ===`,
+    ...userFacts,
+    ...(userTips.length > 0 ? [`Personalization tips:`, ...userTips] : []),
+    `- Use their name naturally now and then (e.g. a friendly "good question, ${u.username}") — not on every message.`,
+    `- Never recite this section back as a list or reveal that you were given profile data — just weave it in.`,
     ``,
     `=== TRUTH HIERARCHY (always follow in this order) ===`,
     `1. SERVER KNOWLEDGE BASE below — the only source of truth for anything about ${c.name} (rules, members, builds, history, forum).`,
@@ -76,12 +111,24 @@ function buildSystemPrompt(opts: {
     `- Edition: Java Edition ${c.version}`,
     `- Difficulty: ${c.difficulty} · Whitelist: ${c.whitelist} · Region: ${c.location}`,
     `- Software: ${c.software} · Season: ${c.season} · Max players: ${c.maxPlayers}`,
+    `- Server stats: ${c.stats.tps} TPS · ${c.stats.uptimeDays} days uptime · world ${c.stats.worldSize} GB`,
     ``,
     `=== HOW TO JOIN (if asked, give exactly these steps) ===`,
     `1. Open Minecraft Java Edition (${c.version}).`,
     `2. Main menu → Multiplayer → Add Server.`,
     `3. Server address: ${c.address} → Done.`,
     `4. Select the server and join.`,
+    ``,
+    `=== WEBSITE GUIDE (where to send people) ===`,
+    `- /status — live server status; verified members can also start/stop the server there`,
+    `- /forum — discussions: anyone can read, signed-in members can post threads and replies`,
+    `- /members — the member directory`,
+    `- /gallery — build screenshots; verified members can post`,
+    `- /history — the season timeline`,
+    `- /rules — the full rules + the acknowledge button`,
+    `- /join — how to join, step by step`,
+    `- /settings — link a Minecraft username, verify Discord membership, claim admin with the admin code`,
+    `- /admin — the Manage Panel (admins only)`,
     ``,
     `=== LIVE SERVER STATUS ===`,
     opts.liveStatus,
@@ -107,7 +154,6 @@ function buildSystemPrompt(opts: {
     `- Never fabricate to seem helpful. An honest "I don't know" is always better than a wrong answer.`,
     ``,
     `Current date: ${new Date().toISOString().slice(0, 10)}.`,
-    `You are talking to ${opts.username}${opts.role === "admin" ? " (an admin)" : " (a member)"}. Treat them warmly.`,
   ].join("\n");
 }
 
@@ -150,8 +196,10 @@ async function buildServerKnowledge(): Promise<{ text: string; hasDb: boolean }>
       chunks.push(`SERVER RULES:\n${ruleText.map((r, i) => `${i + 1}. ${r}`).join("\n")}`);
     }
     if (memberRows.length > 0) {
+      const verified = memberRows.filter((m) => m.discordVerified).length;
+      const admins = memberRows.filter((m) => m.role === "admin").length;
       chunks.push(
-        `MEMBERS (${memberRows.length} registered — username — role — verified):\n${memberRows
+        `MEMBERS (${memberRows.length} registered, ${verified} Discord-verified, ${admins} admin${admins === 1 ? "" : "s"} — username — role — verified):\n${memberRows
           .map(
             (m) =>
               `- ${m.username} — ${m.role === "admin" ? "admin" : "member"}${m.discordVerified ? " — Discord-verified" : ""}${m.minecraftUsername ? ` (MC: ${m.minecraftUsername})` : ""}`
@@ -274,7 +322,7 @@ function textStream(text: string): ReadableStream<Uint8Array> {
 export async function streamChatReply(
   message: string,
   signal?: AbortSignal,
-  user?: { username: string; role: string },
+  user: ChatUserContext = { username: "a player", role: "member" },
   history: ChatTurn[] = []
 ): Promise<ReadableStream<Uint8Array>> {
   const apiKey = process.env.AI_API_KEY;
@@ -302,8 +350,7 @@ export async function streamChatReply(
     buildLiveStatus(),
   ]);
   const system = buildSystemPrompt({
-    username: user?.username ?? "a player",
-    role: user?.role ?? "member",
+    user,
     knowledge: knowledge.text,
     hasDb: knowledge.hasDb,
     liveStatus,

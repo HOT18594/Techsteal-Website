@@ -1,15 +1,46 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <linearGradient id="cube" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#6ea8ff"/>
-      <stop offset="1" stop-color="#2f63e8"/>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0c1428"/>
+      <stop offset="1" stop-color="#05070f"/>
     </linearGradient>
+    <linearGradient id="top" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8db8ff"/>
+      <stop offset="1" stop-color="#5e97f7"/>
+    </linearGradient>
+    <linearGradient id="left" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3f7cff"/>
+      <stop offset="1" stop-color="#2b5fd6"/>
+    </linearGradient>
+    <linearGradient id="right" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2450bd"/>
+      <stop offset="1" stop-color="#1a3c99"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.42" r="0.55">
+      <stop offset="0" stop-color="#3f7cff" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#3f7cff" stop-opacity="0"/>
+    </radialGradient>
   </defs>
-  <!-- Dark rounded tile (site background) -->
-  <rect width="512" height="512" rx="104" fill="#0a1120"/>
-  <!-- fa-cube solid path -->
-  <path
-    d="M239.1 6.3c11.9-8.4 27.1-8.4 39 0l188.4 132.8c11.4 8 17.5 21.5 16.4 35.1l-13.3 211.6c-1 15.8-9.4 30.1-23 37.3L281.5 498.1c-12 7.9-27.3 7.9-39.2 0L86.4 424.3c-13.6-7.2-22-21.5-23-37.3L50.2 175.4c-1.2-13.6 4.9-27 16.4-35.1L239.1 6.3z"
-    fill="url(#cube)"
-  />
+
+  <!-- Dark rounded tile background -->
+  <rect width="512" height="512" rx="112" fill="url(#tile)"/>
+  <rect width="512" height="512" rx="112" fill="url(#glow)"/>
+  <!-- Thin accent rim -->
+  <rect x="6" y="6" width="500" height="500" rx="108" fill="none" stroke="#3f7cff" stroke-opacity="0.35" stroke-width="8"/>
+
+  <!-- Isometric cube: top, left, right faces -->
+  <g>
+    <path d="M256 108 L398 192 L256 276 L114 192 Z" fill="url(#top)"/>
+    <path d="M114 192 L256 276 L256 428 L114 344 Z" fill="url(#left)"/>
+    <path d="M256 276 L398 192 L398 344 L256 428 Z" fill="url(#right)"/>
+
+    <!-- Pixel-style notches on the top face (Minecraft texture feel) -->
+    <path d="M256 136 L314 170 L270 196 L212 162 Z" fill="#ffffff" fill-opacity="0.22"/>
+    <path d="M330 206 L358 222 L322 243 L294 227 Z" fill="#0a1120" fill-opacity="0.18"/>
+
+    <!-- Edge highlights -->
+    <path d="M256 108 L398 192 L256 276 L114 192 Z" fill="none" stroke="#bcd6ff" stroke-opacity="0.55" stroke-width="6" stroke-linejoin="round"/>
+    <path d="M114 192 L256 276 L256 428" fill="none" stroke="#8db8ff" stroke-opacity="0.3" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M256 276 L398 192" fill="none" stroke="#0a1120" stroke-opacity="0.35" stroke-width="6" stroke-linejoin="round"/>
+  </g>
 </svg>

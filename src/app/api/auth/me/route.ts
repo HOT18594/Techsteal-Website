@@ -27,6 +27,7 @@ export async function GET() {
       permissions: account.permissions,
       onboarded: account.onboarded ?? false,
       discordVerified: account.discordVerified ?? false,
+      minecraftUsername: account.minecraftUsername ?? null,
     },
   });
 }

@@ -123,6 +123,8 @@ export interface SessionUser {
   onboarded?: boolean;
   /** True once the user verified membership in the Discord server. Re-read from the DB by /api/auth/me. */
   discordVerified?: boolean;
+  /** Linked Minecraft username, re-read from the DB by /api/auth/me. */
+  minecraftUsername?: string | null;
 }
 
 export interface ServerStatus {

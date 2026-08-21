@@ -8,6 +8,7 @@ import { useToast } from "@/components/Toast";
 import { SubPage } from "@/components/SubPage";
 import { useSession } from "@/lib/use-session";
 import { timeAgo } from "@/lib/time";
+import { categoryClass } from "@/lib/forum-categories";
 import type { ForumReply, ForumThread } from "@/types";
 
 /** Pinned comments first, then oldest. */
@@ -215,9 +216,15 @@ export default function ThreadPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     {thread.pinned ? (
-                      <i className="fa-solid fa-thumbtack text-[var(--accent)] text-xs" />
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[var(--accent)] border border-[var(--accent)] rounded px-1.5 py-0.5">
+                        <i className="fa-solid fa-thumbtack" /> Pinned
+                      </span>
                     ) : null}
-                    <span className={`tag ${thread.tagClass}`}>{thread.category}</span>
+                    <span
+                      className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded border ${categoryClass(thread.category)}`}
+                    >
+                      {thread.category}
+                    </span>
                   </div>
                   <h1 className="font-display text-2xl sm:text-3xl font-bold leading-tight">
                     {thread.title}
@@ -263,6 +270,11 @@ export default function ThreadPage() {
                               <span className="text-sm font-semibold text-[var(--fg)]">
                                 {r.author}
                               </span>
+                              {thread.authorId && r.authorId === thread.authorId ? (
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-[var(--accent-bright)] bg-[var(--accent)]/15 border border-[var(--accent)]/30 rounded px-1.5 py-0.5">
+                                  OP
+                                </span>
+                              ) : null}
                               <span className="text-xs text-[var(--muted-2)]">
                                 {timeAgo(r.createdAt)}
                               </span>
@@ -338,11 +350,22 @@ export default function ThreadPage() {
                     placeholder="Write a reply…"
                     value={replyText}
                     onChange={(e) => setReplyText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                        e.preventDefault();
+                        void submitReply();
+                      }
+                    }}
                     maxLength={4000}
                   />
-                  <div className="flex items-center justify-between mt-3">
+                  <div className="flex items-center justify-between mt-3 gap-3 flex-wrap">
                     <span className="text-xs text-[var(--muted)]">
                       Replying as <span className="text-[var(--fg-2)]">{user.username}</span>
+                      {" · "}
+                      <kbd className="inline-flex items-center gap-0.5 text-[10px] text-[var(--muted-2)] border border-[var(--border)] rounded px-1 py-0.5">
+                        Ctrl+Enter
+                      </kbd>{" "}
+                      to post
                     </span>
                     <button
                       className="btn-primary py-2.5! px-5! text-xs!"

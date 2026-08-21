@@ -29,12 +29,12 @@ const grotesk = Space_Grotesk({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.techsteal.space"),
   title: {
-    default: `${siteConfig.name} — Private Minecraft Server`,
-    template: `%s · ${siteConfig.name}`,
+    default: "Techsteal",
+    template: "%s · Techsteal",
   },
   description: `Official website for the ${siteConfig.name} private Minecraft server — status, forum, members, gallery, and rules.`,
   openGraph: {
-    title: `${siteConfig.name} — Private Minecraft Server`,
+    title: "Techsteal",
     description: `Status, forum, members, gallery, and rules for the ${siteConfig.name} Minecraft server.`,
     type: "website",
     images: ["/techsteal-hero.jpeg"],

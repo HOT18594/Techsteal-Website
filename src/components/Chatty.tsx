@@ -157,6 +157,23 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
     }
   }, [messages, typing]);
 
+  // Personalize the welcome bubble once we know who's logged in — only
+  // while the chat is still in its fresh (welcome-only) state.
+  useEffect(() => {
+    if (!hydrated || !user) return;
+    setMessages((m) => {
+      if (m.length !== 1 || m[0]?.id !== 0) return m;
+      return [
+        {
+          ...m[0],
+          text: user.minecraftUsername
+            ? `Hey ${user.username} — I'm ${ai.name}, ${siteConfig.name}'s assistant. Ask me about the server, rules, members, or how to join.`
+            : `Hey ${user.username} — I'm ${ai.name}, ${siteConfig.name}'s assistant. Ask me anything about the server — and when you get a chance, link your Minecraft username in Settings so your skin shows up around the site.`,
+        },
+      ];
+    });
+  }, [hydrated, user, ai.name]);
+
   // Cycle the "thinking" line while waiting for the first token.
   useEffect(() => {
     if (!dots) return;

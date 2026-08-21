@@ -1713,3 +1713,8 @@ html.custom-cursor.cursor-on-text .cursor-ring {
     animation-delay: 0s !important;
   }
 }
+/* Pinned thread cards — accent left edge + faint glow so they read as float-first */
+.thread-row-pinned .thread-row {
+  border-left: 3px solid var(--accent);
+  box-shadow: -6px 0 18px -10px var(--accent-glow);
+}

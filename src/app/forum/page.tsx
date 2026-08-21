@@ -10,6 +10,7 @@ import { useApi } from "@/lib/use-api";
 import { useToast } from "@/components/Toast";
 import { useSession } from "@/lib/use-session";
 import { timeAgo } from "@/lib/time";
+import { CATEGORY_LIST, categoryClass } from "@/lib/forum-categories";
 
 export default function ForumPage() {
   const { show } = useToast();
@@ -26,6 +27,8 @@ export default function ForumPage() {
     [fresh, apiThreads]
   );
   const [filter, setFilter] = useState<"all" | "pinned" | "hot">("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("All");
+  const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -52,12 +55,24 @@ export default function ForumPage() {
     };
   }, [modalOpen]);
 
-  const visible: ForumThread[] =
-    filter === "all"
-      ? threads
-      : filter === "pinned"
-        ? threads.filter((t) => t.pinned)
-        : [...threads].sort((a, b) => b.replies - a.replies);
+  const visible: ForumThread[] = (() => {
+    let list = threads;
+    if (categoryFilter !== "All") {
+      list = list.filter((t) => t.category === categoryFilter);
+    }
+    const q = search.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (t) =>
+          t.title.toLowerCase().includes(q) ||
+          (t.content ?? "").toLowerCase().includes(q) ||
+          t.author.toLowerCase().includes(q)
+      );
+    }
+    if (filter === "pinned") list = list.filter((t) => t.pinned);
+    if (filter === "hot") list = [...list].sort((a, b) => b.replies - a.replies);
+    return list;
+  })();
 
   const openModal = () => {
     // If the session is still loading, just open the modal — the composer
@@ -176,22 +191,51 @@ export default function ForumPage() {
     <SubPage>
       <div className="w-full">
         {/* Header */}
-        <div className="page-header rowed mb-8">
+        <div className="page-header rowed mb-8 gap-4">
           <h1 className="page-title">Forum</h1>
-          <button
-            className="btn-secondary py-2.5! px-5! text-xs!"
-            onClick={openModal}
-          >
-            <i className="fa-solid fa-pen-to-square" />
-            New Thread
-          </button>
+          <div className="flex items-center gap-3 flex-1 justify-end min-w-0">
+            {/* Search — filters by title, body and author */}
+            <div className="relative flex-1 max-w-xs min-w-[10rem]">
+              <i className="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-[var(--muted-2)]" />
+              <input
+                className="w-full bg-[var(--bg-2)] border border-[var(--border)] pl-9 pr-8 py-2.5 text-sm text-[var(--fg)] outline-none focus:border-[var(--accent)] transition placeholder:text-[var(--muted-2)] rounded-lg"
+                placeholder="Search threads…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                aria-label="Search threads"
+              />
+              {search ? (
+                <button
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--muted-2)] hover:text-[var(--fg)] transition"
+                  onClick={() => setSearch("")}
+                  aria-label="Clear search"
+                >
+                  <i className="fa-solid fa-xmark" />
+                </button>
+              ) : null}
+            </div>
+            <button
+              className="btn-secondary py-2.5! px-5! text-xs! flex-shrink-0"
+              onClick={openModal}
+            >
+              <i className="fa-solid fa-pen-to-square" />
+              New Thread
+            </button>
+          </div>
         </div>
 
         <div className="grid lg:grid-cols-3 gap-6">
           {/* Threads list */}
           <div className="lg:col-span-2 card p-6">
             <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
-              <h2 className="font-display text-lg font-bold">Recent discussions</h2>
+              <h2 className="font-display text-lg font-bold">
+                Recent discussions
+                {visible.length > 0 ? (
+                  <span className="ml-2 text-xs font-normal text-[var(--muted-2)]">
+                    {visible.length}
+                  </span>
+                ) : null}
+              </h2>
               <div className="flex items-center gap-1 text-sm text-[var(--muted)]">
                 {(["all", "pinned", "hot"] as const).map((f) => (
                   <button
@@ -209,37 +253,62 @@ export default function ForumPage() {
               </div>
             </div>
 
-            <div id="forum-threads" className="stagger">
+            <div id="forum-threads" className="space-y-3">
               {visible.length === 0 ? (
-                <p className="text-sm text-[var(--muted)] py-10 text-center">
-                  No threads yet — start the first discussion!
-                </p>
+                <div className="text-sm text-[var(--muted)] py-12 text-center border border-dashed border-[var(--border)] rounded-xl">
+                  <i className="fa-solid fa-comments text-3xl text-[var(--muted-2)] mb-3 block" />
+                  {search.trim() || categoryFilter !== "All" ? (
+                    <>
+                      No threads match
+                      {search.trim() ? ` "${search.trim()}"` : ""}
+                      {categoryFilter !== "All" ? ` in ${categoryFilter}` : ""}.
+                      <button
+                        className="block mx-auto mt-3 text-[var(--accent)] hover:text-[var(--accent-bright)] transition"
+                        onClick={() => {
+                          setSearch("");
+                          setCategoryFilter("All");
+                        }}
+                      >
+                        Clear filters
+                      </button>
+                    </>
+                  ) : (
+                    "No threads yet — start the first discussion!"
+                  )}
+                </div>
               ) : (
-                visible.map((t) => (
-                  <div key={t.id ?? t.title} className="relative">
+                visible.map((t, i) => (
+                  <div
+                    key={t.id ?? `${i}-${t.title}`}
+                    className={`relative ${t.pinned ? "thread-row-pinned" : ""}`}
+                  >
                     {/* The whole post opens the thread (X-style feed) */}
                     <Link
                       href={`/forum/${t.id ?? ""}`}
-                      className="absolute inset-0 z-0 rounded-lg"
+                      className="absolute inset-0 z-0 rounded-xl"
                       aria-label={`Open thread: ${t.title}`}
                     />
-                    <div className="relative z-10 thread-row group flex items-start gap-4 py-4 px-2 sm:px-4 pointer-events-none">
+                    <div className="relative z-10 thread-row group flex items-start gap-4 p-4 sm:p-5 pointer-events-none rounded-xl">
                       <Avatar name={t.author} src={t.avatarUrl} size="md" color={t.color} />
                       <div className="flex-1 min-w-0">
-                        {/* Meta row: author · category · pinned · time */}
+                        {/* Meta row: author · time · category · pinned */}
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-semibold text-[var(--fg)]">
                             {t.author}
+                          </span>
+                          <span className="text-xs text-[var(--muted-2)]">· {timeAgo(t.last)}</span>
+                          <span
+                            className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded border ${categoryClass(t.category)}`}
+                          >
+                            {t.category}
                           </span>
                           {t.pinned ? (
                             <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[var(--accent)] border border-[var(--accent)] rounded px-1.5 py-0.5">
                               <i className="fa-solid fa-thumbtack" /> Pinned
                             </span>
                           ) : null}
-                          <span className={`tag ${t.tagClass}`}>{t.category}</span>
-                          <span className="text-xs text-[var(--muted-2)]">· {timeAgo(t.last)}</span>
                         </div>
-                        <h3 className="mt-1.5 text-[15px] font-bold text-[var(--fg)] leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition">
+                        <h3 className="thread-title mt-1.5 text-base font-bold text-[var(--fg)] leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition">
                           {t.title}
                         </h3>
                         {t.content ? (
@@ -247,41 +316,39 @@ export default function ForumPage() {
                             {t.content}
                           </p>
                         ) : null}
-                        {/* Footer: engagement row */}
-                        <div className="mt-2.5 flex items-center gap-5 text-xs text-[var(--muted)]">
-                          <span className="inline-flex items-center gap-1.5">
-                            <i className="fa-regular fa-comment text-sm" />
-                            {t.replies} {t.replies === 1 ? "reply" : "replies"}
-                          </span>
-                        </div>
                       </div>
-                      {/* Moderation — interactive, sits above the link.
-                          Admins can pin/delete anything; authors can delete
-                          their own threads. */}
-                      {isAdmin || (user && t.authorId === user.id && t.authorId !== "") ? (
-                        <div className="pointer-events-auto relative z-20 flex items-center gap-1.5 pt-1">
-                          {isAdmin ? (
+
+                      {/* Right column: replies pill + moderation */}
+                      <div className="pointer-events-auto relative z-20 flex flex-col items-end gap-2 flex-shrink-0">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--muted)] border border-[var(--border)] rounded-full px-2.5 py-1 group-hover:border-[var(--accent)]/50 group-hover:text-[var(--accent)] transition">
+                          <i className="fa-regular fa-comment" />
+                          {t.replies}
+                        </span>
+                        {isAdmin || (user && t.authorId === user.id && t.authorId !== "") ? (
+                          <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                            {isAdmin ? (
+                              <button
+                                className="w-8 h-8 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition disabled:opacity-40"
+                                onClick={() => void moderate(t, "pin")}
+                                disabled={busyThread !== null}
+                                aria-label={t.pinned ? "Unpin thread" : "Pin thread"}
+                                title={t.pinned ? "Unpin" : "Pin"}
+                              >
+                                <i className={`fa-solid fa-thumbtack text-xs ${t.pinned ? "text-[var(--accent)]" : ""}`} />
+                              </button>
+                            ) : null}
                             <button
-                              className="w-9 h-9 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition disabled:opacity-40"
-                              onClick={() => void moderate(t, "pin")}
+                              className="w-8 h-8 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)] transition disabled:opacity-40"
+                              onClick={() => void moderate(t, "delete")}
                               disabled={busyThread !== null}
-                              aria-label={t.pinned ? "Unpin thread" : "Pin thread"}
-                              title={t.pinned ? "Unpin" : "Pin"}
+                              aria-label="Delete thread"
+                              title="Delete"
                             >
-                              <i className={`fa-solid fa-thumbtack text-xs ${t.pinned ? "text-[var(--accent)]" : ""}`} />
+                              <i className="fa-solid fa-trash text-xs" />
                             </button>
-                          ) : null}
-                          <button
-                            className="w-9 h-9 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)] transition disabled:opacity-40"
-                            onClick={() => void moderate(t, "delete")}
-                            disabled={busyThread !== null}
-                            aria-label="Delete thread"
-                            title="Delete"
-                          >
-                            <i className="fa-solid fa-trash text-xs" />
-                          </button>
-                        </div>
-                      ) : null}
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 ))
@@ -292,23 +359,45 @@ export default function ForumPage() {
           {/* Sidebar */}
           <div className="lg:sticky lg:top-24 self-start">
             <div className="card p-6">
-              <h3 className="font-display text-base font-bold mb-4">Categories</h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-display text-base font-bold">Categories</h3>
+                {categoryFilter !== "All" ? (
+                  <button
+                    className="text-xs text-[var(--accent)] hover:text-[var(--accent-bright)] transition"
+                    onClick={() => setCategoryFilter("All")}
+                  >
+                    Reset
+                  </button>
+                ) : null}
+              </div>
               <div className="space-y-1">
-                {/* "General" is the default the composer offers, so list it
-                    alongside the curated set; counts read from real threads. */}
-                {["General", "Announcements", "Ideas", "Builds", "Redstone", "Technical", "Off-topic"].map(
-                  (c) => (
-                    <div
+                {/* Clickable category filters. "All" resets; counts read
+                    from real threads. */}
+                {["All", ...CATEGORY_LIST].map((c) => {
+                  const active = categoryFilter === c;
+                  const count =
+                    c === "All"
+                      ? threads.length
+                      : threads.filter((t) => t.category === c).length;
+                  return (
+                    <button
                       key={c}
-                      className="flex items-center justify-between py-2 px-3 rounded-lg text-sm text-[var(--fg-2)]"
+                      className={`w-full flex items-center justify-between py-2 px-3 rounded-lg text-sm transition ${
+                        active
+                          ? "bg-[var(--accent-dim)] text-[var(--accent)] border border-[var(--accent)]/50 font-semibold"
+                          : "text-[var(--fg-2)] border border-transparent hover:bg-white/5 hover:text-[var(--fg)]"
+                      }`}
+                      onClick={() => setCategoryFilter(c)}
+                      aria-pressed={active}
                     >
-                      <span>{c}</span>
-                      <span className="text-xs text-[var(--muted)]">
-                        {threads.filter((t) => t.category === c).length}
+                      <span className="flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full opacity-70" style={{ background: "currentColor" }} />
+                        {c}
                       </span>
-                    </div>
-                  )
-                )}
+                      <span className="text-xs text-[var(--muted)]">{count}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -386,14 +475,11 @@ export default function ForumPage() {
                   Posting as <span className="text-[var(--fg-2)] font-medium">{user.username}</span>
                 </div>
                 <select className={inputClass} value={category} onChange={(e) => setCategory(e.target.value)}>
-                  <option value="General">General</option>
-                  {["Announcements", "Ideas", "Builds", "Redstone", "Technical", "Off-topic"].map(
-                    (c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    )
-                  )}
+                  {CATEGORY_LIST.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
                 </select>
                 <div className="flex gap-3 pt-1">
                   <button

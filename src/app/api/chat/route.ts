@@ -78,11 +78,19 @@ const TEXT_HEADERS = {
 
   try {
     // request.signal aborts when the client disconnects (Stop / leave),
-    // which cancels the upstream OpenRouter call too.
+    // which cancels the upstream OpenRouter call too. The user block comes
+    // from the live account (not the cookie) so the assistant knows who
+    // it's talking to: name, role, MC name, verification, membership age.
     const stream = await streamChatReply(
       message,
       request.signal,
-      { username: user.username, role: user.role },
+      {
+        username: account?.username ?? user.username,
+        role: account?.role ?? user.role,
+        minecraftUsername: account?.minecraftUsername ?? null,
+        discordVerified: account?.discordVerified ?? user.discordVerified ?? false,
+        memberSince: account?.createdAt ?? null,
+      },
       history
     );
     return new Response(stream, { headers: TEXT_HEADERS });

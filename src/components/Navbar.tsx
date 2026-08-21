@@ -104,20 +104,20 @@ export function Navbar() {
 
       {/* Floating glass action bar — top right */}
       <div className="nav-actions">
-        <div className={`status-pill hidden sm:inline-flex ${online ? "" : "offline"}`}>
+        {/* Single status pill — text collapses to a dot-only pill on mobile.
+            (.status-pill owns its `display`, so two separate pills can't be
+            toggled with Tailwind hidden — that was the double-dot bug.) */}
+        <Link
+          href="/status"
+          className={`status-pill ${online ? "" : "offline"}`}
+          aria-label={online ? `Server online — ${players}/${max} players` : "Server offline — view status"}
+          title={statusLoading ? "Checking status…" : online ? `Online · ${players}/${max} players` : "Offline"}
+        >
           <span className={`pulse-dot ${online ? "" : "muted"}`} />
-          <span>
+          <span className="hidden sm:inline">
             {statusLoading ? "Checking…" : online ? "Online" : "Offline"}
             {!statusLoading && statusLive ? ` · ${players}/${max}` : ""}
           </span>
-        </div>
-        {/* Compact dot-only pill for mobile — a status cue without the text */}
-        <Link
-          href="/status"
-          className={`status-pill sm:hidden !px-2 ${online ? "" : "offline"}`}
-          aria-label={online ? `Server online — ${players}/${max} players` : "Server offline — view status"}
-        >
-          <span className={`pulse-dot ${online ? "" : "muted"}`} />
         </Link>
         <Link href="/join" className="btn-primary hidden sm:inline-flex" aria-label="How to join">
           <i className="fa-solid fa-compass" />
@@ -254,44 +254,21 @@ export function Navbar() {
           </Link>
         ))}
 
-        {/* Account */}
-        <div className="mt-2 pt-2 border-t border-[var(--border)]">
-          {user ? (
-            <>
-              {user.role === "admin" ? (
-                <Link
-                  href="/admin"
-                  className={`nav-popover-link ${pathname === "/admin" ? "active" : ""}`}
-                  onClick={() => setMenuOpen(false)}
-                >
-                  <i className="fa-solid fa-shield-halved" aria-hidden="true" />
-                  Admin Panel
-                </Link>
-              ) : null}
-              <button
-                className="nav-popover-link w-full text-left text-[var(--redstone)] hover:text-[var(--redstone)]"
-                onClick={() => {
-                  setMenuOpen(false);
-                  void handleLogout();
-                }}
-              >
-                <i className="fa-solid fa-right-from-bracket" aria-hidden="true" />
-                Log out ({user.username})
-              </button>
-            </>
-          ) : (
-            !sessionLoading && (
-              <Link
-                href="/login"
-                className={`nav-popover-link ${pathname === "/login" ? "active" : ""}`}
-                onClick={() => setMenuOpen(false)}
-              >
-                <i className="fa-solid fa-user" aria-hidden="true" />
-                Log in / Sign up
-              </Link>
-            )
-          )}
-        </div>
+        {/* Account actions live in the PROFILE popover (top right) — the
+            hamburger only repeats Log in here for mobile, where the top-bar
+            Log in button is hidden (sm:hidden prevents duplication on sm+). */}
+        {!user && !sessionLoading ? (
+          <div className="mt-2 pt-2 border-t border-[var(--border)] sm:hidden">
+            <Link
+              href="/login"
+              className={`nav-popover-link ${pathname === "/login" ? "active" : ""}`}
+              onClick={() => setMenuOpen(false)}
+            >
+              <i className="fa-solid fa-user" aria-hidden="true" />
+              Log in / Sign up
+            </Link>
+          </div>
+        ) : null}
       </div>
     </>
   );
