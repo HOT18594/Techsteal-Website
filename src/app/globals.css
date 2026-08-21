@@ -31,14 +31,19 @@
   descent-override: 0%;
 }
 
-/* The bold "Minecraft" logo typeface — its own metrics are already
-   optically centered (glyph band −25%..+75%, ascent 75 / descent 25), so
-   no override is needed. */
+/* The bold "Minecraft" logo typeface (hero title, caps only). Its own
+   metrics (ascent 75% / descent 25%) put the cap-band's optical center
+   12.5% of em ABOVE the line-box center — the title rendered visibly
+   high next to the kicker and CTAs. Caps ink spans 0%..75% of em
+   (measured from the TTF's glyph bounds), so the centered line is
+   ascent − descent = 2 × 37.5% = 75%. */
 @font-face {
   font-family: "Minecraft Logo";
   src: url("/fonts/Minecraft.ttf") format("truetype");
   font-display: swap;
   font-weight: 400;
+  ascent-override: 75%;
+  descent-override: 0%;
 }
 
 /* ============================================================
