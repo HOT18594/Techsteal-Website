@@ -22,7 +22,10 @@ export function EmptyState({
     <div
       className={`text-sm text-[var(--muted)] py-14 text-center border border-dashed border-[var(--border)] rounded-xl ${className}`}
     >
-      <i className={`${icon} text-3xl text-[var(--muted-2)] mb-3 block`} aria-hidden="true" />
+      {/* `icon` is the bare FA name (e.g. "fa-inbox") — the fa-solid prefix
+          here supplies the font-family + weight; without it the glyph renders
+          in the body font as an empty box. */}
+      <i className={`fa-solid ${icon} text-3xl text-[var(--muted-2)] mb-3 block`} aria-hidden="true" />
       <div className="text-[var(--fg-2)] font-medium">{title}</div>
       {hint ? <div className="mt-1 text-xs">{hint}</div> : null}
       {action ? <div className="mt-4 flex justify-center gap-3">{action}</div> : null}

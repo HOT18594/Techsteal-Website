@@ -112,7 +112,7 @@ export default function RulesPage() {
                 {/* Section header — the API's structure is the page's structure */}
                 <div className="flex items-center gap-3 px-5 sm:px-6 py-4 border-b border-[var(--border)] bg-[var(--bg-2)]/50">
                   <span className="w-9 h-9 rounded-xl bg-[var(--accent-dim)] border border-[var(--border-strong)] flex items-center justify-center text-[var(--accent)]">
-                    <i className={`${section.icon || "fa-gavel"} text-sm`} aria-hidden="true" />
+                    <i className={`fa-solid ${section.icon || "fa-gavel"} text-sm`} aria-hidden="true" />
                   </span>
                   <div>
                     <h2 className="font-display text-lg font-bold leading-tight">{section.title}</h2>
