@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { findAccount, updateAccount } from "@/lib/accounts";
 import { getSessionUser, setSession } from "@/lib/auth";
 import { getAdminCode } from "@/lib/admin-code";
@@ -64,7 +65,12 @@ export async function PATCH(request: NextRequest) {
   // (403, rate-limited) so onboarding can tell a wrong code apart from a
   // success, and slow down brute-forcing.
   if (typeof body.adminCode === "string" && body.adminCode.trim().length > 0) {
-    if (isRateLimited(`admincode:${ip}`, 10, 10 * 60 * 1000)) {
+    // Key the limiter on the signed-in user too — x-forwarded-for alone is
+    // spoofable on misconfigured hosts and would let an attacker rotate IPs.
+    if (
+      isRateLimited(`admincode:${user.id}`, 10, 10 * 60 * 1000) ||
+      isRateLimited(`admincode:${ip}`, 30, 10 * 60 * 1000)
+    ) {
       return NextResponse.json(
         { error: "Too many attempts — wait a bit before trying the admin code again." },
         { status: 429 }
@@ -76,7 +82,12 @@ export async function PATCH(request: NextRequest) {
         { status: 403 }
       );
     }
-    if (body.adminCode.trim() !== getAdminCode()) {
+    // Compare SHA-256 digests instead of raw strings — constant-time-ish and
+    // avoids any early-exit string comparison leaking length/prefix info.
+    const configuredCode = getAdminCode();
+    const attempt = createHash("sha256").update(body.adminCode.trim()).digest();
+    const expected = createHash("sha256").update(configuredCode ?? "").digest();
+    if (!timingSafeEqual(attempt, expected)) {
       return NextResponse.json(
         { error: "That admin code isn't right." },
         { status: 403 }

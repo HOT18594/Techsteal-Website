@@ -90,5 +90,8 @@ export const profiles = pgTable("profiles", {
   minecraftUsername: text("minecraft_username"),
   discordVerified: boolean("discord_verified").notNull().default(false),
   onboarded: boolean("onboarded").notNull().default(false),
+  // Set by the admin "Remove" action. The row is kept (not deleted) so the
+  // Discord id stays denylisted — OAuth login refuses to recreate it.
+  banned: boolean("banned").notNull().default(false),
   createdAt: text("created_at"),
 });

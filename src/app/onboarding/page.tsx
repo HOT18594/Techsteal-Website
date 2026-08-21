@@ -12,7 +12,7 @@ const STEPS = ["Admin code", "Discord server", "Minecraft"];
 
 export default function OnboardingPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<SubPage className="max-w-2xl"><p className="text-sm text-[var(--muted)] text-center py-16">Loading…</p></SubPage>}>
       <OnboardingContent />
     </Suspense>
   );
@@ -75,7 +75,7 @@ function OnboardingContent() {
   const checkDiscord = async () => {
     setVerifyState("checking");
     try {
-      const res = await fetch("/api/auth/discord/verify");
+      const res = await fetch("/api/auth/discord/verify", { method: "POST" });
       if (!res.ok) {
         // Auth failure / server error — NOT "not configured". Re-check so
         // the user can try again instead of being told setup is missing.
@@ -94,7 +94,8 @@ function OnboardingContent() {
         show("Not in the server yet", "Join the official server, then verify.");
       }
     } catch {
-      setVerifyState("not_configured");
+      setVerifyState("idle");
+      show("Couldn't reach the server", "Check your connection and try again.");
     }
   };
 

@@ -53,24 +53,32 @@ export default function GalleryPage() {
     setTitle("");
     setCategory(GALLERY_CATEGORIES[0]);
     setFile(null);
-    setPreview(null);
+    // Revoke any leftover preview blob URL so it doesn't leak memory.
+    setPreview((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return null;
+    });
     setModalOpen(true);
   };
 
   const onPick = (f: File | undefined) => {
     if (!f) return;
     if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(f.type)) {
-      show("Unsupported image", "Use JPG, PNG, WebP or GIF.");
+      show("Unsupported image", "Use JPG, PNG, WebP or GIF.", "error");
       if (fileRef.current) fileRef.current.value = "";
       return;
     }
     if (f.size > MAX_BYTES) {
-      show("Image too large", "Keep uploads under 8 MB.");
+      show("Image too large", "Keep uploads under 8 MB.", "error");
       if (fileRef.current) fileRef.current.value = "";
       return;
     }
     setFile(f);
-    setPreview(URL.createObjectURL(f));
+    // Revoke the previous blob URL when replacing the preview.
+    setPreview((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return URL.createObjectURL(f);
+    });
   };
 
   const submit = async () => {
@@ -116,7 +124,7 @@ export default function GalleryPage() {
           <button
             className="btn-secondary py-2.5! px-5! text-xs!"
             onClick={openModal}
-            disabled={!user}
+            disabled={!user && !sessionLoading}
             title={user ? "Post a build" : "Sign in to post"}
           >
             <i className="fa-solid fa-upload" />
@@ -178,11 +186,23 @@ export default function GalleryPage() {
       {/* Post modal */}
       {modalOpen ? (
         <div className="modal-backdrop" onClick={() => setModalOpen(false)}>
-          <div className="card p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-display text-xl font-bold mb-5">Post to Gallery</h3>
+          <div
+            className="card p-6 w-full max-w-md"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="post-gallery-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="post-gallery-title" className="font-display text-xl font-bold mb-5">Post to Gallery</h3>
 
             {user ? (
-              <div className="space-y-3">
+              <form
+                className="space-y-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void submit();
+                }}
+              >
                 <input
                   ref={titleRef}
                   className={inputClass}
@@ -240,17 +260,17 @@ export default function GalleryPage() {
 
                 <div className="flex gap-3 pt-1">
                   <button
+                    type="submit"
                     className="btn-primary w-full"
-                    onClick={() => void submit()}
                     disabled={submitting || !title.trim() || !file}
                   >
                     {submitting ? "Uploading…" : "Post Build"}
                   </button>
-                  <button className="btn-secondary w-full" onClick={() => setModalOpen(false)}>
+                  <button type="button" className="btn-secondary w-full" onClick={() => setModalOpen(false)}>
                     Cancel
                   </button>
                 </div>
-              </div>
+              </form>
             ) : sessionLoading ? (
               <p className="text-sm text-[var(--muted)] text-center py-6">Checking session…</p>
             ) : (

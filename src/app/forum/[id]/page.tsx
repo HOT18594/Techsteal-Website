@@ -38,6 +38,7 @@ export default function ThreadPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setNotFound(false); // a previous failed load must not stick
     try {
       const res = await fetch(`/api/forum/${id}`);
       if (!res.ok) {
@@ -87,6 +88,8 @@ export default function ThreadPage() {
 
   const deleteReply = async (reply: ForumReply) => {
     if (busyReply !== null) return;
+    const ok = window.confirm("Delete this reply? This can't be undone.");
+    if (!ok) return;
     setBusyReply(reply.id ?? 0);
     try {
       const res = await fetch(`/api/forum/${id}`, {
@@ -270,17 +273,19 @@ export default function ThreadPage() {
                                 </span>
                               ) : null}
                             </div>
-                            {isAdmin ? (
+                            {isAdmin || (user && r.authorId === user.id && r.authorId !== "") ? (
                               <div className="flex items-center gap-1.5">
-                                <button
-                                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition disabled:opacity-40"
-                                  onClick={() => void pinReply(r)}
-                                  disabled={busyReply !== null}
-                                  aria-label={r.pinned ? "Unpin comment" : "Pin comment"}
-                                  title={r.pinned ? "Unpin" : "Pin"}
-                                >
-                                  <i className={`fa-solid fa-thumbtack text-xs ${r.pinned ? "text-[var(--accent)]" : ""}`} />
-                                </button>
+                                {isAdmin ? (
+                                  <button
+                                    className="w-8 h-8 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition disabled:opacity-40"
+                                    onClick={() => void pinReply(r)}
+                                    disabled={busyReply !== null}
+                                    aria-label={r.pinned ? "Unpin comment" : "Pin comment"}
+                                    title={r.pinned ? "Unpin" : "Pin"}
+                                  >
+                                    <i className={`fa-solid fa-thumbtack text-xs ${r.pinned ? "text-[var(--accent)]" : ""}`} />
+                                  </button>
+                                ) : null}
                                 <button
                                   className="w-8 h-8 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)] transition disabled:opacity-40"
                                   onClick={() => void deleteReply(r)}

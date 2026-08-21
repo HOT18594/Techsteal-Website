@@ -16,6 +16,7 @@ const PERMISSION_LABELS: Record<Permission, { label: string; icon: string }> = {
 export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
   const { show } = useToast();
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [banned, setBanned] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -23,10 +24,11 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
     try {
       const res = await fetch("/api/admin/members");
       if (!res.ok) throw new Error();
-      const data = (await res.json()) as { accounts: Account[] };
+      const data = (await res.json()) as { accounts: Account[]; bannedAccounts?: Account[] };
       setAccounts(data.accounts);
+      setBanned(data.bannedAccounts ?? []);
     } catch {
-      show("Failed to load members", "Are you signed in as an admin?");
+      show("Failed to load members", "Are you signed in as an admin?", "error");
     } finally {
       setLoading(false);
     }
@@ -66,8 +68,9 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
   };
 
   const remove = async (account: Account) => {
-    // One stray click must not permanently delete an account.
-    if (!window.confirm(`Permanently remove ${account.username}?`)) return;
+    // One stray click must not ban an account. Removing BANS the user —
+    // they can't sign back in until restored below.
+    if (!window.confirm(`Remove ${account.username}? They'll be blocked from signing in until restored.`)) return;
     setBusyId(account.id);
     try {
       const res = await fetch("/api/admin/members", {
@@ -79,7 +82,25 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
       await load();
       show("Removed", `${account.username} was removed.`);
     } catch {
-      show("Couldn't remove", "Something went wrong.");
+      show("Couldn't remove", "Something went wrong.", "error");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const restore = async (account: Account) => {
+    setBusyId(account.id);
+    try {
+      const res = await fetch("/api/admin/members", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: account.id }),
+      });
+      if (!res.ok) throw new Error();
+      await load();
+      show("Restored", `${account.username} can sign in again.`);
+    } catch {
+      show("Couldn't restore", "Something went wrong.", "error");
     } finally {
       setBusyId(null);
     }
@@ -199,6 +220,43 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
             })}
           </div>
         )}
+
+        {/* Banned (removed) accounts — restorable */}
+        {!loading && banned.length > 0 ? (
+          <div className="mt-10">
+            <h2 className="font-display text-lg font-bold mb-4 flex items-center gap-2">
+              <i className="fa-solid fa-ban text-[var(--redstone)] text-sm" />
+              Removed accounts ({banned.length})
+            </h2>
+            <div className="space-y-2">
+              {banned.map((account) => (
+                <div
+                  key={account.id}
+                  className="card p-4 flex items-center justify-between gap-4 opacity-80"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Avatar name={account.username} src={account.avatarUrl} size="sm" className="!w-8 !h-8" />
+                    <span className="text-sm font-medium truncate line-through decoration-[var(--redstone)]/60">
+                      {account.username}
+                    </span>
+                    <span className="text-xs text-[var(--muted-2)] truncate hidden sm:inline">{account.id}</span>
+                  </div>
+                  <button
+                    className="btn-secondary py-2! px-4! text-xs! flex-shrink-0"
+                    onClick={() => void restore(account)}
+                    disabled={busyId === account.id}
+                  >
+                    <i className="fa-solid fa-rotate-left" />
+                    Restore
+                  </button>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-[var(--muted-2)] mt-3">
+              Removed members can&apos;t sign in with Discord until restored.
+            </p>
+          </div>
+        ) : null}
 
         {/* Info note */}
         <p className="text-xs text-[var(--muted-2)] mt-8">

@@ -15,7 +15,9 @@ export async function GET() {
   if (!user) return NextResponse.json({ user: null });
 
   const account = await findAccount(user.id).catch(() => null);
-  if (!account) return NextResponse.json({ user });
+  // Account gone (removed) — the session must die with it, or a stale
+  // 7-day cookie keeps reporting e.g. role: "admin" to the UI.
+  if (!account || account.banned) return NextResponse.json({ user: null });
 
   return NextResponse.json({
     user: {

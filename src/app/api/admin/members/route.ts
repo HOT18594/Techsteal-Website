@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAllAccounts, updateAccount, removeAccount, isAdminUser } from "@/lib/accounts";
+import { listAccounts, updateAccount, removeAccount, isAdminUser } from "@/lib/accounts";
 import { getSessionUser } from "@/lib/auth";
 import type { Permission } from "@/types";
 
@@ -14,11 +14,16 @@ async function requireAdmin() {
   return getSessionUser();
 }
 
-// List all accounts (admin only).
+// List all accounts (admin only). Banned (removed) accounts are included
+// separately so they can be restored.
 export async function GET() {
   const admin = await requireAdmin();
   if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  return NextResponse.json({ accounts: await getAllAccounts() });
+  const all = await listAccounts();
+  return NextResponse.json({
+    accounts: all.filter((a) => !a.banned),
+    bannedAccounts: all.filter((a) => a.banned),
+  });
 }
 
 // Update an account's role/permissions (admin only).
@@ -54,7 +59,7 @@ export async function POST(request: Request) {
   return NextResponse.json({ account: updated });
 }
 
-// Remove an account (admin only).
+// Remove an account (admin only). This BANS the user — see removeAccount.
 export async function DELETE(request: Request) {
   const admin = await requireAdmin();
   if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -71,6 +76,20 @@ export async function DELETE(request: Request) {
   const removed = await removeAccount(id);
   if (!removed) return NextResponse.json({ error: "Account not found" }, { status: 404 });
   return NextResponse.json({ ok: true });
+}
+
+// Restore a banned account (admin only). Body: { id }
+export async function PUT(request: Request) {
+  const admin = await requireAdmin();
+  if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const body = await request.json().catch(() => ({}));
+  const id = typeof body?.id === "string" ? body.id : "";
+  if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
+
+  const restored = await updateAccount(id, { banned: false });
+  if (!restored) return NextResponse.json({ error: "Account not found" }, { status: 404 });
+  return NextResponse.json({ account: restored });
 }
 
 function sanitizePermissions(value: unknown): Permission[] {

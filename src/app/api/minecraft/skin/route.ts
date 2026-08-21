@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
+import { isRateLimited } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
+
+// Valid Minecraft usernames: 1–16 chars of letters, digits or underscore —
+// same rule the profile endpoint enforces. Rejecting here (a) avoids
+// relaying garbage to Mojang and (b) stops this route being an open,
+// unauthenticated proxy that hammers Mojang's rate-limited API.
+const MC_NAME_RE = /^[A-Za-z0-9_]{1,16}$/;
 
 // Resolve a Minecraft username to its skin avatar via Mojang's public API
 // (no key needed). Returns minotar render URLs — the SAME provider the
@@ -12,6 +19,21 @@ export async function GET(request: Request) {
   const username = new URL(request.url).searchParams.get("username")?.trim();
   if (!username) {
     return NextResponse.json({ error: "username is required" }, { status: 400 });
+  }
+  if (!MC_NAME_RE.test(username)) {
+    return NextResponse.json(
+      { error: "Minecraft usernames can only use letters, numbers and underscores (1–16 chars)." },
+      { status: 400 }
+    );
+  }
+  // Key by IP when available, else global — soft limit to be polite to Mojang.
+  const ip =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+  if (isRateLimited(`skin:${ip}`, 20, 60_000)) {
+    return NextResponse.json(
+      { error: "Too many skin lookups — wait a minute." },
+      { status: 429 }
+    );
   }
 
   try {

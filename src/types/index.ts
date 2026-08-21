@@ -107,6 +107,8 @@ export interface Account {
   discordVerified?: boolean;
   /** True once the user finished onboarding. */
   onboarded?: boolean;
+  /** True when an admin removed the user — login is refused while set. */
+  banned?: boolean;
 }
 
 /** The authenticated user, as carried in the session cookie / JWT. */

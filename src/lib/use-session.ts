@@ -20,6 +20,7 @@ export function useSession(): SessionState {
   const refresh = useCallback(async () => {
     try {
       const res = await fetch("/api/auth/me");
+      if (!res.ok) throw new Error(`/api/auth/me → ${res.status}`);
       const data = (await res.json()) as { user: SessionUser | null };
       setUser(data.user ?? null);
     } catch {
@@ -34,9 +35,20 @@ export function useSession(): SessionState {
   }, [refresh]);
 
   const logout = useCallback(async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
-    setUser(null);
-  }, []);
+    // Only clear local state when the server actually cleared the cookie —
+    // otherwise the still-valid session "resurrects" on the next refresh.
+    try {
+      const res = await fetch("/api/auth/logout", { method: "POST" });
+      if (res.ok) {
+        setUser(null);
+      } else {
+        await refresh();
+      }
+    } catch {
+      // Network failure — cookie state is unknown; re-check.
+      await refresh().catch(() => {});
+    }
+  }, [refresh]);
 
   return { user, loading, refresh, logout };
 }

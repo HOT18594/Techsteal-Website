@@ -85,6 +85,11 @@ export default function ForumPage() {
       } else if (res.status === 401) {
         show("Sign in to post", "Log in with Discord to create threads.");
         setModalOpen(false);
+      } else if (res.status === 503) {
+        show("Can't post yet", "Posting needs the database — it isn't configured.");
+        setModalOpen(false);
+      } else if (res.status === 429) {
+        show("Slow down", "You're posting too fast — wait a moment.");
       } else {
         show("Couldn't create thread", "The server rejected the request.");
       }
@@ -97,6 +102,11 @@ export default function ForumPage() {
 
   const moderate = async (thread: ForumThread, action: "delete" | "pin") => {
     if (busyThread !== null) return;
+    // Deleting is destructive and unrecoverable — confirm first.
+    if (action === "delete") {
+      const ok = window.confirm(`Delete "${thread.title}"? This can't be undone.`);
+      if (!ok) return;
+    }
     setBusyThread(thread.id ?? 0);
     try {
       const res =
@@ -245,18 +255,22 @@ export default function ForumPage() {
                           </span>
                         </div>
                       </div>
-                      {/* Admin moderation — interactive, sits above the link */}
-                      {isAdmin ? (
+                      {/* Moderation — interactive, sits above the link.
+                          Admins can pin/delete anything; authors can delete
+                          their own threads. */}
+                      {isAdmin || (user && t.authorId === user.id && t.authorId !== "") ? (
                         <div className="pointer-events-auto relative z-20 flex items-center gap-1.5 pt-1">
-                          <button
-                            className="w-9 h-9 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition disabled:opacity-40"
-                            onClick={() => void moderate(t, "pin")}
-                            disabled={busyThread !== null}
-                            aria-label={t.pinned ? "Unpin thread" : "Pin thread"}
-                            title={t.pinned ? "Unpin" : "Pin"}
-                          >
-                            <i className={`fa-solid fa-thumbtack text-xs ${t.pinned ? "text-[var(--accent)]" : ""}`} />
-                          </button>
+                          {isAdmin ? (
+                            <button
+                              className="w-9 h-9 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition disabled:opacity-40"
+                              onClick={() => void moderate(t, "pin")}
+                              disabled={busyThread !== null}
+                              aria-label={t.pinned ? "Unpin thread" : "Pin thread"}
+                              title={t.pinned ? "Unpin" : "Pin"}
+                            >
+                              <i className={`fa-solid fa-thumbtack text-xs ${t.pinned ? "text-[var(--accent)]" : ""}`} />
+                            </button>
+                          ) : null}
                           <button
                             className="w-9 h-9 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)] transition disabled:opacity-40"
                             onClick={() => void moderate(t, "delete")}
@@ -335,11 +349,23 @@ export default function ForumPage() {
       {/* New thread modal */}
       {modalOpen ? (
         <div className="modal-backdrop" onClick={() => setModalOpen(false)}>
-          <div className="card p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-display text-xl font-bold mb-5">New Thread</h3>
+          <div
+            className="card p-6 w-full max-w-md"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="new-thread-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="new-thread-title" className="font-display text-xl font-bold mb-5">New Thread</h3>
 
             {user ? (
-              <div className="space-y-3">
+              <form
+                className="space-y-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void submit();
+                }}
+              >
                 <input
                   ref={titleRef}
                   className={inputClass}
@@ -371,17 +397,17 @@ export default function ForumPage() {
                 </select>
                 <div className="flex gap-3 pt-1">
                   <button
+                    type="submit"
                     className="btn-primary w-full"
-                    onClick={() => void submit()}
                     disabled={submitting || !title.trim()}
                   >
                     {submitting ? "Posting…" : "Create Thread"}
                   </button>
-                  <button className="btn-secondary w-full" onClick={() => setModalOpen(false)}>
+                  <button type="button" className="btn-secondary w-full" onClick={() => setModalOpen(false)}>
                     Cancel
                   </button>
                 </div>
-              </div>
+              </form>
             ) : sessionLoading ? (
               <p className="text-sm text-[var(--muted)] text-center py-6">Checking session…</p>
             ) : (

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import type { CSSProperties } from "react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { siteConfig } from "@/lib/site";
 import { fallbackMembers, fallbackGallery, fallbackStatus } from "@/lib/fallback-data";
 import type { GalleryItem, Member, ServerStatus } from "@/types";
@@ -23,6 +23,17 @@ export function HeroClient() {
   // DOM surgery that always rewrote one button and raced its own timer.
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear the pending "Copied!" timer on unmount — setState after unmount.
+  useEffect(() => {
+    return () => {
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    };
+  }, []);
+
+  // Never present fallback status numbers as live — same guard as the
+  // Navbar and Status page use.
+  const statusLive = status.source === "live";
 
   const copyIP = async () => {
     try {
@@ -169,23 +180,33 @@ export function HeroClient() {
                   Open <i className="fa-solid fa-arrow-right" />
                 </span>
                 <div className="mt-8 w-full">
-                  {/* Live status preview (console style) */}
+                  {/* Live status preview (console style) — fallback data is
+                      shown as "unavailable", never fake Online numbers. */}
                   <div className="aspect-[4/3] w-full rounded-xl border border-[var(--border)] bg-[var(--bg-2)] p-4 flex flex-col items-center text-center overflow-hidden">
-                    <div className={`status-pill ${status.online ? "" : "offline"}`}>
-                      <span className={`pulse-dot ${status.online ? "" : "muted"}`} />
-                      {status.online ? "Online" : "Offline"}
-                    </div>
-                    <div className="mt-auto">
-                      <div className="font-display text-4xl font-bold leading-none text-[var(--fg)]">
-                        {status.players ?? 0}
-                        <span className="text-[var(--muted-2)] text-xl">
-                          /{status.max ?? siteConfig.maxPlayers}
-                        </span>
+                    {statusLive ? (
+                      <>
+                        <div className={`status-pill ${status.online ? "" : "offline"}`}>
+                          <span className={`pulse-dot ${status.online ? "" : "muted"}`} />
+                          {status.online ? "Online" : "Offline"}
+                        </div>
+                        <div className="mt-auto">
+                          <div className="font-display text-4xl font-bold leading-none text-[var(--fg)]">
+                            {status.players ?? 0}
+                            <span className="text-[var(--muted-2)] text-xl">
+                              /{status.max ?? siteConfig.maxPlayers}
+                            </span>
+                          </div>
+                          <div className="mt-1.5 text-xs text-[var(--muted)] uppercase tracking-wider">
+                            players online
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="m-auto text-xs text-[var(--muted-2)] uppercase tracking-wider flex flex-col items-center gap-3">
+                        <i className="fa-solid fa-satellite-dish text-2xl" />
+                        Status unavailable
                       </div>
-                      <div className="mt-1.5 text-xs text-[var(--muted)] uppercase tracking-wider">
-                        players online
-                      </div>
-                    </div>
+                    )}
                   </div>
                 </div>
               </div>

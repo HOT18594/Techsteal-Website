@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { findAccount, updateAccount, VERIFIED_PERMISSIONS } from "@/lib/accounts";
+import { isRateLimited } from "@/lib/rate-limit";
 import type { Permission } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -9,12 +10,25 @@ export const dynamic = "force-dynamic";
 // Uses a bot token + guild id from the environment; if either is missing
 // it reports `configured: false` and the client can offer to skip.
 //
-// Side effect: when it CAN verify, it persists the result to the account so
-// the `discordVerified` badge is only ever set by the server (the profile
-// PATCH endpoint refuses to accept it from clients).
-export async function GET() {
+// Side effect: when Discord gives a DEFINITIVE answer (200 = member,
+// 404 = not a member) the result is persisted to the account so the
+// `discordVerified` badge is only ever set by the server. Transient
+// failures (429 rate limit, 401/403 revoked bot token, 5xx, network
+// errors) never touch stored state — otherwise one hiccup could mass-wipe
+// every verified member's perks.
+//
+// POST-only: this endpoint mutates the account, so it must not be
+// triggerable by cross-site GETs (img/prefetch) riding the session cookie.
+export async function POST() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  if (isRateLimited(`verify:${user.id}`, 10, 60_000)) {
+    return NextResponse.json(
+      { error: "Too many verification attempts — wait a minute." },
+      { status: 429 }
+    );
+  }
 
   const botToken = process.env.DISCORD_BOT_TOKEN;
   const guildId = process.env.DISCORD_GUILD_ID;
@@ -24,24 +38,39 @@ export async function GET() {
 
   const discordId = user.id.replace(/^discord:/, "");
   let verified = false;
-  let checked = false; // true only when Discord actually answered
+  let definitive = false; // true only when Discord definitively answered
   try {
     const res = await fetch(
       `https://discord.com/api/guilds/${encodeURIComponent(guildId)}/members/${encodeURIComponent(discordId)}`,
-      { headers: { Authorization: `Bot ${botToken}` } }
+      {
+        headers: { Authorization: `Bot ${botToken}` },
+        signal: AbortSignal.timeout(10_000),
+      }
     );
-    checked = true;
-    verified = res.ok;
+    if (res.status === 200) {
+      verified = true;
+      definitive = true;
+    } else if (res.status === 404) {
+      // Definitive "not a member".
+      definitive = true;
+    }
+    // 401/403/429/5xx → leave stored state untouched (report below).
   } catch {
-    checked = false; // Discord outage — leave stored state untouched
+    definitive = false; // Discord outage / timeout — don't wipe anything
+  }
+
+  if (!definitive) {
+    return NextResponse.json(
+      { error: "Discord didn't answer — try again in a moment." },
+      { status: 503 }
+    );
   }
 
   // Verified membership is the live permission source: verified members
   // earn AI, Gallery posting, and Server Control; anyone no longer in the
-  // server loses them. (Admins bypass via role.) Only mutate when Discord
-  // actually answered, so a flaky outage never wipes an existing badge.
+  // server loses them. (Admins bypass via role.)
   const account = await findAccount(user.id).catch(() => null);
-  if (account && checked) {
+  if (account && !account.banned) {
     if (verified) {
       // Idempotent: badge true + every verified perk present.
       const next: Permission[] = [

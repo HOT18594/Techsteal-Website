@@ -9,7 +9,7 @@ import { useSession } from "@/lib/use-session";
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<SubPage className="items-center justify-center"><p className="text-sm text-[var(--muted)] py-16">Loading…</p></SubPage>}>
       <LoginContent />
     </Suspense>
   );
@@ -36,6 +36,7 @@ function LoginContent() {
       discord_not_configured: "Discord login isn't set up yet.",
       state_mismatch: "That sign-in link was stale — try again.",
       oauth_failed: "Discord didn't let us in. Try again.",
+      banned: "This account was removed from the server by an admin.",
     };
     show("Sign-in failed", messages[error] ?? "Something went wrong.");
   }, [searchParams, show]);

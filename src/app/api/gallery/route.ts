@@ -4,7 +4,7 @@ import { galleryItems } from "@/lib/schema";
 import { fallbackGallery } from "@/lib/fallback-data";
 import { getSessionUser } from "@/lib/auth";
 import { canPostToGallery, findAccount } from "@/lib/accounts";
-import { ALLOWED_MIME, GALLERY_CATEGORIES, MAX_BYTES, uploadImage } from "@/lib/storage";
+import { ALLOWED_MIME, GALLERY_CATEGORIES, MAX_BYTES, sniffImageMime, uploadImage } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
 
   if (getDb()) {
     const account = await findAccount(user.id).catch(() => null);
-    if (!account) {
+    if (!account || account.banned) {
       return NextResponse.json(
         { error: "Your account no longer exists on this server." },
         { status: 403 }
@@ -86,12 +86,23 @@ export async function POST(request: NextRequest) {
   let imageUrl: string;
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
-    imageUrl = await uploadImage(buffer, file.type, file.name);
+    // Magic-byte check: the client-declared MIME type is not proof. Only
+    // real JPG/PNG/WebP/GIF bytes may enter the public bucket.
+    const sniffed = sniffImageMime(buffer);
+    if (!sniffed) {
+      return NextResponse.json(
+        { error: "That file doesn't look like a real JPG, PNG, WebP or GIF image." },
+        { status: 400 }
+      );
+    }
+    imageUrl = await uploadImage(buffer, sniffed, file.name);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Upload failed.";
+    // Log the raw error internally, but never echo it to the client (it can
+    // reveal env var names / internal layout).
+    console.error("gallery: upload failed", err);
     const configured = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
     return NextResponse.json(
-      { error: configured ? message : "Gallery storage isn't configured yet." },
+      { error: configured ? "Upload failed — try again in a moment." : "Gallery storage isn't configured yet." },
       { status: 503 }
     );
   }

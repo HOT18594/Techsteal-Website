@@ -1,12 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { forumReplies, forumThreads } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
 import { findAccount, isAdminUser } from "@/lib/accounts";
+import { isRateLimited } from "@/lib/rate-limit";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 
 export const dynamic = "force-dynamic";
+
+/** Parse a reply id from a JSON body, rejecting null/""/0. */
+function parseReplyId(value: unknown): number | null {
+  const id =
+    typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
 
 // Thread detail: thread + its replies (pinned comments first, then oldest).
 export async function GET(
@@ -67,15 +75,22 @@ export async function POST(
     return NextResponse.json({ error: "Invalid thread id" }, { status: 400 });
   }
 
+  if (isRateLimited(`reply:${user.id}`, 10, 60_000)) {
+    return NextResponse.json(
+      { error: "You're replying too fast — wait a moment." },
+      { status: 429 }
+    );
+  }
+
   // A deleted/de-powered account (cookie still valid) must not keep replying.
-  if (getDb()) {
-    const account = await findAccount(user.id).catch(() => null);
-    if (!account) {
-      return NextResponse.json(
-        { error: "Your account no longer exists on this server." },
-        { status: 403 }
-      );
-    }
+  const account = getDb()
+    ? await findAccount(user.id).catch(() => null)
+    : undefined;
+  if (getDb() && (!account || account.banned)) {
+    return NextResponse.json(
+      { error: "Your account no longer exists on this server." },
+      { status: 403 }
+    );
   }
 
   const body = await request.json().catch(() => ({}));
@@ -101,14 +116,15 @@ export async function POST(
     return NextResponse.json({ error: "Thread not found" }, { status: 404 });
   }
 
+  const username = account?.username ?? user.username;
   const [reply] = await db
     .insert(forumReplies)
     .values({
       threadId,
       content,
-      author: user.username,
+      author: username,
       authorId: user.id,
-      avatar: user.username.slice(0, 1).toUpperCase(),
+      avatar: username.slice(0, 1).toUpperCase(),
       color: "avatar-2",
     })
     .returning();
@@ -143,8 +159,8 @@ export async function PATCH(
   }
 
   const body = await request.json().catch(() => ({}));
-  const replyId = Number(body?.replyId);
-  if (!Number.isInteger(replyId)) {
+  const replyId = parseReplyId(body?.replyId);
+  if (!replyId) {
     return NextResponse.json({ error: "replyId is required" }, { status: 400 });
   }
 
@@ -153,10 +169,11 @@ export async function PATCH(
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
 
+  // Scope by threadId too — the reply must belong to THIS thread's URL.
   const rows = await db
     .update(forumReplies)
     .set({ pinned: Boolean(body.pinned) })
-    .where(eq(forumReplies.id, replyId))
+    .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
     .returning();
   if (rows.length === 0) {
     return NextResponse.json({ error: "Reply not found" }, { status: 404 });
@@ -167,13 +184,15 @@ export async function PATCH(
   return NextResponse.json({ ...rows[0], avatarUrl: info?.avatarUrl ?? null });
 }
 
-// Delete a reply (admin only). Body: { replyId }
+// Delete a reply. Admins can delete any reply in this thread; members can
+// delete their own. Body: { replyId }
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  if (!(await isAdminUser())) {
-    return NextResponse.json({ error: "Admins only." }, { status: 403 });
+  const user = await getSessionUser();
+  if (!user) {
+    return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
   const { id } = await params;
@@ -183,8 +202,8 @@ export async function DELETE(
   }
 
   const body = await request.json().catch(() => ({}));
-  const replyId = Number(body?.replyId);
-  if (!Number.isInteger(replyId)) {
+  const replyId = parseReplyId(body?.replyId);
+  if (!replyId) {
     return NextResponse.json({ error: "replyId is required" }, { status: 400 });
   }
 
@@ -193,9 +212,23 @@ export async function DELETE(
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
 
+  // Ownership check, scoped to this thread's URL.
+  const [reply] = await db
+    .select({ authorId: forumReplies.authorId })
+    .from(forumReplies)
+    .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
+    .limit(1);
+  const isOwner = reply?.authorId === user.id && reply.authorId !== "";
+  if (!isOwner && !(await isAdminUser())) {
+    return NextResponse.json({ error: "Admins only." }, { status: 403 });
+  }
+  if (!reply) {
+    return NextResponse.json({ error: "Reply not found" }, { status: 404 });
+  }
+
   const rows = await db
     .delete(forumReplies)
-    .where(eq(forumReplies.id, replyId))
+    .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
     .returning();
   if (rows.length === 0) {
     return NextResponse.json({ error: "Reply not found" }, { status: 404 });

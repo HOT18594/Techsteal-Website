@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server";
-import { streamChatReply } from "@/lib/ai";
+import { streamChatReply, type ChatTurn } from "@/lib/ai";
 import { getSessionUser } from "@/lib/auth";
 import { findAccount, canUseAiAssistant } from "@/lib/accounts";
 import { getDb } from "@/lib/db";
+import { isRateLimited } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -40,8 +41,17 @@ const TEXT_HEADERS = {
     );
   }
 
+  // Every message runs web searches + LLM calls, so a hammering client
+  // burns the AI budget. 10 messages/minute per user is plenty for chat.
+  if (isRateLimited(`chat:${user.id}`, 10, 60_000)) {
+    return new Response(
+      "You're sending messages a bit fast — give me a minute to catch up! ⏳",
+      { headers: TEXT_HEADERS, status: 429 }
+    );
+  }
+
   const account = await findAccount(user.id).catch(() => null);
-  if (!account && getDb()) {
+  if ((!account || account.banned) && getDb()) {
     // The account was deleted after login — the cookie must not keep working.
     return new Response(
       "Your account no longer exists on this server.",
@@ -58,19 +68,29 @@ const TEXT_HEADERS = {
     );
   }
 
+  // Optional conversation history from the client (validated again in the
+  // AI layer) so follow-up questions keep their context.
+  const history = Array.isArray(body.history)
+    ? (body.history as ChatTurn[]).filter(
+        (t) => t && (t.role === "user" || t.role === "assistant") && typeof t.content === "string"
+      )
+    : [];
+
   try {
     // request.signal aborts when the client disconnects (Stop / leave),
     // which cancels the upstream OpenRouter call too.
-    const stream = await streamChatReply(message, request.signal, {
-      username: user.username,
-      role: user.role,
-    });
+    const stream = await streamChatReply(
+      message,
+      request.signal,
+      { username: user.username, role: user.role },
+      history
+    );
     return new Response(stream, { headers: TEXT_HEADERS });
   } catch (err) {
     console.error("chatty: stream error", err);
     return new Response(
       "I couldn't reach the AI service right now. Try again in a moment.",
-      { headers: TEXT_HEADERS }
+      { headers: TEXT_HEADERS, status: 502 }
     );
   }
 }

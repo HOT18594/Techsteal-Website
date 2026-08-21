@@ -21,6 +21,34 @@ const MIME_EXT: Record<string, string> = {
   "image/gif": "gif",
 };
 
+/**
+ * Sniff the file's magic bytes to confirm it really is the image type it
+ * claims. The client-supplied Content-Type alone must never be trusted —
+ * otherwise the public bucket becomes a free host for arbitrary files
+ * (HTML/SVG payloads, malware) served from the site's storage domain.
+ */
+export function sniffImageMime(buffer: Buffer): string | null {
+  if (buffer.length < 12) return null;
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (
+    buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47
+  ) {
+    return "image/png";
+  }
+  if (buffer.toString("ascii", 0, 3) === "GIF") {
+    return "image/gif";
+  }
+  if (
+    buffer.toString("ascii", 0, 4) === "RIFF" &&
+    buffer.toString("ascii", 8, 12) === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  return null;
+}
+
 function supabaseUrl(): string {
   const url = process.env.SUPABASE_URL?.replace(/\/$/, "");
   if (!url) throw new Error("SUPABASE_URL is not configured");
@@ -46,7 +74,7 @@ export async function uploadImage(buffer: Buffer, mime: string, originalName: st
   const key = serviceRoleKey();
 
   // Safe file extension from the mime, with a random suffix to avoid collisions.
-  const base = (originalName || "image").replace(/[^\w.-]/g, "").slice(0, 60);
+  const base = (originalName || "image").replace(/[^\w.-]/g, "").replace(/^[.]+/, "").slice(0, 60) || "image";
   const ext = MIME_EXT[mime] ?? "jpg";
   const path = `gallery/${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${base}.${ext}`;
 

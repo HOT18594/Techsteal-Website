@@ -22,14 +22,21 @@ export type Db = PostgresJsDatabase<typeof schema>;
  * `postgres()` client per request without ever calling `end()` would
  * leak connections until the pooler maxes out and the site goes down.
  */
-let cachedClient: Db | null = null;
+// Cache on globalThis: Next.js dev hot-reload re-evaluates modules, so a
+// plain module-level let would create a NEW postgres pool on every edit
+// while the old one keeps its sockets open — until the pooler maxes out.
+const g = globalThis as unknown as { __techstealDb?: Db };
 
 export function createDb(url = process.env.DATABASE_URL): Db {
   if (!url) throw new Error("DATABASE_URL is not set");
-  if (cachedClient) return cachedClient;
-  const client = postgres(url, { prepare: false, max: 1 });
-  cachedClient = drizzle(client, { schema });
-  return cachedClient;
+  if (g.__techstealDb) return g.__techstealDb;
+  // max: 10 — a single connection serializes every query on the site
+  // (concurrent requests queue behind it). Still pooler-safe together
+  // with prepare: false.
+  const client = postgres(url, { prepare: false, max: 10 });
+  const db = drizzle(client, { schema });
+  g.__techstealDb = db;
+  return db;
 }
 
 /**

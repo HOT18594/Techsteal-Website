@@ -47,12 +47,15 @@ export async function exchangeCodeForToken(
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
+    signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok) {
+    // Truncate/sanitize the raw body — it can echo request details.
     const text = await res.text().catch(() => "");
-    throw new Error(`Discord token exchange failed (${res.status}): ${text.slice(0, 200)}`);
+    throw new Error(`Discord token exchange failed (${res.status}): ${text.slice(0, 120)}`);
   }
-  const data = (await res.json()) as { access_token: string };
+  const data = (await res.json().catch(() => null)) as { access_token?: string } | null;
+  if (!data?.access_token) throw new Error("Discord token exchange returned no token");
   return data.access_token;
 }
 
@@ -60,9 +63,12 @@ export async function exchangeCodeForToken(
 export async function fetchDiscordUser(accessToken: string): Promise<DiscordUser> {
   const res = await fetch("https://discord.com/api/users/@me", {
     headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(10_000),
   });
   if (!res.ok) throw new Error(`Discord user fetch failed (${res.status})`);
-  return (await res.json()) as DiscordUser;
+  const user = (await res.json().catch(() => null)) as DiscordUser | null;
+  if (!user?.id || !user.username) throw new Error("Discord user fetch returned bad data");
+  return user;
 }
 
 /**

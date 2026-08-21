@@ -43,7 +43,8 @@ export default function StatusPage() {
   const [controlBusy, setControlBusy] = useState<"start" | "stop" | null>(null);
 
   useEffect(() => {
-    if (!user && !sessionLoading) {
+    if (sessionLoading) return; // wait for the session before deciding
+    if (!user) {
       setControl(null);
       return;
     }

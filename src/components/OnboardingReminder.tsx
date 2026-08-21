@@ -18,6 +18,8 @@ export function OnboardingReminder() {
   // users already there are handling it.
   if (loading || !user) return null;
   if (user.onboarded) return null;
+  // Admins don't need the MC-username onboarding — don't nag them forever.
+  if (user.role === "admin") return null;
   if (pathname === "/onboarding" || pathname === "/settings") return null;
 
   return (

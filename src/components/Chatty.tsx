@@ -131,7 +131,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
     const history = loadHistory();
     if (history && history.length > 0) {
       setMessages(history);
-      nextId.current = Math.max(...history.map((m) => m.id), 0) + 1;
+      nextId.current = history.reduce((max, m) => Math.max(max, m.id), 0) + 1;
     } else {
       // No saved chat — stamp the welcome message with the browser's time
       // (client-only, so it can never mismatch the server-rendered frame).
@@ -141,11 +141,12 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
   }, []);
 
   // Persist history — but only once hydrated, so the welcome state never
-  // overwrites saved chats.
+  // overwrites saved chats. Capped to the last 50 messages so the stored
+  // payload can't grow without bound.
   useEffect(() => {
     if (!hydrated) return;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-50)));
     } catch {}
   }, [messages, hydrated]);
 
@@ -205,6 +206,16 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
     thinkLinesRef.current = thinkingLinesFor(text);
     setDots(true);
 
+    // Prior turns give the model context for follow-ups ("what about
+    // rule 3?"). Skip the welcome message (id 0); cap and truncate lightly.
+    const priorTurns = messages
+      .filter((m) => m.id !== 0 && m.text.trim().length > 0)
+      .slice(-8)
+      .map((m) => ({
+        role: m.role,
+        content: m.text.slice(0, 2000),
+      }));
+
     // Streaming diagnostics — measured from the moment the request fires.
     const t0 = Date.now();
     let firstTokenAt: number | null = null;
@@ -231,7 +242,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message: text, history: priorTurns }),
         signal: controller.signal,
       });
       if (!res.ok) {
@@ -407,7 +418,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
         }`}
       >
         {/* Messages */}
-        <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto" id="chat-messages">
+        <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto" id="chat-messages" aria-live="polite">
           <div className="px-4 sm:px-6 py-6 space-y-5">
             {messages.map((m) => (
               <div key={m.id} className="group">
@@ -427,7 +438,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
                           {m.stats}
                         </div>
                       ) : null}
-                      <div className="flex items-center gap-3 mt-1.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-3 mt-1.5 px-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                         <span className="text-[11px] text-[var(--muted-2)]">{m.time}</span>
                         <button
                           className="text-[11px] text-[var(--muted)] hover:text-[var(--accent)] transition"
@@ -447,7 +458,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
                           {m.text}
                         </div>
                       </div>
-                      <div className="flex items-center justify-end gap-3 mt-1.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center justify-end gap-3 mt-1.5 px-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                         <span className="text-[11px] text-[var(--muted-2)]">{m.time}</span>
                         <button
                           className="text-[11px] text-[var(--muted)] hover:text-[var(--accent)] transition"

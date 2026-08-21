@@ -111,6 +111,14 @@ export function Navbar() {
             {!statusLoading && statusLive ? ` · ${players}/${max}` : ""}
           </span>
         </div>
+        {/* Compact dot-only pill for mobile — a status cue without the text */}
+        <Link
+          href="/status"
+          className={`status-pill sm:hidden !px-2 ${online ? "" : "offline"}`}
+          aria-label={online ? `Server online — ${players}/${max} players` : "Server offline — view status"}
+        >
+          <span className={`pulse-dot ${online ? "" : "muted"}`} />
+        </Link>
         <Link href="/join" className="btn-primary hidden sm:inline-flex" aria-label="How to join">
           <i className="fa-solid fa-compass" />
           <span>Join</span>

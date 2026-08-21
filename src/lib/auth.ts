@@ -5,16 +5,24 @@ import type { SessionUser } from "@/types";
 const COOKIE_NAME = "techsteal_session";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
+// Known-placeholder values that must never sign production sessions — a
+// secret copied verbatim from .env.example is publicly known and therefore
+// forgeable, exactly like no secret at all.
+const PLACEHOLDER_SECRETS = new Set([
+  "dev-session-secret-change-me",
+  "change-me-to-a-random-string",
+]);
+
 /** Secret for signing session JWTs. */
 function getSecret(): Uint8Array {
   let secret = process.env.SESSION_SECRET;
-  if (!secret) {
+  if (!secret || PLACEHOLDER_SECRETS.has(secret) || secret.length < 16) {
     if (process.env.NODE_ENV === "production") {
       // Never fall back to a public default in production — anyone could
-      // forge a session. Fail closed: sessions just don't work until
+      // forge a session. Fail closed: sessions just don't work until a real
       // SESSION_SECRET is set, rather than quietly becoming forgeable.
       throw new Error(
-        "SESSION_SECRET is not set. Refusing to use session auth with a public default in production."
+        "SESSION_SECRET is missing, a known placeholder, or too short. Set a strong random value."
       );
     }
     // Local dev only: a fixed secret is fine (no real users).
@@ -35,8 +43,22 @@ export async function signSession(user: SessionUser): Promise<string> {
 /** Verify a session JWT and return the user, or null if invalid/expired. */
 export async function verifySession(token: string): Promise<SessionUser | null> {
   try {
-    const { payload } = await jwtVerify(token, getSecret());
-    return (payload.user as SessionUser) ?? null;
+    // Pin the algorithm — without this jose also accepts HS384/HS512.
+    const { payload } = await jwtVerify(token, getSecret(), { algorithms: ["HS256"] });
+    const user = payload.user as Partial<SessionUser> | undefined;
+    // Runtime-validate the shape: don't trust whatever the token carries.
+    if (!user || typeof user.id !== "string" || typeof user.username !== "string") {
+      return null;
+    }
+    return {
+      id: user.id,
+      username: user.username,
+      role: user.role === "admin" ? "admin" : "member",
+      permissions: Array.isArray(user.permissions) ? user.permissions : [],
+      avatarUrl: typeof user.avatarUrl === "string" ? user.avatarUrl : undefined,
+      onboarded: user.onboarded,
+      discordVerified: user.discordVerified,
+    };
   } catch {
     return null;
   }

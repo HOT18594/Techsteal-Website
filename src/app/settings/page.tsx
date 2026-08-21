@@ -11,7 +11,7 @@ import type { Account } from "@/types";
 
 export default function SettingsPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<SubPage className="max-w-3xl"><p className="text-sm text-[var(--muted)] text-center py-16">Loading profile…</p></SubPage>}>
       <SettingsContent />
     </Suspense>
   );
@@ -46,17 +46,26 @@ function SettingsContent() {
   // Load the full profile.
   useEffect(() => {
     if (!user) return;
+    let cancelled = false;
     fetch("/api/profile")
       .then((r) => (r.ok ? r.json() : { profile: null }))
       .then((data) => {
+        if (cancelled) return;
         const p = data.profile as Account | null;
         setProfile(p);
         setMcUsername(p?.minecraftUsername ?? "");
         setMcSkin(p?.minecraftUsername ? skinUrl(p.minecraftUsername) : null);
       })
-      .catch(() => {})
-      .finally(() => setLoadingProfile(false));
-  }, [user]);
+      .catch(() => {
+        if (!cancelled) show("Couldn't load profile", "Check your connection and try again.", "error");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingProfile(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, show]);
 
   const patch = async (body: Record<string, unknown>) => {
     const res = await fetch("/api/profile", {
@@ -134,7 +143,7 @@ function SettingsContent() {
   const verifyDiscord = async () => {
     setVerifyState("checking");
     try {
-      const res = await fetch("/api/auth/discord/verify");
+      const res = await fetch("/api/auth/discord/verify", { method: "POST" });
       if (!res.ok) {
         setVerifyState("idle");
         show("Couldn't verify", "Something went wrong — try again in a moment.");
@@ -152,7 +161,8 @@ function SettingsContent() {
         show("Not verified", "Join the official server, then try again.");
       }
     } catch {
-      setVerifyState("not_configured");
+      setVerifyState("idle");
+      show("Couldn't reach the server", "Check your connection and try again.");
     }
   };
 

@@ -48,3 +48,4 @@ scripts/CODES.md
 
 # keep ignoring any env variant (incl. .env.example copies)
 .env*
+!.env.example

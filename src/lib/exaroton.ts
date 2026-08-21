@@ -29,8 +29,16 @@ export async function exarotonAction(
         Authorization: `Bearer ${config.token}`,
         "Content-Type": "application/json",
       },
+      // A hung upstream must not stall the request until the platform
+      // timeout — bail out after 8s with a friendly error instead.
+      signal: AbortSignal.timeout(8_000),
     }
-  );
+  ).catch((err: unknown) => {
+    if (err instanceof Error && err.name === "TimeoutError") {
+      throw new Error("Exaroton didn't respond — try again in a moment.");
+    }
+    throw err;
+  });
   if (!res.ok) {
     // Don't leak the raw exaroton response body (may echo token details).
     throw new Error(`exaroton error ${res.status}`);

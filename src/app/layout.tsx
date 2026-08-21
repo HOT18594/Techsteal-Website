@@ -27,8 +27,21 @@ const grotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Techsteal",
-  description: `Official website for the ${siteConfig.name} private Minecraft server.`,
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.techsteal.space"),
+  title: {
+    default: `${siteConfig.name} — Private Minecraft Server`,
+    template: `%s · ${siteConfig.name}`,
+  },
+  description: `Official website for the ${siteConfig.name} private Minecraft server — status, forum, members, gallery, and rules.`,
+  openGraph: {
+    title: `${siteConfig.name} — Private Minecraft Server`,
+    description: `Status, forum, members, gallery, and rules for the ${siteConfig.name} Minecraft server.`,
+    type: "website",
+    images: ["/techsteal-hero.jpeg"],
+  },
+  twitter: {
+    card: "summary_large_image",
+  },
 };
 
 export const viewport: Viewport = {
@@ -39,6 +52,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={grotesk.variable}>
       <head>
+        {/* Preconnect warms the CDN connection so the FontAwesome stylesheet
+            doesn't wait on a full TLS handshake after discovery. */}
+        <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossOrigin="" />
         <link
           rel="stylesheet"
           href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"

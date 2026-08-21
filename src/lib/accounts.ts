@@ -21,11 +21,18 @@ function rowToAccount(row: typeof profiles.$inferSelect): Account {
     minecraftUsername: row.minecraftUsername ?? undefined,
     discordVerified: row.discordVerified ?? false,
     onboarded: row.onboarded ?? false,
+    banned: row.banned ?? false,
     createdAt: row.createdAt ?? undefined,
   };
 }
 
 export async function getAllAccounts(): Promise<Account[]> {
+  const accounts = await listAccounts();
+  return accounts.filter((a) => !a.banned);
+}
+
+/** All accounts including banned ones (for the admin panel's ban list). */
+export async function listAccounts(): Promise<Account[]> {
   const db = getDb();
   if (!db) return [];
   const rows = await db.select().from(profiles);
@@ -58,7 +65,7 @@ export async function addAccount(input: {
       avatarUrl: input.avatarUrl,
       role: input.role,
       permissions: input.permissions ?? [],
-      createdAt: new Date().toISOString().slice(0, 10),
+      createdAt: new Date().toISOString(),
     })
     // Two simultaneous first logins for the same Discord id must not both
     // try to insert (primary-key violation → one login fails). If we lost
@@ -76,8 +83,8 @@ export async function updateAccount(
   patch: Partial<
     Pick<
       Account,
-      "role" | "permissions" | "username" | "email" | "avatarUrl" | "discordVerified" | "onboarded"
-    > & { minecraftUsername?: string | null }
+      "role" | "permissions" | "username" | "email" | "discordVerified" | "onboarded" | "banned"
+    > & { avatarUrl?: string | null; minecraftUsername?: string | null }
   >
 ): Promise<Account | null> {
   const db = getDb();
@@ -102,16 +109,31 @@ export async function updateAccount(
         ? { discordVerified: patch.discordVerified }
         : {}),
       ...(patch.onboarded !== undefined ? { onboarded: patch.onboarded } : {}),
+      ...(patch.banned !== undefined ? { banned: patch.banned } : {}),
     })
     .where(eq(profiles.id, id))
     .returning();
   return rows[0] ? rowToAccount(rows[0]) : null;
 }
 
+// Removing an account BANS it instead of deleting the row: Discord OAuth
+// recreates accounts on login, so a deleted row would just let the user
+// back in. A banned row denies login and all capabilities until an admin
+// restores it.
 export async function removeAccount(id: string): Promise<boolean> {
   const db = getDb();
   if (!db) return false;
-  const rows = await db.delete(profiles).where(eq(profiles.id, id)).returning();
+  const rows = await db
+    .update(profiles)
+    .set({
+      banned: true,
+      role: "member",
+      permissions: [],
+      discordVerified: false,
+      onboarded: false,
+    })
+    .where(eq(profiles.id, id))
+    .returning();
   return rows.length > 0;
 }
 
@@ -139,11 +161,16 @@ export async function findOrCreateDiscordAccount(input: {
 }): Promise<Account> {
   const id = `discord:${input.id}`;
   const existing = await findAccount(id);
+  if (existing?.banned) {
+    // Removed by an admin — the denylisted row must not resurrect itself.
+    throw new Error("ACCOUNT_BANNED");
+  }
   if (existing) {
     // Refresh the profile picture on every login so avatar changes on
-    // Discord show up here too.
-    if (input.avatarUrl && input.avatarUrl !== existing.avatarUrl) {
-      const updated = await updateAccount(id, { avatarUrl: input.avatarUrl });
+    // Discord show up here too — including REMOVING it (avatarUrl null),
+    // otherwise a deleted Discord PFP leaves a stale, soon-404ing URL.
+    if ((input.avatarUrl ?? null) !== (existing.avatarUrl ?? null)) {
+      const updated = await updateAccount(id, { avatarUrl: input.avatarUrl ?? null });
       if (updated) return updated;
     }
     return existing;
@@ -187,7 +214,7 @@ export const VERIFIED_PERMISSIONS: Permission[] = [
  * access immediately even if the bit was granted earlier.
  */
 export function canUseAiAssistant(account: Account | undefined): boolean {
-  if (!account) return false;
+  if (!account || account.banned) return false;
   if (account.role === "admin") return true;
   if (account.discordVerified === true) return true;
   return account.permissions.includes("ai_access");
@@ -203,7 +230,7 @@ export function canUseAiAssistant(account: Account | undefined): boolean {
  * ability immediately even if they were granted the bit earlier.
  */
 export function canPostToGallery(account: Account | undefined): boolean {
-  if (!account) return false;
+  if (!account || account.banned) return false;
   if (account.role === "admin") return true;
   if (account.discordVerified === true) return true;
   return account.permissions.includes("gallery_post");
@@ -216,7 +243,7 @@ export function canPostToGallery(account: Account | undefined): boolean {
  * or an explicit `server_control` grant (admin override).
  */
 export function canControlServer(account: Account | undefined): boolean {
-  if (!account) return false;
+  if (!account || account.banned) return false;
   if (account.role === "admin") return true;
   if (account.discordVerified === true) return true;
   return account.permissions.includes("server_control");
@@ -240,5 +267,5 @@ export async function isAdminUser(): Promise<boolean> {
   if (!user || user.role !== "admin") return false;
   if (!getDb()) return true; // no database — trust the signed session
   const account = await findAccount(user.id).catch(() => null);
-  return account?.role === "admin";
+  return account?.role === "admin" && !account.banned;
 }

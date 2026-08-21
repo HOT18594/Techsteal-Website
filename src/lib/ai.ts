@@ -130,7 +130,16 @@ async function buildServerKnowledge(): Promise<{ text: string; hasDb: boolean }>
       // Members come from the real account store (profiles), matching the
       // /api/members page — NOT the legacy static `members` table, which is
       // seeded empty and has no API route.
-      db.select().from(profiles).orderBy(profiles.username).limit(30),
+      db
+        .select({
+          username: profiles.username,
+          role: profiles.role,
+          discordVerified: profiles.discordVerified,
+          minecraftUsername: profiles.minecraftUsername,
+        })
+        .from(profiles)
+        .orderBy(profiles.username)
+        .limit(30),
       db.select().from(timelineEvents).orderBy(desc(timelineEvents.id)).limit(15),
       db.select().from(galleryItems).limit(10),
       db.select().from(forumThreads).orderBy(desc(forumThreads.createdAt)).limit(6),
@@ -205,12 +214,19 @@ async function buildLiveStatus(): Promise<string> {
   }
 }
 
+/** One turn of conversation history sent by the client. */
+export interface ChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
 function fetchCompletion(
   baseUrl: string,
   model: string,
   apiKey: string,
   system: string,
   userContent: string,
+  history: ChatTurn[],
   signal?: AbortSignal
 ): Promise<Response> {
   return fetch(`${baseUrl}/chat/completions`, {
@@ -227,10 +243,15 @@ function fetchCompletion(
       stream: true,
       messages: [
         { role: "system", content: system },
+        // Prior turns (already capped by the caller) so follow-ups like
+        // "what about rule 3?" have context.
+        ...history,
         { role: "user", content: userContent },
       ],
     }),
-    signal,
+    // A hung upstream must not hold the request open until the platform
+    // kills it. Combine with the caller's abort signal (client Stop/leave).
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(25_000)]) : AbortSignal.timeout(25_000),
   });
 }
 
@@ -253,7 +274,8 @@ function textStream(text: string): ReadableStream<Uint8Array> {
 export async function streamChatReply(
   message: string,
   signal?: AbortSignal,
-  user?: { username: string; role: string }
+  user?: { username: string; role: string },
+  history: ChatTurn[] = []
 ): Promise<ReadableStream<Uint8Array>> {
   const apiKey = process.env.AI_API_KEY;
   const baseUrl = (process.env.AI_BASE_URL ?? "https://openrouter.ai/api/v1").replace(
@@ -267,10 +289,15 @@ export async function streamChatReply(
 
   if (!apiKey) return textStream(NOT_CONFIGURED(message));
 
-  // Gather context in parallel: free web search, live server status, and
-  // the site's knowledge base.
+  // Help the model separate server-specific questions from general ones so
+  // it routes to the right knowledge source instead of guessing — and skip
+  // the (up to 4s) web search when the knowledge base should answer anyway.
+  const isServerQuestion = SERVER_QUESTION_HINTS.test(message);
+
+  // Gather context in parallel: free web search (general questions only),
+  // live server status, and the site's knowledge base.
   const [results, knowledge, liveStatus] = await Promise.all([
-    webSearch(message),
+    isServerQuestion ? Promise.resolve([]) : webSearch(message),
     buildServerKnowledge(),
     buildLiveStatus(),
   ]);
@@ -282,9 +309,18 @@ export async function streamChatReply(
     liveStatus,
   });
 
-  // Help the model separate server-specific questions from general ones so
-  // it routes to the right knowledge source instead of guessing.
-  const isServerQuestion = SERVER_QUESTION_HINTS.test(message);
+  // Sanitize client-sent history: cap turns, length, and roles — never
+  // trust the client payload straight into the prompt.
+  const safeHistory = history
+    .filter(
+      (t) =>
+        (t.role === "user" || t.role === "assistant") &&
+        typeof t.content === "string" &&
+        t.content.trim().length > 0
+    )
+    .slice(-8)
+    .map((t) => ({ role: t.role, content: t.content.slice(0, 2000) }));
+
   const userContent = [
     `Player's question: "${message}"`,
     ``,
@@ -303,11 +339,13 @@ export async function streamChatReply(
   // limits). Returns null if the client aborted mid-retry — the caller then
   // bails out quietly instead of streaming an error over a stopped chat.
   const attempt = async (m: string): Promise<Response | null> => {
-    let r = await fetchCompletion(baseUrl, m, apiKey, system, userContent, signal);
+    let r = await fetchCompletion(baseUrl, m, apiKey, system, userContent, safeHistory, signal);
     if (r.status === 429) {
+      // Drain/cancel the 429 body so the connection isn't left hanging.
+      await r.body?.cancel().catch(() => {});
       await new Promise((resolve) => setTimeout(resolve, 2000));
       if (signal?.aborted) return null;
-      r = await fetchCompletion(baseUrl, m, apiKey, system, userContent, signal);
+      r = await fetchCompletion(baseUrl, m, apiKey, system, userContent, safeHistory, signal);
     }
     return r;
   };
@@ -347,7 +385,11 @@ function pipeSse(
     async start(controller) {
       try {
         while (true) {
-          if (signal?.aborted) break;
+          if (signal?.aborted) {
+            // Client left — stop buffering the upstream stream too.
+            await reader.cancel().catch(() => {});
+            break;
+          }
           const { done, value } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
@@ -373,7 +415,13 @@ function pipeSse(
         }
         controller.close();
       } catch {
-        controller.error(new Error("stream interrupted"));
+        // A mid-stream hiccup shouldn't error the client's stream after it
+        // may have already rendered partial text — end it gracefully.
+        try {
+          controller.close();
+        } catch {
+          /* already closed */
+        }
       }
     },
     cancel() {

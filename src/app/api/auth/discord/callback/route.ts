@@ -62,6 +62,9 @@ export async function GET(request: Request) {
     res.cookies.set(STATE_COOKIE, "", { path: "/", maxAge: 0 });
     return res;
   } catch (err) {
+    if (err instanceof Error && err.message === "ACCOUNT_BANNED") {
+      return fail("banned");
+    }
     console.error("Discord login failed:", err);
     return fail("oauth_failed");
   }

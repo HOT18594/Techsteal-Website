@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { siteConfig } from "@/lib/site";
 
 const NAVIGATE = [
@@ -67,9 +68,9 @@ export function Footer() {
             <ul className="space-y-2.5">
               {NAVIGATE.map((l) => (
                 <li key={l.href}>
-                  <a href={l.href} className="text-sm text-[var(--muted)] hover:text-[var(--accent-bright)] transition">
+                  <Link href={l.href} className="text-sm text-[var(--muted)] hover:text-[var(--accent-bright)] transition">
                     {l.label}
-                  </a>
+                  </Link>
                 </li>
               ))}
             </ul>
@@ -82,9 +83,9 @@ export function Footer() {
             <ul className="space-y-2.5 mb-4">
               {CONNECT.map((l) => (
                 <li key={l.href}>
-                  <a href={l.href} className="text-sm text-[var(--muted)] hover:text-[var(--accent-bright)] transition">
+                  <Link href={l.href} className="text-sm text-[var(--muted)] hover:text-[var(--accent-bright)] transition">
                     {l.label}
-                  </a>
+                  </Link>
                 </li>
               ))}
             </ul>

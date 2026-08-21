@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/Toast";
 import { SubPage } from "@/components/SubPage";
 import { fallbackRules } from "@/lib/fallback-data";
@@ -38,13 +38,27 @@ export default function RulesPage() {
   const { data: sections } = useApi<RuleSection[]>("/api/rules", fallbackRules);
   // Rules come from the same source the API/DB uses, so there's only one
   // copy to maintain going forward.
-  const RULES = sections[0]?.rules ?? [];
+  const RULES = sections.flatMap((s) => s.rules ?? []);
   const [acknowledged, setAcknowledged] = useState(false);
   const ackRef = useRef<HTMLButtonElement>(null);
+
+  // Persist the acknowledgment (per browser) so the button doesn't reset
+  // and re-fire the confetti on every visit. Read after mount to avoid a
+  // hydration mismatch.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("techsteal-rules-ack") === "1") {
+        setAcknowledged(true);
+      }
+    } catch {}
+  }, []);
 
   const acknowledge = () => {
     if (acknowledged) return;
     setAcknowledged(true);
+    try {
+      localStorage.setItem("techsteal-rules-ack", "1");
+    } catch {}
     show("Rules acknowledged", "Thanks — welcome aboard. 🔥");
     const btn = ackRef.current?.getBoundingClientRect();
     if (btn) {
