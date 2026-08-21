@@ -11,10 +11,10 @@ import { useToast } from "./Toast";
 import { useApi } from "@/lib/use-api";
 import { useSession } from "@/lib/use-session";
 
+/* The six links in the bar's middle stretch. Home is the wordmark, Status
+   the pill, Join the CTA — so the full nav lives in one bar, always
+   visible: icon-only below xl, icon + label from xl up. No hamburger. */
 const NAV_LINKS = [
-  { href: "/", label: "Home", icon: "fa-house" },
-  { href: "/join", label: "How to Join", icon: "fa-compass" },
-  { href: "/status", label: "Status", icon: "fa-signal" },
   { href: "/assistant", label: "Assistant", icon: "fa-robot" },
   { href: "/forum", label: "Forum", icon: "fa-comments" },
   { href: "/history", label: "History", icon: "fa-clock-rotate-left" },
@@ -23,17 +23,8 @@ const NAV_LINKS = [
   { href: "/rules", label: "Rules", icon: "fa-gavel" },
 ] as const;
 
-/* The links that get prime placement in the desktop bar (xl+). Home is the
-   wordmark, Status is the pill, Join is the CTA — these six fill the rest. */
-const DESKTOP_LINKS = NAV_LINKS.filter(
-  (l) => !["/", "/join", "/status"].includes(l.href)
-);
-
 export function Navbar() {
-  const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const toggleRef = useRef<HTMLButtonElement>(null);
   const profileRef = useRef<HTMLDivElement>(null);
   const profileBtnRef = useRef<HTMLButtonElement>(null);
   const { show } = useToast();
@@ -43,67 +34,34 @@ export function Navbar() {
   // Live status from /api/status (falls back to placeholder until configured).
   const { data: status, loading: statusLoading } = useApi<ServerStatus>("/api/status", fallbackStatus);
 
-  // Close popovers on route change.
+  // Close the profile popover on route change.
   useEffect(() => {
-    setMenuOpen(false);
     setProfileOpen(false);
   }, [pathname]);
 
-  // Only one popover at a time — opening one closes the other.
-  const toggleMenu = (open: boolean) => {
-    setMenuOpen(open);
-    if (open) setProfileOpen(false);
-  };
-  const toggleProfile = (open: boolean) => {
-    setProfileOpen(open);
-    if (open) setMenuOpen(false);
-  };
-
-  // Lock body scroll while the nav menu is open (the popover is an overlay),
-  // and manage focus: first link gets focus on open, the trigger gets it
-  // back on close — keyboard users never drop to <body>.
-  useEffect(() => {
-    if (!menuOpen) return;
-    const firstLink = menuRef.current?.querySelector<HTMLElement>("a, button");
-    firstLink?.focus();
-    const prevOverflow = document.body.style.overflow;
-    const toggle = toggleRef.current; // ref may be null by cleanup time
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prevOverflow;
-      if (!profileOpen) toggle?.focus();
-    };
-  }, [menuOpen, profileOpen]);
-
+  // Focus the first control when the popover opens — keyboard users never
+  // drop to <body>.
   useEffect(() => {
     if (!profileOpen) return;
     const firstLink = profileRef.current?.querySelector<HTMLElement>("a, button");
     firstLink?.focus();
   }, [profileOpen]);
 
-  // Close on outside click / Escape — but NEVER when the toggle button
-  // itself was clicked: the toggle's onClick is the single source of truth.
+  // Close on outside click / Escape — but NEVER when the trigger button
+  // itself was clicked: the trigger's onClick is the single source of truth.
   useEffect(() => {
-    if (!menuOpen && !profileOpen) return;
+    if (!profileOpen) return;
     const onClick = (e: MouseEvent) => {
       const target = e.target as Node;
-      const inMenu = menuRef.current?.contains(target);
-      const inProfile = profileRef.current?.contains(target);
-      const onToggle = toggleRef.current?.contains(target);
-      const onProfileBtn = profileBtnRef.current?.contains(target);
-      if (menuOpen && !inMenu && !onToggle) setMenuOpen(false);
-      if (profileOpen && !inProfile && !onProfileBtn) {
-        setProfileOpen(false);
-        profileBtnRef.current?.focus();
-      }
+      if (profileRef.current?.contains(target)) return;
+      if (profileBtnRef.current?.contains(target)) return;
+      setProfileOpen(false);
+      profileBtnRef.current?.focus();
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        const wasMenu = menuOpen;
-        setMenuOpen(false);
         setProfileOpen(false);
-        if (wasMenu) toggleRef.current?.focus();
-        else profileBtnRef.current?.focus();
+        profileBtnRef.current?.focus();
       }
     };
     document.addEventListener("mousedown", onClick);
@@ -112,7 +70,7 @@ export function Navbar() {
       document.removeEventListener("mousedown", onClick);
       document.removeEventListener("keydown", onKey);
     };
-  }, [menuOpen, profileOpen]);
+  }, [profileOpen]);
 
   const handleLogout = async () => {
     const ok = await logout();
@@ -135,98 +93,82 @@ export function Navbar() {
   return (
     <>
       {/* One fixed glass bar across the top: wordmark · links · actions.
-          Previously these were three separately-positioned elements that
-          could overlap on narrower viewports — a single flex row can't. */}
+          Every destination is reachable at every size — no hamburger. */}
       <header className="site-nav">
         <Link href="/" className="nav-wordmark" aria-label={`${siteConfig.name} home`}>
           <i className="fa-solid fa-cube" aria-hidden="true" />
-          {siteConfig.name}
+          <span className="nav-wordmark-text">{siteConfig.name}</span>
         </Link>
 
-        {/* Desktop inline links — the middle of the bar (xl+). Below xl the
-            hamburger popover is the nav. */}
+        {/* All nav links inline — icon-only below xl (title tooltips carry
+            the names), icon + label from xl up. */}
         <nav className="nav-links-bar" aria-label="Primary">
-          {DESKTOP_LINKS.map((link) => (
+          {NAV_LINKS.map((link) => (
             <Link
               key={link.href}
               href={link.href}
               className={pathname === link.href ? "active" : ""}
+              title={link.label}
+              aria-label={link.label}
             >
               <i className={`fa-solid ${link.icon}`} aria-hidden="true" />
-              {link.label}
+              <span className="nav-link-label">{link.label}</span>
             </Link>
           ))}
         </nav>
 
-        {/* Action cluster — right side of the bar.
+        {/* Action cluster — right end of the bar.
             Order: primary CTA (Join), ambient status, then (divided) account
-            cluster + menu. Actions first, identity last. */}
+            cluster. Actions first, identity last. */}
         <div className="nav-actions">
-        <Link href="/join" className="btn-primary hidden sm:inline-flex" aria-label="How to join">
-          <i className="fa-solid fa-compass" />
-          <span>Join</span>
-        </Link>
-        {/* Single status pill — text collapses to a dot-only pill on mobile.
-            (.status-pill owns its `display`, so two separate pills can't be
-            toggled with Tailwind hidden — that was the double-dot bug.) */}
-        <Link
-          href="/status"
-          className={`status-pill ${online ? "" : "offline"}`}
-          aria-label={online ? `Server online — ${players}/${max} players` : "Server offline — view status"}
-          title={statusLoading ? "Checking status…" : online ? `Online · ${players}/${max} players` : "Offline"}
-        >
-          <span className={`pulse-dot ${online ? "" : "muted"}`} />
-          <span className="hidden sm:inline">
-            {statusLoading ? "Checking…" : online ? "Online" : "Offline"}
-            {!statusLoading && statusLive ? ` · ${players}/${max}` : ""}
-          </span>
-        </Link>
-
-        <span className="nav-divider hidden sm:block" aria-hidden="true" />
-
-        {user ? (
-          /* Profile — click opens a menu; Admin + logout live inside it */
-          <button
-            ref={profileBtnRef}
-            className="nav-profile"
-            onClick={() => toggleProfile(!profileOpen)}
-            aria-label="Profile menu"
-            aria-expanded={profileOpen}
-            aria-controls="profile-popover"
-            title="Profile"
+          <Link href="/join" className="btn-primary nav-join" aria-label="How to join">
+            <i className="fa-solid fa-compass" />
+            <span>Join</span>
+          </Link>
+          {/* Single status pill — text collapses to a dot-only pill below lg.
+              (.status-pill owns its `display`, so the text hides via the
+              inner span — toggling the pill itself was the double-dot bug.) */}
+          <Link
+            href="/status"
+            className={`status-pill ${online ? "" : "offline"}`}
+            aria-label={online ? `Server online — ${players}/${max} players` : "Server offline — view status"}
+            title={statusLoading ? "Checking status…" : online ? `Online · ${players}/${max} players` : "Offline"}
           >
-            <Avatar name={user.username} src={user.avatarUrl} size="sm" className="!w-7 !h-7" />
-            <i className={`fa-solid ${profileOpen ? "fa-chevron-up" : "fa-chevron-down"} text-[10px] text-[var(--muted)]`} />
-          </button>
-        ) : (
-          !sessionLoading && (
-            <Link
-              href="/login"
-              className="btn-secondary hidden sm:inline-flex"
-              aria-label="Log in"
+            <span className={`pulse-dot ${online ? "" : "muted"}`} />
+            <span className="hidden lg:inline">
+              {statusLoading ? "Checking…" : online ? "Online" : "Offline"}
+              {!statusLoading && statusLive ? ` · ${players}/${max}` : ""}
+            </span>
+          </Link>
+
+          <span className="nav-divider" aria-hidden="true" />
+
+          {user ? (
+            /* Profile — click opens a menu; Admin + logout live inside it */
+            <button
+              ref={profileBtnRef}
+              className="nav-profile"
+              onClick={() => setProfileOpen(!profileOpen)}
+              aria-label="Profile menu"
+              aria-expanded={profileOpen}
+              aria-controls="profile-popover"
+              title="Profile"
             >
-              <i className="fa-brands fa-discord" />
-              <span className="hidden md:inline">Log in</span>
-            </Link>
-          )
-        )}
-        <button
-          ref={toggleRef}
-          className="nav-toggle xl:hidden"
-          onClick={() => toggleMenu(!menuOpen)}
-          aria-label={menuOpen ? "Close menu" : "Open menu"}
-          aria-expanded={menuOpen}
-          aria-controls="nav-popover"
-        >
-          <i className={menuOpen ? "fa-solid fa-xmark" : "fa-solid fa-bars"} />
-        </button>
+              <Avatar name={user.username} src={user.avatarUrl} size="sm" className="!w-7 !h-7" />
+              <i className={`fa-solid ${profileOpen ? "fa-chevron-up" : "fa-chevron-down"} hidden sm:inline-block text-[10px] text-[var(--muted)]`} />
+            </button>
+          ) : (
+            !sessionLoading && (
+              /* Icon-only on small screens — with no hamburger popover, the
+                  top-bar button is the only sign-in entry point. */
+              <Link href="/login" className="btn-secondary inline-flex" aria-label="Log in">
+                <i className="fa-brands fa-discord" />
+                <span className="hidden lg:inline">Log in</span>
+              </Link>
+            )
+          )}
         </div>
       </header>
-
-      {/* Cinematic scrim behind the popover */}
-      {menuOpen ? (
-        <div className="nav-scrim" onClick={() => setMenuOpen(false)} aria-hidden="true" />
-      ) : null}
 
       {/* Profile popover */}
       {user ? (
@@ -279,45 +221,6 @@ export function Navbar() {
           </div>
         </div>
       ) : null}
-
-      {/* Compact popover menu */}
-      <div
-        id="nav-popover"
-        ref={menuRef}
-        role="navigation"
-        aria-label="Main navigation"
-        aria-hidden={!menuOpen}
-        inert={!menuOpen}
-        className={`nav-popover ${menuOpen ? "open" : ""}`}
-      >
-        {NAV_LINKS.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            className={`nav-popover-link ${pathname === link.href ? "active" : ""}`}
-            onClick={() => setMenuOpen(false)}
-          >
-            <i className={`fa-solid ${link.icon}`} aria-hidden="true" />
-            {link.label}
-          </Link>
-        ))}
-
-        {/* Account actions live in the PROFILE popover (top right) — the
-            hamburger only repeats Log in here for mobile, where the top-bar
-            Log in button is hidden (sm:hidden prevents duplication on sm+). */}
-        {!user && !sessionLoading ? (
-          <div className="mt-2 pt-2 border-t border-[var(--border)] sm:hidden">
-            <Link
-              href="/login"
-              className={`nav-popover-link ${pathname === "/login" ? "active" : ""}`}
-              onClick={() => setMenuOpen(false)}
-            >
-              <i className="fa-solid fa-user" aria-hidden="true" />
-              Log in / Sign up
-            </Link>
-          </div>
-        ) : null}
-      </div>
     </>
   );
 }

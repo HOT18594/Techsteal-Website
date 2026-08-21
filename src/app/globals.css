@@ -283,7 +283,7 @@ body {
   left: 50%;
   transform: translateX(-50%);
   width: min(calc(100% - 24px), 1560px);
-  z-index: 56; /* above the nav-scrim (55) so it stays clickable while the menu is open */
+  z-index: 56;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -326,11 +326,22 @@ body.scrolled .site-nav {
   color: var(--accent-bright);
   font-size: 1.3rem;
 }
+/* Tight phones: the wordmark drops to its cube icon so the icon-only nav
+   links + account cluster still fit beside it. */
+@media (max-width: 619px) {
+  .nav-wordmark-text {
+    display: none;
+  }
+  .nav-wordmark i {
+    font-size: 1.15rem;
+  }
+}
 
-/* Inline desktop links — the middle stretch of the bar (xl+). Centered in
-   the space the wordmark and actions leave between them. */
+/* Inline nav links — the middle stretch of the bar, visible at every size:
+   icon-only below xl (tooltips carry the names), icon + label from xl up.
+   Centered in the space the wordmark and actions leave between them. */
 .nav-links-bar {
-  display: none;
+  display: flex;
   flex: 1 1 0;
   min-width: 0;
   align-items: center;
@@ -339,17 +350,14 @@ body.scrolled .site-nav {
   margin-right: auto; /* balances .nav-wordmark's margin so links truly center */
   overflow: hidden;
 }
-@media (min-width: 1280px) {
-  .nav-links-bar {
-    display: flex;
-  }
-}
 .nav-links-bar a {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
   height: 40px;
-  padding: 0 12px;
+  min-width: 40px; /* icon-only tap target */
+  padding: 0;
   border-radius: 10px;
   font-size: 13px;
   font-weight: 600;
@@ -359,7 +367,7 @@ body.scrolled .site-nav {
   transition: color 0.2s, background 0.2s;
 }
 .nav-links-bar a i {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted-2);
   transition: color 0.2s;
 }
@@ -374,6 +382,34 @@ body.scrolled .site-nav {
 .nav-links-bar a.active i {
   color: var(--accent);
 }
+/* Labels only exist in the roomy xl+ bar */
+.nav-link-label {
+  display: none;
+}
+@media (min-width: 1280px) {
+  .nav-links-bar a {
+    min-width: 0;
+    padding: 0 12px;
+  }
+  .nav-link-label {
+    display: inline;
+  }
+}
+/* Compact tiers so six icon links + wordmark + account always fit */
+@media (max-width: 899px) {
+  .site-nav {
+    gap: 6px;
+    padding: 8px;
+  }
+  .nav-links-bar a {
+    min-width: 34px;
+  }
+}
+@media (max-width: 419px) {
+  .nav-links-bar a {
+    min-width: 30px;
+  }
+}
 
 /* Action cluster — right end of the bar (no chrome of its own; the bar
    provides the glass). Join + status, then (divided) account + hamburger. */
@@ -385,13 +421,28 @@ body.scrolled .site-nav {
 }
 
 /* Divider between the action group (Join + status) and the account group
-   (profile + hamburger) so the row reads as sections, not equal chips. */
+   (profile) so the row reads as sections, not equal chips. It and the Join
+   CTA appear once the bar has room (≥900px). These are plain CSS rules —
+   Tailwind's `hidden` loses the cascade to `.btn-primary`'s own
+   `display: inline-flex`, so visibility can't be a utility class here. */
 .nav-actions .nav-divider {
+  display: none;
   width: 1px;
   height: 24px;
   background: var(--border-strong);
   margin: 0 2px;
   flex-shrink: 0;
+}
+.nav-join {
+  display: none;
+}
+@media (min-width: 900px) {
+  .nav-actions .nav-divider {
+    display: block;
+  }
+  .nav-join {
+    display: inline-flex;
+  }
 }
 
 /* Every control in the action cluster is exactly 44px tall so the row
@@ -411,20 +462,10 @@ body.scrolled .site-nav {
 .nav-actions .btn-primary {
   gap: 8px;
 }
-/* Dot-only status pill (mobile) keeps a compact footprint */
-@media (max-width: 639px) {
+/* Dot-only status pill below lg keeps a compact footprint */
+@media (max-width: 1023px) {
   .nav-actions .status-pill {
-    padding: 0 12px;
-  }
-}
-/* Tight phones: shrink the wordmark so it never collides with the cluster */
-@media (max-width: 460px) {
-  .nav-wordmark {
-    font-size: 1.05rem;
-    gap: 7px;
-  }
-  .nav-wordmark i {
-    font-size: 1rem;
+    padding: 0 10px;
   }
 }
 .nav-profile {
@@ -444,31 +485,6 @@ body.scrolled .site-nav {
   border-color: var(--accent);
   color: var(--accent-bright);
   box-shadow: 0 0 18px -6px var(--accent-glow);
-}
-
-.nav-toggle {
-  width: 44px;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.2rem;
-  color: var(--fg);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.01));
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.nav-toggle:hover {
-  border-color: var(--accent);
-  color: var(--accent-bright);
-  box-shadow: 0 0 18px -6px var(--accent-glow);
-}
-.nav-toggle[aria-expanded="true"] {
-  border-color: var(--accent);
-  color: var(--accent-bright);
-  background: var(--accent-dim);
 }
 
 /* ---------- Onboarding reminder banner ---------- */
@@ -531,19 +547,6 @@ body.scrolled .site-nav {
 }
 
 /* ---------- Nav popover (cinematic glass panel, right-anchored) ---------- */
-.nav-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 55;
-  background: rgba(5, 7, 15, 0.45);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  animation: scrimIn 0.3s ease both;
-}
-@keyframes scrimIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
 .nav-popover {
   position: fixed;
   top: 82px; /* clears the fixed navbar (12px top + 60px tall + gap) */
