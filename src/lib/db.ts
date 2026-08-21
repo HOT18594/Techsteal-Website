@@ -30,10 +30,18 @@ const g = globalThis as unknown as { __techstealDb?: Db };
 export function createDb(url = process.env.DATABASE_URL): Db {
   if (!url) throw new Error("DATABASE_URL is not set");
   if (g.__techstealDb) return g.__techstealDb;
-  // max: 10 — a single connection serializes every query on the site
-  // (concurrent requests queue behind it). Still pooler-safe together
-  // with prepare: false.
-  const client = postgres(url, { prepare: false, max: 10 });
+  // Pool sizing is about Supabase's SESSION pooler (port 5432), which caps
+  // each user at ~15 server sessions. Every warm serverless instance holds
+  // its pool open, so a big `max` here gets the whole site
+  // EMAXCONNSESSION errors once a few instances are warm. Keep it small
+  // and release idle sockets quickly.
+  const client = postgres(url, {
+    prepare: false,
+    max: 3,
+    idle_timeout: 20, // seconds — free the pooler slot when an instance goes quiet
+    max_lifetime: 60 * 5, // seconds — never hold a slot longer than 5 min
+    connect_timeout: 10,
+  });
   const db = drizzle(client, { schema });
   g.__techstealDb = db;
   return db;

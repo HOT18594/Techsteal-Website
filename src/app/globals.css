@@ -1718,3 +1718,26 @@ html.custom-cursor.cursor-on-text .cursor-ring {
   border-left: 3px solid var(--accent);
   box-shadow: -6px 0 18px -10px var(--accent-glow);
 }
+
+
+/* Pixel placeholder for avatars without an image: the user's letter in the
+   Minecraft font over a ghosted creeper-style face on their gradient tile. */
+.avatar-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.avatar-pixel-face {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  fill: rgba(255, 255, 255, 0.22);
+  image-rendering: pixelated;
+}
+.avatar-letter {
+  position: relative;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3), 0 -1px 2px rgba(0, 0, 0, 0.35);
+}

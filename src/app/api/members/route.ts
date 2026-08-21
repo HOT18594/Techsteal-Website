@@ -8,14 +8,16 @@ import type { Member } from "@/types";
 
 export const dynamic = "force-dynamic";
 
-// Real member directory: backed by the `profiles` table (Discord accounts),
-// not the static `members` content table. Each entry carries the account's
-// Discord profile picture (or a Minecraft skin-head fallback) and an
-// online/offline status derived from the live server player list.
+// The in-game member directory — Minecraft identities only.
+//
+// This list is about who plays on the server, so it shows Minecraft skin
+// heads (minotar) — never Discord profile pictures (those belong to the
+// admin panel / forum). Accounts without a linked Minecraft username are
+// excluded entirely: they aren't part of the in-game roster (and the
+// homepage slideshow only ever cycles MC-linked members too).
 //
 // A profile counts as "online" if its Minecraft username is currently in the
-// server's player list (queried from mcsrvstat.us). Accounts without a
-// Minecraft username are "offline" — we can't know their in-game presence.
+// server's player list (queried from mcsrvstat.us).
 export async function GET() {
   const db = getDb();
   if (!db) return NextResponse.json(fallbackMembers);
@@ -25,7 +27,6 @@ export async function GET() {
       id: profiles.id,
       username: profiles.username,
       role: profiles.role,
-      avatarUrl: profiles.avatarUrl,
       minecraftUsername: profiles.minecraftUsername,
       discordVerified: profiles.discordVerified,
       createdAt: profiles.createdAt,
@@ -45,24 +46,26 @@ export async function GET() {
     // status unavailable — everyone shows offline, which is safe/honest.
   }
 
-  const members: Member[] = rows.map((row, i) => {
-    const mcName = row.minecraftUsername?.trim();
-    const online = mcName ? onlineNames.has(mcName.toLowerCase()) : false;
-    return {
-      id: i + 1,
-      name: row.username,
-      role: row.role === "admin" ? "Admin" : "Member",
-      icon: row.role === "admin" ? "fa-shield-halved" : "fa-user",
-      avatar: row.username.slice(0, 1).toUpperCase(),
-      // Discord PFP first; Minecraft skin head fallback; null → letter tile.
-      avatarUrl: row.avatarUrl ?? (mcName ? minotarUrl(mcName) : null),
-      color: colorFor(row.id),
-      status: online ? "online" : "offline",
-      joined: row.createdAt ?? "",
-      verified: row.discordVerified ?? false,
-      minecraftUsername: mcName ?? null,
-    };
-  });
+  const members: Member[] = rows
+    .filter((row) => Boolean(row.minecraftUsername?.trim()))
+    .map((row, i) => {
+      const mcName = row.minecraftUsername!.trim();
+      const online = onlineNames.has(mcName.toLowerCase());
+      return {
+        id: i + 1,
+        name: row.username,
+        role: row.role === "admin" ? "Admin" : "Member",
+        icon: row.role === "admin" ? "fa-shield-halved" : "fa-user",
+        avatar: row.username.slice(0, 1).toUpperCase(),
+        // Minecraft skin head only — this is the in-game roster.
+        avatarUrl: minotarUrl(mcName),
+        color: colorFor(row.id),
+        status: online ? "online" : "offline",
+        joined: row.createdAt ?? "",
+        verified: row.discordVerified ?? false,
+        minecraftUsername: mcName,
+      };
+    });
 
   return NextResponse.json(members);
 }
