@@ -282,7 +282,7 @@ export function HeroClient() {
       {/* ============ QUICK LINKS ============ */}
       <section className="pt-10 lg:pt-12 pb-16 lg:pb-20 px-6 lg:px-10">
         <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-5">
             {(
               [
                 { href: "/assistant", icon: "fa-robot", title: "Assistant" },
@@ -297,8 +297,8 @@ export function HeroClient() {
                 href={l.href}
                 className={`reveal group ${i > 0 ? `reveal-delay-${i}` : ""}`}
               >
-                <div className="tile card p-6 lg:p-8 text-center h-full flex flex-col items-center justify-center">
-                  <i className={`fa-solid ${l.icon} fa-2xl text-[var(--accent)] mb-3 group-hover:text-[var(--accent-bright)] transition-colors`} />
+                <div className="tile card px-6 py-10 lg:py-12 min-h-[10.5rem] lg:min-h-[12rem] text-center h-full flex flex-col items-center justify-center gap-5">
+                  <i className={`fa-solid ${l.icon} fa-2xl text-[var(--accent)] group-hover:text-[var(--accent-bright)] transition-colors`} />
                   <h3 className="font-display text-lg font-bold">{l.title}</h3>
                 </div>
               </Link>
