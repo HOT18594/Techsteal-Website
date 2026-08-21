@@ -36,10 +36,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         variant ?? (ERROR_TITLE_RE.test(title.trim()) ? "error" : "success");
       setToast({ title, sub, variant: v });
       if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => setToast(null), 3000);
+      // Errors stick around longer — 3s is too fast to read a failure.
+      timer.current = setTimeout(() => setToast(null), v === "error" ? 6000 : 3000);
     },
     []
   );
+
+  const dismiss = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    setToast(null);
+  }, []);
 
   // Clear any pending auto-dismiss timer on unmount so it can't fire
   // against a torn-down component (otherwise React 19 warns / leaks).
@@ -53,16 +59,25 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ show }}>
       {children}
-      <div className={`toast ${toast ? "show" : ""}`} role={isError ? "alert" : "status"} aria-live="polite">
+      <div
+        className={`toast ${toast ? "show" : ""} ${isError ? "error" : ""}`}
+        role={isError ? "alert" : "status"}
+        aria-live="polite"
+      >
         <i
           className={`fa-solid ${isError ? "fa-circle-exclamation text-[var(--redstone)]" : "fa-check-circle text-[var(--accent)]"}`}
         />
-        <div>
+        <div className="min-w-0">
           <div className="text-sm font-medium">{toast?.title}</div>
           {toast?.sub ? (
             <div className="text-xs text-[var(--muted)]">{toast.sub}</div>
           ) : null}
         </div>
+        {toast ? (
+          <button className="toast-dismiss" onClick={dismiss} aria-label="Dismiss notification">
+            <i className="fa-solid fa-xmark" />
+          </button>
+        ) : null}
       </div>
     </ToastContext.Provider>
   );

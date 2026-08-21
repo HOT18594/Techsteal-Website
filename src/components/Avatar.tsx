@@ -1,7 +1,10 @@
 // Avatar tile — image when available, otherwise a pixel-art placeholder:
 // the user's first letter in the Minecraft pixel font over a ghosted
-// creeper-style face on their gradient tile. Sizes match the `.avatar`
-// CSS (sm 36 · md 48 · lg 72 · xl 96).
+// creeper-style face on their gradient tile. Broken image URLs fall back
+// to the placeholder too. Sizes match the `.avatar` CSS (sm 36 · md 48 ·
+// lg 72 · xl 96).
+
+import { useState } from "react";
 
 interface AvatarProps {
   /** Used for the letter fallback and as the image alt/title. */
@@ -26,6 +29,11 @@ export function Avatar({
   className = "",
   online,
 }: AvatarProps) {
+  // A src that fails to load (deleted Discord PFP, minotar hiccup) drops
+  // to the placeholder instead of an empty tile.
+  const [broken, setBroken] = useState(false);
+  const showImage = Boolean(src) && !broken;
+
   return (
     <span
       className={`avatar ${SIZES[size]} ${color} ${className}`}
@@ -33,8 +41,8 @@ export function Avatar({
       aria-label={name}
       title={name}
     >
-      {src ? (
-        <img src={src} alt="" loading="lazy" />
+      {showImage ? (
+        <img src={src ?? ""} alt="" loading="lazy" onError={() => setBroken(true)} />
       ) : (
         <span className="avatar-fallback" aria-hidden="true">
           {/* Ghosted creeper-style pixel face (8×8, like a skin texture) */}

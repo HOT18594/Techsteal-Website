@@ -281,36 +281,27 @@ export function HeroClient() {
       <section className="pt-10 lg:pt-12 pb-16 lg:pb-20 px-6 lg:px-10">
         <div className="max-w-7xl mx-auto">
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-            <Link href="/assistant" className="reveal group">
-              <div className="tile card p-8 text-center">
-                <i className="tile-icon fa-solid fa-robot text-2xl text-[var(--accent)] mb-3 group-hover:text-[var(--accent-bright)] transition-colors" />
-                <h3 className="font-display text-lg font-bold">Assistant</h3>
-              </div>
-            </Link>
-            <Link href="/forum" className="reveal reveal-delay-1 group">
-              <div className="tile card p-8 text-center">
-                <i className="tile-icon fa-solid fa-comments text-2xl text-[var(--accent)] mb-3 group-hover:text-[var(--accent-bright)] transition-colors" />
-                <h3 className="font-display text-lg font-bold">Forum</h3>
-              </div>
-            </Link>
-            <Link href="/history" className="reveal reveal-delay-2 group">
-              <div className="tile card p-8 text-center">
-                <i className="tile-icon fa-solid fa-clock-rotate-left text-2xl text-[var(--accent)] mb-3 group-hover:text-[var(--accent-bright)] transition-colors" />
-                <h3 className="font-display text-lg font-bold">History</h3>
-              </div>
-            </Link>
-            <Link href="/rules" className="reveal reveal-delay-3 group">
-              <div className="tile card p-8 text-center">
-                <i className="tile-icon fa-solid fa-gavel text-2xl text-[var(--accent)] mb-3 group-hover:text-[var(--accent-bright)] transition-colors" />
-                <h3 className="font-display text-lg font-bold">Rules</h3>
-              </div>
-            </Link>
-            <Link href="/status" className="reveal reveal-delay-4 group">
-              <div className="tile card p-8 text-center">
-                <i className="tile-icon fa-solid fa-signal text-2xl text-[var(--accent)] mb-3 group-hover:text-[var(--accent-bright)] transition-colors" />
-                <h3 className="font-display text-lg font-bold">Status</h3>
-              </div>
-            </Link>
+            {(
+              [
+                { href: "/assistant", icon: "fa-robot", title: "Assistant", desc: "Ask Chatty Jr. anything" },
+                { href: "/forum", icon: "fa-comments", title: "Forum", desc: "Discussions & threads" },
+                { href: "/members", icon: "fa-users", title: "Members", desc: "The in-game roster" },
+                { href: "/history", icon: "fa-clock-rotate-left", title: "History", desc: "Seasons & milestones" },
+                { href: "/rules", icon: "fa-gavel", title: "Rules", desc: "Read before playing" },
+              ] as const
+            ).map((l, i) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                className={`reveal group ${i > 0 ? `reveal-delay-${i}` : ""}`}
+              >
+                <div className="tile card p-6 lg:p-8 text-center h-full">
+                  <i className="tile-icon fa-solid fa-2xl text-[var(--accent)] mb-3 group-hover:text-[var(--accent-bright)] transition-colors" />
+                  <h3 className="font-display text-lg font-bold">{l.title}</h3>
+                  <p className="text-xs text-[var(--muted)] mt-1">{l.desc}</p>
+                </div>
+              </Link>
+            ))}
           </div>
         </div>
       </section>

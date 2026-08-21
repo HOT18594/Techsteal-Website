@@ -90,7 +90,7 @@ function SettingsContent() {
         const res = await fetch(`/api/minecraft/skin?username=${encodeURIComponent(name)}`);
         const data = (await res.json()) as { skin?: string; error?: string };
         if (!res.ok || !data.skin) {
-          show("Unknown username", data.error ?? "That Minecraft username doesn't exist.");
+          show("Unknown username", data.error ?? "That Minecraft username doesn't exist.", "error");
           return;
         }
         setMcSkin(data.skin);
@@ -105,7 +105,7 @@ function SettingsContent() {
       await refresh();
       show("Saved", name ? `Minecraft: ${name}` : "Minecraft username cleared.");
     } catch {
-      show("Couldn't save", "Something went wrong.");
+      show("Couldn't save", "Something went wrong.", "error");
     } finally {
       setMcBusy(false);
     }
@@ -134,7 +134,7 @@ function SettingsContent() {
         show("Wrong code", data.error ?? "That admin code isn't right.");
       }
     } catch {
-      show("Couldn't check code", "Try again in a moment.");
+      show("Couldn't check code", "Try again in a moment.", "error");
     } finally {
       setAdminBusy(false);
     }

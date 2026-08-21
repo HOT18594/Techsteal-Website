@@ -40,8 +40,12 @@ export function MemberSlideshow({ members }: { members: Member[] }) {
     return () => io.disconnect();
   }, []);
 
-  // Advance on an interval; only while visible, not paused, and >1 slide.
+  // Advance on an interval; only while visible, not paused, >1 slide, and
+  // NOT under prefers-reduced-motion (static first member instead).
   useEffect(() => {
+    if (typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
     if (!visible || paused || slides.length <= 1) return;
     timer.current = setInterval(() => {
       setIndex((i) => (i + 1) % slides.length);
@@ -114,17 +118,21 @@ export function MemberSlideshow({ members }: { members: Member[] }) {
         </div>
       </div>
 
-      {/* Slide dots — passive indicator, not interactive. */}
+      {/* Slide dots — clickable: jump to a member and pause the rotation */}
       {slides.length > 1 ? (
         <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 flex items-center gap-1.5">
           {slides.map((s, i) => (
-            <span
+            <button
               key={s.id ?? s.name}
               className={`h-1.5 rounded-full transition-all duration-300 ${
-                i === safeIndex
-                  ? "w-4 bg-[var(--accent)]"
-                  : "w-1.5 bg-[var(--muted-2)]/60"
+                i === safeIndex ? "w-4 bg-[var(--accent)]" : "w-1.5 bg-[var(--muted-2)]/60 hover:bg-[var(--muted-2)]"
               }`}
+              onClick={() => {
+                setPaused(true);
+                setIndex(i);
+              }}
+              aria-label={`Show ${s.name}`}
+              aria-current={i === safeIndex}
             />
           ))}
         </div>

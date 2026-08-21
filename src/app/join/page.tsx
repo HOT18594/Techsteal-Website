@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { siteConfig } from "@/lib/site";
-import { useToast } from "@/components/Toast";
+import { CopyIpButton } from "@/components/CopyIpButton";
 import { SubPage } from "@/components/SubPage";
 
 const STEPS = [
@@ -26,25 +25,15 @@ const STEPS = [
 ];
 
 export default function JoinPage() {
-  const { show } = useToast();
-  const [copied, setCopied] = useState(false);
-
-  const copyIP = async () => {
-    try {
-      await navigator.clipboard.writeText(siteConfig.address);
-      setCopied(true);
-      show("Server address copied", siteConfig.address);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      show("Couldn't copy address", siteConfig.address);
-    }
-  };
-
   return (
     <SubPage className="max-w-3xl">
       <div className="w-full">
         {/* Header */}
         <div className="page-header mb-8">
+          <p className="page-kicker">
+            <i className="fa-solid fa-compass" aria-hidden="true" />
+            Four steps to the server
+          </p>
           <h1 className="page-title">How to Join</h1>
         </div>
 
@@ -54,23 +43,11 @@ export default function JoinPage() {
             <div className="text-xs text-[var(--muted)] uppercase tracking-wider mb-1">Server address</div>
             <code className="font-display text-2xl text-[var(--accent)]">{siteConfig.address}</code>
           </div>
-          <button className="btn-primary w-full sm:w-auto" onClick={copyIP}>
-            {copied ? (
-              <>
-                <i className="fa-solid fa-check" />
-                Copied!
-              </>
-            ) : (
-              <>
-                <i className="fa-solid fa-copy" />
-                Copy Address
-              </>
-            )}
-          </button>
+          <CopyIpButton />
         </div>
 
         {/* Steps */}
-        <div className="space-y-4">
+        <div className="space-y-4 stagger">
           {STEPS.map((step, i) => (
             <div key={i} className="card p-5 flex items-start gap-5 hover:border-[var(--accent)] transition-colors">
               <span className="font-display text-lg text-[var(--accent)] flex-shrink-0 w-8 text-right">
@@ -97,7 +74,7 @@ export default function JoinPage() {
             Stuck on a step, or have another question about the server?{" "}
             {siteConfig.assistant.name} can help.
           </p>
-          <span className="btn-primary w-full sm:w-auto justify-center">
+          <span className="btn-primary inline-flex w-full sm:w-auto justify-center">
             <i className="fa-solid fa-comment-dots" />
             Ask {siteConfig.assistant.name}
             <i className="fa-solid fa-arrow-right transition-transform group-hover:translate-x-1" />

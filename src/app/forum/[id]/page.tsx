@@ -76,9 +76,9 @@ export default function ThreadPage() {
         setThread((t) => (t ? { ...t, replies: t.replies + 1 } : t));
         setReplyText("");
       } else if (res.status === 401) {
-        show("Sign in to reply", "Log in with Discord to reply.");
+        show("Sign in to reply", "Log in with Discord to reply.", "error");
       } else {
-        show("Couldn't reply", "The server rejected the request.");
+        show("Couldn't reply", "The server rejected the request.", "error");
       }
     } catch {
       show("Couldn't reply", "Check your connection and try again.");
@@ -99,7 +99,7 @@ export default function ThreadPage() {
         body: JSON.stringify({ replyId: reply.id }),
       });
       if (!res.ok) {
-        show("Couldn't delete", "The server rejected the request.");
+        show("Couldn't delete", "The server rejected the request.", "error");
         return;
       }
       setReplies((prev) => prev.filter((r) => r.id !== reply.id));
@@ -115,7 +115,7 @@ export default function ThreadPage() {
   /** Toggle the signed-in user's like on a reply (optimistic). */
   const toggleLike = async (reply: ForumReply) => {
     if (!user) {
-      show("Sign in to like", "Log in with Discord to like comments.");
+      show("Sign in to like", "Log in with Discord to like comments.", "error");
       return;
     }
     if (busyLike !== null) return;
@@ -153,7 +153,7 @@ export default function ThreadPage() {
           r.id === reply.id ? { ...r, likedBy: reply.likedBy ?? [], likes: reply.likes ?? 0 } : r
         )
       );
-      show("Couldn't like", "The server rejected the request.");
+      show("Couldn't like", "The server rejected the request.", "error");
     } finally {
       setBusyLike(null);
     }
@@ -170,7 +170,7 @@ export default function ThreadPage() {
         body: JSON.stringify({ replyId: reply.id, pinned: !reply.pinned }),
       });
       if (!res.ok) {
-        show("Couldn't update", "The server rejected the request.");
+        show("Couldn't update", "The server rejected the request.", "error");
         return;
       }
       const updated = (await res.json()) as ForumReply;
@@ -249,9 +249,10 @@ export default function ThreadPage() {
               </h2>
 
               {replies.length === 0 ? (
-                <p className="text-sm text-[var(--muted)] py-8 text-center border border-dashed border-[var(--border)] rounded-xl">
+                <div className="text-sm text-[var(--muted)] py-12 text-center border border-dashed border-[var(--border)] rounded-xl">
+                  <i className="fa-regular fa-comment text-3xl text-[var(--muted-2)] mb-3 block" />
                   No replies yet — be the first!
-                </p>
+                </div>
               ) : (
                 <div className="card overflow-hidden">
                   {replies.map((r, i) => {
@@ -321,7 +322,7 @@ export default function ThreadPage() {
                                   : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)]"
                               }`}
                               onClick={() => void toggleLike(r)}
-                              disabled={busyLike !== null}
+                              disabled={busyLike === r.id}
                               aria-label={liked ? "Unlike comment" : "Like comment"}
                               title={liked ? "Unlike" : "Like"}
                             >
@@ -389,9 +390,9 @@ export default function ThreadPage() {
                   <p className="text-sm text-[var(--muted)] mb-5">
                     Sign in with Discord to reply.
                   </p>
-                  <Link href="/login" className="btn-primary w-full sm:w-auto justify-center">
+                  <Link href={`/login?next=/forum/${id}`} className="btn-primary w-full sm:w-auto justify-center">
                     <i className="fa-brands fa-discord" />
-                    Log in
+                    Log in with Discord
                   </Link>
                 </div>
               )}

@@ -5,6 +5,7 @@ import { siteConfig } from "@/lib/site";
 import { fallbackStatus } from "@/lib/fallback-data";
 import type { ServerStatus } from "@/types";
 import { useToast } from "@/components/Toast";
+import { CopyIpButton } from "@/components/CopyIpButton";
 import { SubPage } from "@/components/SubPage";
 import { useApi } from "@/lib/use-api";
 import { useSession } from "@/lib/use-session";
@@ -85,7 +86,7 @@ export default function StatusPage() {
       );
       void refetch();
     } catch {
-      show("Couldn't " + (action === "start" ? "start" : "stop"), "Something went wrong.");
+      show("Couldn't " + (action === "start" ? "start" : "stop"), "Something went wrong.", "error");
     } finally {
       setControlBusy(null);
     }
@@ -97,13 +98,13 @@ export default function StatusPage() {
     return () => clearInterval(id);
   }, [refetch]);
 
-  const copyIP = async () => {
-    try {
-      await navigator.clipboard.writeText(siteConfig.address);
-      show("Server address copied", siteConfig.address);
-    } catch {
-      show("Couldn't copy address", siteConfig.address);
-    }
+  // Manual refresh shows its own spinner (the hook's `loading` is only true
+  // for the first load, so the pill never flickers on background refreshes).
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
   };
 
   // Only trust numbers that came from the live match query — when the status
@@ -120,16 +121,23 @@ export default function StatusPage() {
     <SubPage>
       <div className="w-full">
         {/* Header */}
-        <div className="page-header rowed mb-8">
-          <h1 className="page-title">Server Status</h1>
+        <div className="page-header rowed mb-8 gap-4">
+          <div>
+            <p className="page-kicker">
+              <i className="fa-solid fa-signal" aria-hidden="true" />
+              Live telemetry
+            </p>
+            <h1 className="page-title">Server Status</h1>
+          </div>
           <div className="flex items-center gap-3">
             <button
-              className="btn-ghost py-2! px-3!"
-              onClick={() => void refetch()}
+              className="btn-ghost btn-sm"
+              onClick={() => void refresh()}
+              disabled={refreshing}
               aria-label="Refresh status"
               title="Refresh now"
             >
-              <i className="fa-solid fa-rotate-right" />
+              <i className={`fa-solid fa-rotate-right ${refreshing ? "fa-spin" : ""}`} />
               <span className="hidden sm:inline">Refresh</span>
             </button>
             <div className={`status-pill ${online ? "" : "offline"}`}>
@@ -185,6 +193,7 @@ export default function StatusPage() {
             </div>
             <div className="mt-1 text-xs text-[var(--muted)] uppercase tracking-wider">
               tick rate
+              <span className="normal-case tracking-normal text-[var(--muted-2)]"> · reported</span>
             </div>
             <div className="mt-3 h-1.5 rounded-full bg-[var(--bg-3)] overflow-hidden">
               <div
@@ -205,6 +214,7 @@ export default function StatusPage() {
             </div>
             <div className="mt-1 text-xs text-[var(--muted)] uppercase tracking-wider">
               days of uptime
+              <span className="normal-case tracking-normal text-[var(--muted-2)]"> · reported</span>
             </div>
             <div className="mt-3 text-xs text-[var(--muted-2)]">
               your local time:{" "}
@@ -223,12 +233,18 @@ export default function StatusPage() {
             </div>
             <div className="mt-1 text-xs text-[var(--muted)] uppercase tracking-wider">
               map size · {stats.mapSize}
+              <span className="normal-case tracking-normal text-[var(--muted-2)]"> · reported</span>
             </div>
             <div className="mt-3 text-xs text-[var(--muted-2)]">
               {siteConfig.software} · {siteConfig.version}
             </div>
           </div>
         </div>
+
+        <p className="text-xs text-[var(--muted-2)] mt-3">
+          Player count and the online list come from the live status query; TPS, uptime and world
+          size are the last values reported by the server.
+        </p>
 
         {/* Connection info */}
         <div className="grid lg:grid-cols-3 gap-6 mt-10">
@@ -259,31 +275,26 @@ export default function StatusPage() {
                 </div>
               ))}
             </div>
-            <button className="btn-primary w-full mt-5 py-3! text-xs!" onClick={copyIP}>
-              <i className="fa-solid fa-copy" />
-              Copy Server Address
-            </button>
+            <div className="mt-5">
+              <CopyIpButton />
+            </div>
           </div>
 
-          <div className="card p-6">
+          {/* Pointer to the full how-to-join steps — one source of truth
+              (this used to duplicate /join with a different step count). */}
+          <div className="card p-6 flex flex-col">
             <h2 className="font-display text-xl font-bold mb-5 flex items-center gap-2">
               <i className="fa-solid fa-compass text-[var(--accent)]" />
-              How to Join
+              New here?
             </h2>
-            <ol className="space-y-2">
-              {[
-                "Copy the server address above.",
-                "Open Minecraft and go to Multiplayer.",
-                "Add Server → paste the address → join.",
-              ].map((step, i) => (
-                <li key={i} className="flex items-start gap-3 text-sm text-[var(--fg-2)]">
-                  <span className="font-display text-xs text-[var(--accent)] flex-shrink-0">
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  {step}
-                </li>
-              ))}
-            </ol>
+            <p className="text-sm text-[var(--muted)] mb-5 flex-1">
+              The full step-by-step guide to joining the server — versions,
+              whitelist and all.
+            </p>
+            <Link href="/join" className="btn-secondary justify-center">
+              <i className="fa-solid fa-arrow-right" />
+              How to Join
+            </Link>
           </div>
         </div>
 
@@ -324,7 +335,9 @@ export default function StatusPage() {
                   Stop Server
                 </button>
                 <span className="text-xs text-[var(--muted-2)]">
-                  {online ? "Waiting for the status check to settle…" : "The server is offline right now."}
+                  {online
+                    ? "Server is online — stop it to save resources."
+                    : "The server is offline right now."}
                 </span>
               </div>
             ) : user ? (

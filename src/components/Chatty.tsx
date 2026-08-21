@@ -20,6 +20,10 @@ interface ChatMessage {
   time: string;
   /** Small diagnostics line (time-to-first-token · tokens/sec), AI replies only. */
   stats?: string;
+  /** True when the reply failed — renders as an error bubble with Retry. */
+  error?: boolean;
+  /** The question to re-send when Retry is clicked on an error bubble. */
+  retry?: string;
 }
 
 const SUGGESTIONS = [
@@ -240,17 +244,17 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
 
     // Appends/updates the streaming assistant bubble.
     let assistantId: number | null = null;
-    const updateAssistant = (partial: string) => {
+    const updateAssistant = (partial: string, error = false, retry?: string) => {
       if (assistantId === null) {
         const id = nextId.current++;
         assistantId = id;
         setMessages((m) => [
           ...m,
-          { id, role: "assistant", text: partial, time: nowTime() },
+          { id, role: "assistant", text: partial, time: nowTime(), error, retry },
         ]);
       } else {
         setMessages((m) =>
-          m.map((msg) => (msg.id === assistantId ? { ...msg, text: partial } : msg))
+          m.map((msg) => (msg.id === assistantId ? { ...msg, text: partial, error, retry } : msg))
         );
       }
     };
@@ -312,7 +316,9 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
       }
     } catch {
       if (gen !== genRef.current) return; // stopped — keep partial text
-      updateAssistant("That's a good question for the server team. Check the Forum or Rules.");
+      // A failed request must NOT look like an AI answer — mark the bubble
+      // as an error and offer to re-send the question.
+      updateAssistant("Something went wrong reaching me — check your connection.", true, text);
     } finally {
       if (gen === genRef.current) {
         setTyping(false);
@@ -445,10 +451,23 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
                       <i className="fa-solid fa-robot" />
                     </div>
                     <div className="max-w-[88%]">
-                      <div className="chat-bubble-ai px-4 py-3">
+                      <div
+                        className={`chat-bubble-ai px-4 py-3 ${
+                          m.error ? "!border-[var(--redstone)]/40 !bg-[var(--redstone)]/5" : ""
+                        }`}
+                      >
                         <div className="text-[15px] leading-relaxed text-[var(--fg-2)]">
                           {renderText(m.text)}
                         </div>
+                        {m.error && m.retry ? (
+                          <button
+                            className="mt-2 text-xs font-semibold text-[var(--redstone)] hover:text-[var(--fg)] transition inline-flex items-center gap-1.5"
+                            onClick={() => void send(m.retry)}
+                          >
+                            <i className="fa-solid fa-rotate-right" />
+                            Retry
+                          </button>
+                        ) : null}
                       </div>
                       {m.stats ? (
                         <div className="text-[10px] text-[var(--muted-2)] mt-0.5 px-1">

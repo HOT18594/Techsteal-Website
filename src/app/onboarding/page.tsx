@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -12,7 +12,7 @@ const STEPS = ["Admin code", "Discord server", "Minecraft"];
 
 export default function OnboardingPage() {
   return (
-    <Suspense fallback={<SubPage className="max-w-2xl"><p className="text-sm text-[var(--muted)] text-center py-16">Loading…</p></SubPage>}>
+    <Suspense fallback={<SubPage className="max-w-2xl"><p className="text-sm text-[var(--muted)] text-center py-16">Loadingâ€¦</p></SubPage>}>
       <OnboardingContent />
     </Suspense>
   );
@@ -34,6 +34,7 @@ function OnboardingContent() {
   const [mcBusy, setMcBusy] = useState(false);
   const [mcSkin, setMcSkin] = useState<string | null>(null);
   const [mcError, setMcError] = useState("");
+  const [finishing, setFinishing] = useState(false);
 
   // Not signed in? Send to login.
   useEffect(() => {
@@ -61,12 +62,12 @@ function OnboardingContent() {
       if (res.ok && data.profile?.role === "admin") {
         setAdminDone(true);
         await refresh();
-        show("Admin unlocked", "Welcome to the admin team. 🔑");
+        show("Admin unlocked", "Welcome to the admin team. ðŸ”‘");
       } else {
-        show("Wrong code", "That admin code isn't right.");
+        show("Wrong code", "That admin code isn't right.", "error");
       }
     } catch {
-      show("Couldn't check code", "Try again in a moment.");
+      show("Couldn't check code", "Try again in a moment.", "error");
     } finally {
       setAdminBusy(false);
     }
@@ -77,21 +78,21 @@ function OnboardingContent() {
     try {
       const res = await fetch("/api/auth/discord/verify", { method: "POST" });
       if (!res.ok) {
-        // Auth failure / server error — NOT "not configured". Re-check so
+        // Auth failure / server error â€” NOT "not configured". Re-check so
         // the user can try again instead of being told setup is missing.
         setVerifyState("idle");
-        show("Couldn't verify", "Something went wrong — try again in a moment.");
+        show("Couldn't verify", "Something went wrong â€” try again in a moment.");
         return;
       }
       const data = (await res.json()) as { configured: boolean; verified: boolean };
       if (!data.configured) {
         setVerifyState("not_configured");
       } else if (data.verified) {
-        // The verify endpoint persists the badge server-side — no PATCH.
+        // The verify endpoint persists the badge server-side â€” no PATCH.
         setVerifyState("verified");
       } else {
         setVerifyState("idle"); // offer a manual re-check
-        show("Not in the server yet", "Join the official server, then verify.");
+        show("Not in the server yet", "Join the official server, then verify.", "error");
       }
     } catch {
       setVerifyState("idle");
@@ -121,20 +122,28 @@ function OnboardingContent() {
   };
 
   const finish = async () => {
+    if (finishing) return; // no double-submit
+    setFinishing(true);
     const patchBody: Record<string, unknown> = { onboarded: true };
     if (mcUsername.trim()) patchBody.minecraftUsername = mcUsername.trim();
-    const res = await fetch("/api/profile", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patchBody),
-    });
-    if (!res.ok) {
-      show("Couldn't save", "Something went wrong finishing up.");
-      return;
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patchBody),
+      });
+      if (!res.ok) {
+        show("Couldn't save", "Something went wrong finishing up.", "error");
+        return;
+      }
+      await refresh();
+      show("Welcome aboard", "Your profile is set up!");
+      router.push("/");
+    } catch {
+      show("Couldn't save", "Check your connection and try again.", "error");
+    } finally {
+      setFinishing(false);
     }
-    await refresh();
-    show("Welcome aboard", "Your profile is set up!");
-    router.push("/");
   };
 
   const inputClass =
@@ -147,7 +156,7 @@ function OnboardingContent() {
         <div className="page-header mb-8">
           <h1 className="page-title">Let&apos;s get you set up</h1>
           <p className="text-sm text-[var(--muted)]">
-            A few optional steps — you can change everything later in{" "}
+            A few optional steps â€” you can change everything later in{" "}
             <Link href="/settings" className="text-[var(--accent)] hover:text-[var(--accent-bright)] transition">
               Profile & Settings
             </Link>
@@ -184,7 +193,7 @@ function OnboardingContent() {
           ))}
         </div>
 
-        {/* Step 1 — Admin code */}
+        {/* Step 1 â€” Admin code */}
         {step === 0 ? (
           <div className="card p-8">
             <div className="w-12 h-12 rounded-xl bg-[var(--accent-dim)] border border-[var(--border-strong)] flex items-center justify-center text-xl text-[var(--accent)] mb-5">
@@ -193,7 +202,7 @@ function OnboardingContent() {
             <h2 className="font-display text-2xl font-bold mb-2">Want admin powers?</h2>
             <p className="text-sm text-[var(--muted)] mb-6">
               If you have the admin code, enter it to unlock the admin role and the{" "}
-              <span className="text-[var(--fg-2)]">Manage Panel</span>. No code? Skip —
+              <span className="text-[var(--fg-2)]">Manage Panel</span>. No code? Skip â€”
               you can claim it later in settings.
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
@@ -213,7 +222,7 @@ function OnboardingContent() {
                 disabled={adminBusy || !adminCode.trim()}
               >
                 {adminBusy ? <i className="fa-solid fa-spinner fa-spin" /> : <i className="fa-solid fa-key" />}
-                {adminBusy ? "Checking…" : adminDone ? "Unlocked!" : "Claim"}
+                {adminBusy ? "Checkingâ€¦" : adminDone ? "Unlocked!" : "Claim"}
               </button>
             </div>
             {adminDone ? (
@@ -229,7 +238,7 @@ function OnboardingContent() {
           </div>
         ) : null}
 
-        {/* Step 2 — Discord server verification */}
+        {/* Step 2 â€” Discord server verification */}
         {step === 1 ? (
           <div className="card p-8">
             <div className="w-12 h-12 rounded-xl bg-[var(--accent-dim)] border border-[var(--border-strong)] flex items-center justify-center text-xl text-[var(--accent)] mb-5">
@@ -237,7 +246,7 @@ function OnboardingContent() {
             </div>
             <h2 className="font-display text-2xl font-bold mb-2">Are you in the official server?</h2>
             <p className="text-sm text-[var(--muted)] mb-6">
-              Verifying unlocks all member perks — the AI assistant, Gallery posting, and
+              Verifying unlocks all member perks â€” the AI assistant, Gallery posting, and
               Server Control. We can check right now if you&apos;re in the official{" "}
               {siteConfig.name} Discord server. Not in it yet? Join first, then verify.
             </p>
@@ -261,10 +270,10 @@ function OnboardingContent() {
                 }`}
               />
               <div className="text-sm">
-                {verifyState === "checking" ? "Checking membership…" : null}
-                {verifyState === "verified" ? "Verified — you're a member. ✅" : null}
+                {verifyState === "checking" ? "Checking membershipâ€¦" : null}
+                {verifyState === "verified" ? "Verified â€” you're a member. âœ…" : null}
                 {verifyState === "not_configured"
-                  ? "Verification isn't set up yet — you can skip for now."
+                  ? "Verification isn't set up yet â€” you can skip for now."
                   : null}
                 {verifyState === "idle" || verifyState === "skipped"
                   ? "Not verified yet."
@@ -273,6 +282,9 @@ function OnboardingContent() {
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3">
+              <button className="btn-secondary" onClick={() => setStep(0)}>
+                <i className="fa-solid fa-arrow-left" /> Back
+              </button>
               {verifyState !== "verified" ? (
                 <button
                   className="btn-primary"
@@ -280,7 +292,7 @@ function OnboardingContent() {
                   disabled={verifyState === "checking"}
                 >
                   <i className="fa-solid fa-rotate" />
-                  {verifyState === "checking" ? "Checking…" : "Verify now"}
+                  {verifyState === "checking" ? "Checkingâ€¦" : "Verify now"}
                 </button>
               ) : null}
               <button
@@ -296,7 +308,7 @@ function OnboardingContent() {
           </div>
         ) : null}
 
-        {/* Step 3 — Minecraft username */}
+        {/* Step 3 â€” Minecraft username */}
         {step === 2 ? (
           <div className="card p-8">
             <div className="w-12 h-12 rounded-xl bg-[var(--accent-dim)] border border-[var(--border-strong)] flex items-center justify-center text-xl text-[var(--accent)] mb-5">
@@ -352,9 +364,9 @@ function OnboardingContent() {
               <button className="btn-secondary" onClick={() => setStep(1)}>
                 <i className="fa-solid fa-arrow-left" /> Back
               </button>
-              <button className="btn-primary" onClick={() => void finish()}>
-                <i className="fa-solid fa-check" />
-                Finish &amp; save
+              <button className="btn-primary" onClick={() => void finish()} disabled={finishing}>
+                {finishing ? <i className="fa-solid fa-spinner fa-spin" /> : <i className="fa-solid fa-check" />}
+                {finishing ? "Savingâ€¦" : "Finish & save"}
               </button>
             </div>
           </div>

@@ -10,6 +10,20 @@ import {
 export const dynamic = "force-dynamic";
 
 const STATE_COOKIE = "discord_oauth_state";
+const NEXT_COOKIE = "login_next";
+
+/** Only allow same-site relative targets — never redirect off-site. */
+function safeNextCookie(cookies: string): string | null {
+  const raw = cookies
+    .split(";")
+    .map((c) => c.trim())
+    .find((c) => c.startsWith(`${NEXT_COOKIE}=`))
+    ?.slice(NEXT_COOKIE.length + 1);
+  if (!raw) return null;
+  const decoded = decodeURIComponent(raw);
+  if (!decoded.startsWith("/") || decoded.startsWith("//")) return null;
+  return decoded;
+}
 
 // Callback after Discord's consent screen: verify the state cookie,
 // exchange the code for a token, load the user, sign them in, redirect
@@ -55,11 +69,14 @@ export async function GET(request: Request) {
       avatarUrl: account.avatarUrl,
     });
 
-    // Everyone lands home after login. Users who haven't finished onboarding
-    // get a persistent reminder banner on every page instead of being forced
-    // through the flow — they can complete it anytime from Profile & Settings.
-    const res = NextResponse.redirect(new URL("/", request.url));
+    // Land where the user started when the login flow began at a gated CTA
+    // (the start route remembered it in a cookie) — otherwise home. Users
+    // who haven't finished onboarding get a persistent reminder banner on
+    // every page instead of being forced through the flow.
+    const next = safeNextCookie(cookies);
+    const res = NextResponse.redirect(new URL(next ?? "/", request.url));
     res.cookies.set(STATE_COOKIE, "", { path: "/", maxAge: 0 });
+    res.cookies.set(NEXT_COOKIE, "", { path: "/", maxAge: 0 });
     return res;
   } catch (err) {
     if (err instanceof Error && err.message === "ACCOUNT_BANNED") {

@@ -21,6 +21,11 @@ function LoginContent() {
   const searchParams = useSearchParams();
   const { user, loading: sessionLoading } = useSession();
 
+  // Where to land after login (gated CTAs pass ?next=/their/page). Only
+  // same-site relative paths are honored.
+  const rawNext = searchParams.get("next");
+  const nextParam = rawNext?.startsWith("/") && !rawNext.startsWith("//") ? rawNext : null;
+
   // Already logged in? Go straight to the right page.
   useEffect(() => {
     if (!sessionLoading && user) {
@@ -38,7 +43,7 @@ function LoginContent() {
       oauth_failed: "Discord didn't let us in. Try again.",
       banned: "This account was removed from the server by an admin.",
     };
-    show("Sign-in failed", messages[error] ?? "Something went wrong.");
+    show("Sign-in failed", messages[error] ?? "Something went wrong.", "error");
   }, [searchParams, show]);
 
   return (
@@ -56,14 +61,14 @@ function LoginContent() {
             </p>
           </div>
 
-          {/* Discord OAuth — the only way in */}
+          {/* Discord OAuth — the only way in. Forwards ?next= so the
+              callback can return the user to the page they came from. */}
           <a
-            href="/api/auth/discord"
-            className="w-full inline-flex items-center justify-center gap-3 rounded-lg px-4 py-3 font-semibold text-white transition-all duration-200 hover:brightness-110"
-            style={{
-              background: "#5865F2",
-              boxShadow: "0 8px 24px -8px rgba(88, 101, 242, 0.6)",
-            }}
+            href={`/api/auth/discord${
+              nextParam ? `?next=${encodeURIComponent(nextParam)}` : ""
+            }`}
+            className="btn-primary w-full justify-center"
+            style={{ background: "#5865F2" }}
           >
             <i className="fa-brands fa-discord text-lg" />
             Continue with Discord

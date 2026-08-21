@@ -98,15 +98,15 @@ export default function ForumPage() {
         setContent("");
         setModalOpen(false);
       } else if (res.status === 401) {
-        show("Sign in to post", "Log in with Discord to create threads.");
+        show("Sign in to post", "Log in with Discord to create threads.", "error");
         setModalOpen(false);
       } else if (res.status === 503) {
         show("Can't post yet", "Posting needs the database — it isn't configured.");
         setModalOpen(false);
       } else if (res.status === 429) {
-        show("Slow down", "You're posting too fast — wait a moment.");
+        show("Slow down", "You're posting too fast — wait a moment.", "error");
       } else {
-        show("Couldn't create thread", "The server rejected the request.");
+        show("Couldn't create thread", "The server rejected the request.", "error");
       }
     } catch {
       show("Couldn't create thread", "Check your connection and try again.");
@@ -215,7 +215,7 @@ export default function ForumPage() {
               ) : null}
             </div>
             <button
-              className="btn-secondary py-2.5! px-5! text-xs! flex-shrink-0"
+              className="btn-secondary btn-sm flex-shrink-0"
               onClick={openModal}
             >
               <i className="fa-solid fa-pen-to-square" />
@@ -253,7 +253,7 @@ export default function ForumPage() {
               </div>
             </div>
 
-            <div id="forum-threads" className="space-y-3">
+            <div id="forum-threads" className="space-y-3 stagger">
               {visible.length === 0 ? (
                 <div className="text-sm text-[var(--muted)] py-12 text-center border border-dashed border-[var(--border)] rounded-xl">
                   <i className="fa-solid fa-comments text-3xl text-[var(--muted-2)] mb-3 block" />
@@ -424,7 +424,7 @@ export default function ForumPage() {
                   <p className="text-sm text-[var(--muted)] mb-3">
                     Sign in with Discord to create threads and reply.
                   </p>
-                  <Link href="/login" className="btn-primary w-full py-2.5! text-xs! justify-center">
+                  <Link href="/login?next=/forum" className="btn-primary w-full justify-center">
                     <i className="fa-brands fa-discord" />
                     Log in
                   </Link>
@@ -502,7 +502,7 @@ export default function ForumPage() {
                 <p className="text-sm text-[var(--muted)] mb-5">
                   Sign in with Discord to create a thread.
                 </p>
-                <Link href="/login" className="btn-primary w-full justify-center">
+                <Link href="/login?next=/forum" className="btn-primary w-full justify-center">
                   <i className="fa-brands fa-discord" />
                   Log in
                 </Link>

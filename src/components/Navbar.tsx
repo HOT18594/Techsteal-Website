@@ -23,6 +23,12 @@ const NAV_LINKS = [
   { href: "/rules", label: "Rules", icon: "fa-gavel" },
 ] as const;
 
+/* The links that get prime placement in the desktop bar (xl+). Home is the
+   wordmark, Status is the pill, Join is the CTA — these six fill the rest. */
+const DESKTOP_LINKS = NAV_LINKS.filter(
+  (l) => !["/", "/join", "/status"].includes(l.href)
+);
+
 export function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -53,6 +59,28 @@ export function Navbar() {
     if (open) setMenuOpen(false);
   };
 
+  // Lock body scroll while the nav menu is open (the popover is an overlay),
+  // and manage focus: first link gets focus on open, the trigger gets it
+  // back on close — keyboard users never drop to <body>.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const firstLink = menuRef.current?.querySelector<HTMLElement>("a, button");
+    firstLink?.focus();
+    const prevOverflow = document.body.style.overflow;
+    const toggle = toggleRef.current; // ref may be null by cleanup time
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      if (!profileOpen) toggle?.focus();
+    };
+  }, [menuOpen, profileOpen]);
+
+  useEffect(() => {
+    if (!profileOpen) return;
+    const firstLink = profileRef.current?.querySelector<HTMLElement>("a, button");
+    firstLink?.focus();
+  }, [profileOpen]);
+
   // Close on outside click / Escape — but NEVER when the toggle button
   // itself was clicked: the toggle's onClick is the single source of truth.
   useEffect(() => {
@@ -64,12 +92,18 @@ export function Navbar() {
       const onToggle = toggleRef.current?.contains(target);
       const onProfileBtn = profileBtnRef.current?.contains(target);
       if (menuOpen && !inMenu && !onToggle) setMenuOpen(false);
-      if (profileOpen && !inProfile && !onProfileBtn) setProfileOpen(false);
+      if (profileOpen && !inProfile && !onProfileBtn) {
+        setProfileOpen(false);
+        profileBtnRef.current?.focus();
+      }
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        const wasMenu = menuOpen;
         setMenuOpen(false);
         setProfileOpen(false);
+        if (wasMenu) toggleRef.current?.focus();
+        else profileBtnRef.current?.focus();
       }
     };
     document.addEventListener("mousedown", onClick);
@@ -81,10 +115,14 @@ export function Navbar() {
   }, [menuOpen, profileOpen]);
 
   const handleLogout = async () => {
-    await logout();
-    show("Signed out", "See you later.");
-    setProfileOpen(false);
-    if (pathname === "/admin") router.push("/");
+    const ok = await logout();
+    if (ok) {
+      show("Signed out", "See you later.");
+      setProfileOpen(false);
+      if (pathname === "/admin") router.push("/");
+    } else {
+      show("Couldn't sign out", "Try again in a moment.", "error");
+    }
   };
 
   // Only trust the pill when the live match query actually answered — a
@@ -102,8 +140,29 @@ export function Navbar() {
         {siteConfig.name}
       </Link>
 
-      {/* Floating glass action bar — top right */}
+      {/* Desktop inline links — centered glass pill (xl+). Below xl the
+          hamburger popover is the nav. */}
+      <nav className="nav-links-bar" aria-label="Primary">
+        {DESKTOP_LINKS.map((link) => (
+          <Link
+            key={link.href}
+            href={link.href}
+            className={pathname === link.href ? "active" : ""}
+          >
+            <i className={`fa-solid ${link.icon}`} aria-hidden="true" />
+            {link.label}
+          </Link>
+        ))}
+      </nav>
+
+      {/* Floating glass action bar — top right.
+          Order: primary CTA (Join), ambient status, then (divided) account
+          cluster + menu. Actions first, identity last. */}
       <div className="nav-actions">
+        <Link href="/join" className="btn-primary hidden sm:inline-flex" aria-label="How to join">
+          <i className="fa-solid fa-compass" />
+          <span>Join</span>
+        </Link>
         {/* Single status pill — text collapses to a dot-only pill on mobile.
             (.status-pill owns its `display`, so two separate pills can't be
             toggled with Tailwind hidden — that was the double-dot bug.) */}
@@ -119,38 +178,23 @@ export function Navbar() {
             {!statusLoading && statusLive ? ` · ${players}/${max}` : ""}
           </span>
         </Link>
-        <Link href="/join" className="btn-primary hidden sm:inline-flex" aria-label="How to join">
-          <i className="fa-solid fa-compass" />
-          <span>Join</span>
-        </Link>
+
+        <span className="nav-divider hidden sm:block" aria-hidden="true" />
+
         {user ? (
-          <>
-            {user.role === "admin" ? (
-              <Link
-                href="/admin"
-                className={`btn-secondary hidden sm:inline-flex ${
-                  pathname === "/admin" ? "!text-[var(--accent)]" : ""
-                }`}
-                aria-label="Admin panel"
-              >
-                <i className="fa-solid fa-shield-halved" />
-                <span className="hidden md:inline">Admin</span>
-              </Link>
-            ) : null}
-            {/* Profile — click opens a menu; logout lives inside it */}
-            <button
-              ref={profileBtnRef}
-              className="nav-profile"
-              onClick={() => toggleProfile(!profileOpen)}
-              aria-label="Profile menu"
-              aria-expanded={profileOpen}
-              aria-controls="profile-popover"
-              title="Profile"
-            >
-              <Avatar name={user.username} src={user.avatarUrl} size="sm" className="!w-7 !h-7" />
-              <i className={`fa-solid ${profileOpen ? "fa-chevron-up" : "fa-chevron-down"} text-[10px] text-[var(--muted)]`} />
-            </button>
-          </>
+          /* Profile — click opens a menu; Admin + logout live inside it */
+          <button
+            ref={profileBtnRef}
+            className="nav-profile"
+            onClick={() => toggleProfile(!profileOpen)}
+            aria-label="Profile menu"
+            aria-expanded={profileOpen}
+            aria-controls="profile-popover"
+            title="Profile"
+          >
+            <Avatar name={user.username} src={user.avatarUrl} size="sm" className="!w-7 !h-7" />
+            <i className={`fa-solid ${profileOpen ? "fa-chevron-up" : "fa-chevron-down"} text-[10px] text-[var(--muted)]`} />
+          </button>
         ) : (
           !sessionLoading && (
             <Link
@@ -165,7 +209,7 @@ export function Navbar() {
         )}
         <button
           ref={toggleRef}
-          className="nav-toggle"
+          className="nav-toggle xl:hidden"
           onClick={() => toggleMenu(!menuOpen)}
           aria-label={menuOpen ? "Close menu" : "Open menu"}
           aria-expanded={menuOpen}
