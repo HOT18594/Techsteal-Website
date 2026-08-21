@@ -134,31 +134,34 @@ export function Navbar() {
 
   return (
     <>
-      {/* Floating wordmark — top left */}
-      <Link href="/" className="nav-wordmark" aria-label={`${siteConfig.name} home`}>
-        <i className="fa-solid fa-cube" aria-hidden="true" />
-        {siteConfig.name}
-      </Link>
+      {/* One fixed glass bar across the top: wordmark · links · actions.
+          Previously these were three separately-positioned elements that
+          could overlap on narrower viewports — a single flex row can't. */}
+      <header className="site-nav">
+        <Link href="/" className="nav-wordmark" aria-label={`${siteConfig.name} home`}>
+          <i className="fa-solid fa-cube" aria-hidden="true" />
+          {siteConfig.name}
+        </Link>
 
-      {/* Desktop inline links — centered glass pill (xl+). Below xl the
-          hamburger popover is the nav. */}
-      <nav className="nav-links-bar" aria-label="Primary">
-        {DESKTOP_LINKS.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            className={pathname === link.href ? "active" : ""}
-          >
-            <i className={`fa-solid ${link.icon}`} aria-hidden="true" />
-            {link.label}
-          </Link>
-        ))}
-      </nav>
+        {/* Desktop inline links — the middle of the bar (xl+). Below xl the
+            hamburger popover is the nav. */}
+        <nav className="nav-links-bar" aria-label="Primary">
+          {DESKTOP_LINKS.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={pathname === link.href ? "active" : ""}
+            >
+              <i className={`fa-solid ${link.icon}`} aria-hidden="true" />
+              {link.label}
+            </Link>
+          ))}
+        </nav>
 
-      {/* Floating glass action bar — top right.
-          Order: primary CTA (Join), ambient status, then (divided) account
-          cluster + menu. Actions first, identity last. */}
-      <div className="nav-actions">
+        {/* Action cluster — right side of the bar.
+            Order: primary CTA (Join), ambient status, then (divided) account
+            cluster + menu. Actions first, identity last. */}
+        <div className="nav-actions">
         <Link href="/join" className="btn-primary hidden sm:inline-flex" aria-label="How to join">
           <i className="fa-solid fa-compass" />
           <span>Join</span>
@@ -217,7 +220,8 @@ export function Navbar() {
         >
           <i className={menuOpen ? "fa-solid fa-xmark" : "fa-solid fa-bars"} />
         </button>
-      </div>
+        </div>
+      </header>
 
       {/* Cinematic scrim behind the popover */}
       {menuOpen ? (

@@ -273,48 +273,23 @@ body {
   }
 }
 
-/* ---------- Navbar (floating glass) ---------- */
-.nav-wordmark {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
+/* ---------- Navbar (one fixed glass bar) ---------- */
+/* Single flex row: wordmark (left) · links (center, xl+) · actions (right).
+   The three pieces used to be separately-positioned fixed elements and
+   collided on narrower viewports; as flex children they share one row. */
+.site-nav {
   position: fixed;
-  /* Same top + height as .nav-actions so the wordmark's vertical center
-     (top 14 + height 56 / 2 = 42px) lines up exactly with the toolbar's
-     center, instead of floating higher than it. */
-  top: 14px;
-  height: 56px;
-  left: 20px;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(calc(100% - 24px), 1560px);
   z-index: 56; /* above the nav-scrim (55) so it stays clickable while the menu is open */
-  font-family: var(--font-pixel), monospace;
-  font-size: 1.5rem;
-  line-height: 1;
-  letter-spacing: 0.06em;
-  color: var(--fg);
-  text-shadow: 0 0 22px var(--accent-glow);
-  transition: color 0.2s, text-shadow 0.2s;
-}
-.nav-wordmark:hover {
-  color: var(--accent-bright);
-  text-shadow: 0 0 30px var(--accent-glow);
-}
-.nav-wordmark i {
-  color: var(--accent-bright);
-  font-size: 1.45rem;
-  /* The @font-face metric override now optically centers the pixel text, so
-     a flex-centered FA icon lines up with the letters with no manual lift. */
-}
-
-.nav-actions {
-  position: fixed;
-  top: 14px;
-  right: 16px;
-  z-index: 56; /* above the nav-scrim (55) so controls stay clickable while the menu is open */
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px;
-  border-radius: 14px;
+  gap: 10px;
+  height: 60px;
+  padding: 8px 10px 8px 16px;
+  border-radius: 16px;
   background: rgba(10, 17, 32, 0.72);
   border: 1px solid var(--border-strong);
   backdrop-filter: blur(16px);
@@ -323,41 +298,46 @@ body {
     0 0 0 1px rgba(255, 255, 255, 0.03) inset;
   transition: border-color 0.25s, box-shadow 0.25s;
 }
-body.scrolled .nav-actions,
-body.scrolled .nav-links-bar {
+body.scrolled .site-nav {
   border-color: var(--accent);
   box-shadow: 0 14px 40px -18px rgba(0, 0, 0, 0.7), 0 0 24px -8px var(--accent-glow);
 }
 
-/* Divider between the action group (Join + status) and the account group
-   (profile + hamburger) so the bar reads as sections, not equal chips. */
-.nav-actions .nav-divider {
-  width: 1px;
-  height: 24px;
-  background: var(--border-strong);
-  margin: 0 2px;
+.nav-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   flex-shrink: 0;
+  margin-right: auto; /* keeps it left when the links bar is hidden */
+  font-family: var(--font-pixel), monospace;
+  font-size: 1.35rem;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  color: var(--fg);
+  text-shadow: 0 0 22px var(--accent-glow);
+  transition: color 0.2s, text-shadow 0.2s;
+  white-space: nowrap;
+}
+.nav-wordmark:hover {
+  color: var(--accent-bright);
+  text-shadow: 0 0 30px var(--accent-glow);
+}
+.nav-wordmark i {
+  color: var(--accent-bright);
+  font-size: 1.3rem;
 }
 
-/* Inline desktop links — the hamburger stays the only nav below xl. */
+/* Inline desktop links — the middle stretch of the bar (xl+). Centered in
+   the space the wordmark and actions leave between them. */
 .nav-links-bar {
-  position: fixed;
-  top: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 55;
   display: none;
+  flex: 1 1 0;
+  min-width: 0;
   align-items: center;
+  justify-content: center;
   gap: 2px;
-  height: 56px;
-  padding: 6px;
-  border-radius: 14px;
-  background: rgba(10, 17, 32, 0.72);
-  border: 1px solid var(--border-strong);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 14px 40px -18px rgba(0, 0, 0, 0.7);
-  transition: border-color 0.25s, box-shadow 0.25s;
+  margin-right: auto; /* balances .nav-wordmark's margin so links truly center */
+  overflow: hidden;
 }
 @media (min-width: 1280px) {
   .nav-links-bar {
@@ -369,12 +349,13 @@ body.scrolled .nav-links-bar {
   align-items: center;
   gap: 7px;
   height: 40px;
-  padding: 0 13px;
+  padding: 0 12px;
   border-radius: 10px;
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--muted);
+  white-space: nowrap;
   transition: color 0.2s, background 0.2s;
 }
 .nav-links-bar a i {
@@ -394,7 +375,26 @@ body.scrolled .nav-links-bar {
   color: var(--accent);
 }
 
-/* Every control in the top action bar is exactly 44px tall so the row
+/* Action cluster — right end of the bar (no chrome of its own; the bar
+   provides the glass). Join + status, then (divided) account + hamburger. */
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Divider between the action group (Join + status) and the account group
+   (profile + hamburger) so the row reads as sections, not equal chips. */
+.nav-actions .nav-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border-strong);
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+/* Every control in the action cluster is exactly 44px tall so the row
    reads as one clean strip: status pill, Join, Log in, profile, and the
    hamburger all line up. */
 .nav-actions .status-pill {
@@ -417,12 +417,11 @@ body.scrolled .nav-links-bar {
     padding: 0 12px;
   }
 }
-/* Tight phones: shrink the wordmark so it never collides with the bar */
-@media (max-width: 400px) {
+/* Tight phones: shrink the wordmark so it never collides with the cluster */
+@media (max-width: 460px) {
   .nav-wordmark {
     font-size: 1.05rem;
     gap: 7px;
-    left: 14px;
   }
   .nav-wordmark i {
     font-size: 1rem;
@@ -477,7 +476,7 @@ body.scrolled .nav-links-bar {
    onboarding. Keeps nagging until they complete it (no dismiss). */
 .onboarding-reminder {
   position: fixed;
-  top: 78px; /* clears the floating navbar */
+  top: 84px; /* clears the fixed navbar (12px top + 60px tall) */
   left: 50%;
   transform: translateX(-50%);
   z-index: 54; /* above scrim-ish content but below navbar/popovers */
@@ -547,7 +546,7 @@ body.scrolled .nav-links-bar {
 }
 .nav-popover {
   position: fixed;
-  top: 76px;
+  top: 82px; /* clears the fixed navbar (12px top + 60px tall + gap) */
   right: 1.25rem;
   width: 284px;
   max-height: calc(100dvh - 7rem);

@@ -137,19 +137,21 @@ export function HeroClient() {
           </div>
         </div>
 
-        {/* Layer 4 — floating ember orbs (velocity drift) */}
+        {/* Layer 4 — floating ember orbs (velocity drift).
+            fa-hammer / fa-gem: free FA6 icons (fa-sword / fa-diamond are
+            Pro-only and rendered as empty boxes). */}
         <i
-          className="fa-solid fa-cube absolute left-[12%] top-[24%] text-[var(--accent)]/25 text-3xl"
+          className="fa-solid fa-hammer absolute left-[12%] top-[24%] text-[var(--accent)]/25 text-3xl"
           data-drift="6"
           aria-hidden="true"
         />
         <i
-          className="fa-solid fa-sword absolute right-[14%] top-[30%] text-[var(--diamond)]/20 text-2xl rotate-12"
+          className="fa-solid fa-gem absolute right-[14%] top-[30%] text-[var(--diamond)]/20 text-2xl rotate-12"
           data-drift="-8"
           aria-hidden="true"
         />
         <i
-          className="fa-solid fa-diamond absolute right-[24%] bottom-[22%] text-[var(--accent-bright)]/20 text-xl"
+          className="fa-solid fa-cube absolute right-[24%] bottom-[22%] text-[var(--accent-bright)]/20 text-xl"
           data-drift="5"
           aria-hidden="true"
         />
@@ -283,11 +285,11 @@ export function HeroClient() {
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
             {(
               [
-                { href: "/assistant", icon: "fa-robot", title: "Assistant", desc: "Ask Chatty Jr. anything" },
-                { href: "/forum", icon: "fa-comments", title: "Forum", desc: "Discussions & threads" },
-                { href: "/members", icon: "fa-users", title: "Members", desc: "The in-game roster" },
-                { href: "/history", icon: "fa-clock-rotate-left", title: "History", desc: "Seasons & milestones" },
-                { href: "/rules", icon: "fa-gavel", title: "Rules", desc: "Read before playing" },
+                { href: "/assistant", icon: "fa-robot", title: "Assistant" },
+                { href: "/forum", icon: "fa-comments", title: "Forum" },
+                { href: "/members", icon: "fa-users", title: "Members" },
+                { href: "/history", icon: "fa-clock-rotate-left", title: "History" },
+                { href: "/rules", icon: "fa-gavel", title: "Rules" },
               ] as const
             ).map((l, i) => (
               <Link
@@ -295,10 +297,9 @@ export function HeroClient() {
                 href={l.href}
                 className={`reveal group ${i > 0 ? `reveal-delay-${i}` : ""}`}
               >
-                <div className="tile card p-6 lg:p-8 text-center h-full">
-                  <i className="tile-icon fa-solid fa-2xl text-[var(--accent)] mb-3 group-hover:text-[var(--accent-bright)] transition-colors" />
+                <div className="tile card p-6 lg:p-8 text-center h-full flex flex-col items-center justify-center">
+                  <i className={`fa-solid ${l.icon} fa-2xl text-[var(--accent)] mb-3 group-hover:text-[var(--accent-bright)] transition-colors`} />
                   <h3 className="font-display text-lg font-bold">{l.title}</h3>
-                  <p className="text-xs text-[var(--muted)] mt-1">{l.desc}</p>
                 </div>
               </Link>
             ))}
