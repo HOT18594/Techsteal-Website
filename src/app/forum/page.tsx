@@ -7,6 +7,7 @@ import { fallbackThreads } from "@/lib/fallback-data";
 import type { ForumThread } from "@/types";
 import { Avatar } from "@/components/Avatar";
 import { SubPage } from "@/components/SubPage";
+import { Modal } from "@/components/Modal";
 import { RichEditor } from "@/components/RichEditor";
 import { EMPTY_POLL_DRAFT, PollBuilder, pollDraftPayload, pollDraftValid, type PollDraft } from "@/components/Poll";
 import { useToast } from "@/components/Toast";
@@ -564,16 +565,13 @@ export default function ForumPage() {
         </div>
       </div>
 
-      {/* New thread modal */}
+      {/* New thread modal — portal to body so it covers the viewport */}
       {modalOpen ? (
-        <div className="modal-backdrop" onClick={() => setModalOpen(false)}>
-          <div
-            className="card p-6 w-full max-w-2xl flex flex-col max-h-[calc(100dvh-3rem)]"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="new-thread-title"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <Modal
+          label="New Thread"
+          onClose={() => setModalOpen(false)}
+          cardClassName="p-6 w-full max-w-2xl flex flex-col max-h-[calc(100dvh-3rem)]"
+        >
             <h3 id="new-thread-title" className="font-display text-xl font-bold mb-4 flex-shrink-0">New Thread</h3>
 
             {user ? (
@@ -667,8 +665,7 @@ export default function ForumPage() {
                 </button>
               </div>
             )}
-          </div>
-        </div>
+        </Modal>
       ) : null}
     </SubPage>
   );

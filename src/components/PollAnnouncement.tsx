@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { PollViewer } from "@/components/Poll";
+import { Modal } from "@/components/Modal";
 import { useSession } from "@/lib/use-session";
 import { useToast } from "@/components/Toast";
 import { categoryClass } from "@/lib/forum-categories";
@@ -127,11 +128,12 @@ export function PollAnnouncement() {
   };
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={`Announcement: poll ${poll.question}`}>
-      <div
-        className="card p-6 w-full max-w-lg poll-announce"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <Modal
+      label={`Announcement: poll ${poll.question}`}
+      onClose={close}
+      cardClassName="p-6 w-full max-w-lg poll-announce"
+    >
+      <div>
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
             <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[var(--diamond)]">
@@ -171,6 +173,6 @@ export function PollAnnouncement() {
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

@@ -7,6 +7,7 @@ import { compressImage, MAX_UPLOAD_BYTES } from "@/lib/imaging";
 import { categoryClass } from "@/lib/forum-categories";
 import { Markdown } from "@/components/Markdown";
 import { RichEditor } from "@/components/RichEditor";
+import { Modal } from "@/components/Modal";
 import type { GalleryComment, GalleryItem } from "@/types";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState, ErrorState } from "@/components/EmptyState";
@@ -617,18 +618,14 @@ export default function GalleryPage() {
         )}
       </div>
 
-      {/* Post modal */}
+      {/* Post modal — portal to body so it covers the viewport (see Modal.tsx) */}
       {modalOpen ? (
-        <div className="modal-backdrop" onClick={() => setModalOpen(false)}>
-          <div
-            className="card p-6 w-full max-w-lg flex flex-col max-h-[calc(100dvh-3rem)]"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="post-gallery-title"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <Modal
+          label="Post to Gallery"
+          onClose={() => setModalOpen(false)}
+          cardClassName="p-6 w-full max-w-lg flex flex-col max-h-[calc(100dvh-3rem)]"
+        >
             <h3 id="post-gallery-title" className="font-display text-xl font-bold mb-4 flex-shrink-0">Post to Gallery</h3>
-
             {user ? (
               <form
                 className="modal-scroll space-y-4 pr-1 -mr-1"
@@ -772,23 +769,16 @@ export default function GalleryPage() {
                 </button>
               </div>
             )}
-          </div>
-        </div>
+        </Modal>
       ) : null}
 
       {/* Lightbox — full image + meta + comments, Esc/arrows navigate */}
       {currentItem && viewing && slideIndex >= 0 ? (
-        <div
-          className="modal-backdrop"
-          onClick={() => setViewing(null)}
-          role="dialog"
-          aria-modal="true"
-          aria-label={currentItem.title}
+        <Modal
+          label={currentItem.title}
+          onClose={() => setViewing(null)}
+          cardClassName="overflow-hidden w-full max-w-5xl max-h-[calc(100dvh-3rem)] flex flex-col lg:flex-row modal-scroll lg:overflow-hidden"
         >
-          <div
-            className="card overflow-hidden w-full max-w-5xl max-h-[calc(100dvh-3rem)] flex flex-col lg:flex-row modal-scroll lg:overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
             {/* Image pane */}
             <div className="relative flex-1 min-w-0 bg-[var(--bg)] flex items-center justify-center">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -959,8 +949,7 @@ export default function GalleryPage() {
                 )}
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       ) : null}
     </SubPage>
   );

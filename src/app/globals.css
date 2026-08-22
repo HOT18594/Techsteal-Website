@@ -2291,3 +2291,10 @@ html.custom-cursor.cursor-on-text .cursor-ring {
 .image-render-pixel {
   image-rendering: pixelated;
 }
+
+/* Dialogs must never inherit the card hover-lift — the whole modal would
+   shift under the cursor while interacting with it. */
+.modal-backdrop .card:hover,
+.modal-backdrop > .card:hover {
+  transform: none;
+}
