@@ -6,7 +6,9 @@ import { getDb } from "@/lib/db";
 import { isRateLimited } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+// Tool-using agent: each round-trip can involve model calls + tool execution
+// (status checks, DB lookups, web search), so give the whole request room.
+export const maxDuration = 60;
 
 const TEXT_HEADERS = {
   "Content-Type": "text/plain; charset=utf-8",

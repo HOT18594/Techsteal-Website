@@ -1,10 +1,12 @@
 "use client";
 
-// Chatty Jr. — the site's chat widget. Two variants:
-//   - "full":     the standalone assistant page (own header, tall chat)
+// Chatty Jr. — the site's AI assistant, now a tool-using agent.
+//   - "full":     the standalone assistant page (welcome hero, tall chat)
 //   - "embedded": a compact card you can drop on any page (e.g. /join)
-// Streams replies as they generate; keeps history in localStorage; the
-// 3-dot indicator is the only "thinking" ever shown.
+// The backend streams NDJSON events: text chunks plus live tool activity
+// ("Checking live status…") which render as chips on the reply. History
+// lives in localStorage; the 3-dot indicator only shows before the first
+// event arrives.
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -12,6 +14,19 @@ import { siteConfig } from "@/lib/site";
 import { Avatar } from "@/components/Avatar";
 import { useToast } from "@/components/Toast";
 import { useSession } from "@/lib/use-session";
+
+interface ToolTrace {
+  name: string;
+  label: string;
+}
+
+/** NDJSON events the chat API streams (one JSON object per line). */
+interface StreamEvent {
+  t?: string;
+  v?: string;
+  name?: string;
+  label?: string;
+}
 
 interface ChatMessage {
   id: number;
@@ -24,58 +39,46 @@ interface ChatMessage {
   error?: boolean;
   /** The question to re-send when Retry is clicked on an error bubble. */
   retry?: string;
+  /** Tools the assistant used while producing this reply. */
+  tools?: ToolTrace[];
 }
 
 const SUGGESTIONS = [
-  { icon: "fa-gavel", label: "What are the server rules?", text: "What are the server rules?" },
-  { icon: "fa-users", label: "Who are the members?", text: "Who are the members?" },
-  { icon: "fa-compass", label: "How do I join?", text: "How do I join?" },
-  { icon: "fa-cube", label: "What version is the server?", text: "What version is the server?" },
-];
+  { icon: "fa-signal", title: "Is the server up?", hint: "Live status + who's online", text: "Is the server up right now? Who's online?" },
+  { icon: "fa-gavel", title: "Rules refresher", hint: "Straight from the Rules page", text: "What are the server rules?" },
+  { icon: "fa-compass", title: "How do I join?", hint: "Steps + server address", text: "How do I join the server?" },
+  { icon: "fa-images", title: "Show me builds", hint: "Straight from the gallery", text: "What builds are in the gallery?" },
+  { icon: "fa-comments", title: "Forum digest", hint: "What the community's saying", text: "What's the community talking about on the forum?" },
+  { icon: "fa-globe", title: "Minecraft help", hint: "General game questions", text: "What's the fastest way to find ancient debris?" },
+] as const;
+
+const CAPABILITIES = [
+  { icon: "fa-signal", label: "Live status" },
+  { icon: "fa-users", label: "Members" },
+  { icon: "fa-gavel", label: "Rules" },
+  { icon: "fa-images", label: "Builds" },
+  { icon: "fa-comments", label: "Forum" },
+  { icon: "fa-globe", label: "Web search" },
+] as const;
+
+/** Tool name → icon for the activity/trace chips. */
+const TOOL_ICONS: Record<string, string> = {
+  get_server_status: "fa-signal",
+  search_members: "fa-users",
+  get_rules: "fa-gavel",
+  get_server_history: "fa-clock-rotate-left",
+  search_gallery: "fa-images",
+  search_forum: "fa-comments",
+  read_forum_thread: "fa-comment-dots",
+  get_site_stats: "fa-chart-simple",
+  web_search: "fa-globe",
+};
 
 const STORAGE_KEY = "techsteal-nova-chat-v1";
 
 function nowTime(): string {
   const d = new Date();
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
-
-/**
- * Pick a short sequence of "thinking" lines for the 3-dot indicator, tuned
- * to whatever the question is about. `dots` cycles through these while the
- * first tokens are still on their way.
- */
-function thinkingLinesFor(text: string): string[] {
-  const t = text.toLowerCase();
-  const lines: string[] = [];
-  if (/\brules?\b|hack|cheat|grief|raid|banned|ban\b/.test(t)) {
-    lines.push("Reviewing the server rules…");
-  }
-  if (/\bmember|staff|admin|who|player list|online\b/.test(t)) {
-    lines.push("Checking the member list…");
-  }
-  if (/\bjoin\b|address|ip\b|whitelist|how do i/.test(t)) {
-    lines.push("Looking up how to join…");
-  }
-  if (/\bversion|minecraft|java ?|update|mod\b/.test(t)) {
-    lines.push("Rooting through game knowledge…");
-  }
-  if (/\bstatus|up\b|down|offline|tps|online/.test(t)) {
-    lines.push("Querying live server status…");
-  }
-  if (/\bhistory|season|timeline|era\b/.test(t)) {
-    lines.push("Consulting server history…");
-  }
-  if (/\bgallery|build\b/.test(t)) {
-    lines.push("Flipping through the gallery…");
-  }
-  if (/\bforum|discuss|thread\b/.test(t)) {
-    lines.push("Skimming recent forum posts…");
-  }
-  // Always end with these fallbacks so the cycle stays recognizable.
-  lines.push("Searching the database…");
-  lines.push("Constructing answer…");
-  return lines;
 }
 
 function loadHistory(): ChatMessage[] | null {
@@ -108,7 +111,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
     {
       id: 0,
       role: "assistant",
-      text: `Hey — I'm ${ai.name}, ${siteConfig.name}'s assistant. Ask me about the server, rules, members, or how to join.`,
+      text: `Hey — I'm ${ai.name}, ${siteConfig.name}'s assistant. I can check live server status, look up members, rules, builds, and forum threads, and answer general Minecraft questions. What can I do for you?`,
       // `time` is filled in after mount: calling nowTime() here would run
       // on the server (Vercel, UTC) AND the browser (local timezone) with
       // different results, causing a hydration mismatch on every load.
@@ -117,9 +120,8 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
   ]);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
-  const [dots, setDots] = useState(false); // 3-dot indicator while waiting for the first word
-  const [thinkLine, setThinkLine] = useState("");
-  const thinkLinesRef = useRef<string[]>([]);
+  const [dots, setDots] = useState(false); // 3-dot indicator while waiting for the first event
+  const [activeTools, setActiveTools] = useState<ToolTrace[]>([]); // tools used by the reply in flight
   const [hydrated, setHydrated] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -127,6 +129,19 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
   const genRef = useRef(0);
   const controllerRef = useRef<AbortController | null>(null);
   const autoAsked = useRef(false);
+  const activeToolsRef = useRef<ToolTrace[]>([]);
+  // Panel-scoped keyboard shortcut: "/" focuses the input (ignore while typing)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || typing) return;
+      const t = e.target as HTMLElement;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      inputRef.current?.focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [typing]);
 
   // Load persisted history once, after mount — the initializer above must
   // NOT read localStorage, or SSR and client render different first frames
@@ -159,7 +174,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, typing]);
+  }, [messages, typing, activeTools]);
 
   // Personalize the welcome bubble once we know who's logged in — only
   // while the chat is still in its fresh (welcome-only) state.
@@ -171,26 +186,12 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
         {
           ...m[0],
           text: user.minecraftUsername
-            ? `Hey ${user.username} — I'm ${ai.name}, ${siteConfig.name}'s assistant. Ask me about the server, rules, members, or how to join.`
+            ? `Hey ${user.username} — I'm ${ai.name}, ${siteConfig.name}'s assistant. I can check live server status, look up members, rules, builds, and forum threads, and answer general Minecraft questions. What can I do for you?`
             : `Hey ${user.username} — I'm ${ai.name}, ${siteConfig.name}'s assistant. Ask me anything about the server — and when you get a chance, link your Minecraft username in Settings so your skin shows up around the site.`,
         },
       ];
     });
   }, [hydrated, user, ai.name]);
-
-  // Cycle the "thinking" line while waiting for the first token.
-  useEffect(() => {
-    if (!dots) return;
-    const lines = thinkLinesRef.current;
-    if (lines.length === 0) return;
-    let i = 0;
-    setThinkLine(lines[0]);
-    const id = setInterval(() => {
-      i = (i + 1) % lines.length;
-      setThinkLine(lines[i]);
-    }, 1100);
-    return () => clearInterval(id);
-  }, [dots]);
 
   // Auto-ask a prefill question when navigated to with ?ask=... — only
   // after history has loaded, only if the chat is still the welcome state,
@@ -208,12 +209,13 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, messages.length, hasAccess]);
 
-  const send = async (raw?: string) => {
+  const send = async (raw?: string, baseMessages?: ChatMessage[]) => {
     const text = (raw ?? input).trim();
     if (!text || typing) return;
     const gen = ++genRef.current; // invalidates any in-flight request
     const controller = new AbortController();
     controllerRef.current = controller;
+    const basis = baseMessages ?? messages;
 
     setMessages((m) => [
       ...m,
@@ -224,12 +226,13 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
       inputRef.current.style.height = "auto";
     }
     setTyping(true);
-    thinkLinesRef.current = thinkingLinesFor(text);
     setDots(true);
+    activeToolsRef.current = [];
+    setActiveTools([]);
 
     // Prior turns give the model context for follow-ups ("what about
     // rule 3?"). Skip the welcome message (id 0); cap and truncate lightly.
-    const priorTurns = messages
+    const priorTurns = basis
       .filter((m) => m.id !== 0 && m.text.trim().length > 0)
       .slice(-8)
       .map((m) => ({
@@ -242,19 +245,20 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
     let firstTokenAt: number | null = null;
     let chars = 0;
 
-    // Appends/updates the streaming assistant bubble.
+    // Appends/updates the streaming assistant bubble (with live tool trace).
     let assistantId: number | null = null;
     const updateAssistant = (partial: string, error = false, retry?: string) => {
+      const tools = [...activeToolsRef.current];
       if (assistantId === null) {
         const id = nextId.current++;
         assistantId = id;
         setMessages((m) => [
           ...m,
-          { id, role: "assistant", text: partial, time: nowTime(), error, retry },
+          { id, role: "assistant", text: partial, time: nowTime(), error, retry, tools },
         ]);
       } else {
         setMessages((m) =>
-          m.map((msg) => (msg.id === assistantId ? { ...msg, text: partial, error, retry } : msg))
+          m.map((msg) => (msg.id === assistantId ? { ...msg, text: partial, error, retry, tools } : msg))
         );
       }
     };
@@ -278,9 +282,13 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
         return;
       }
       if (!res.body) throw new Error(`chat returned ${res.status}`);
+
+      // NDJSON events: {"t":"text"|"tool"|"error", ...} one per line.
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let acc = "";
+      let buffer = "";
+      let failed = false;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -288,27 +296,53 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
           controller.abort(); // stopped or superseded
           return;
         }
-        const piece = decoder.decode(value, { stream: true });
-        acc += piece;
-        chars += piece.length;
-        if (acc.trim()) {
-          if (firstTokenAt === null) firstTokenAt = Date.now();
-          setDots(false); // first word arrived — drop the 3-dot indicator
-          updateAssistant(acc);
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          let ev: StreamEvent | null = null;
+          try {
+            ev = JSON.parse(trimmed) as StreamEvent;
+          } catch {
+            ev = null;
+          }
+          if (ev && ev.t === "text" && ev.v) {
+            if (firstTokenAt === null) firstTokenAt = Date.now();
+            setDots(false); // first word arrived — drop the 3-dot indicator
+            acc += ev.v;
+            chars += ev.v.length;
+            updateAssistant(acc);
+          } else if (ev && ev.t === "tool" && ev.name) {
+            const trace = { name: ev.name, label: ev.label ?? "Working…" };
+            activeToolsRef.current = [...activeToolsRef.current, trace];
+            setActiveTools(activeToolsRef.current);
+            setDots(false); // real activity to show instead of dots
+          } else if (ev && ev.t === "error" && ev.v) {
+            failed = true;
+            updateAssistant(acc ? `${acc}\n\n${ev.v}` : ev.v, true, text);
+          } else if (!ev) {
+            // Not JSON — treat as plain text (defensive; older servers).
+            acc += trimmed + "\n";
+            chars += trimmed.length;
+            updateAssistant(acc);
+          }
         }
       }
       if (gen !== genRef.current) return;
-      updateAssistant(acc.trim() || "Hmm, I didn't quite catch that — could you rephrase?");
+      if (!failed) {
+        updateAssistant(acc.trim() || "Hmm, I didn't quite catch that — could you rephrase?");
+      }
 
       // Done streaming — stamp diagnostics onto the reply.
-      if (firstTokenAt !== null) {
+      if (!failed && firstTokenAt !== null) {
         const ttftSec = (firstTokenAt - t0) / 1000;
         const genDuration = (Date.now() - firstTokenAt) / 1000;
         const estTokens = chars / 4; // ~4 chars per token for English text
         const tps = genDuration > 0 ? estTokens / genDuration : 0;
         if (assistantId !== null) {
-          const stats =
-            `⚡ ${tps.toFixed(1)} tok/s · first token ${ttftSec.toFixed(1)}s`;
+          const stats = `⚡ ${tps.toFixed(1)} tok/s · first token ${ttftSec.toFixed(1)}s`;
           setMessages((m) =>
             m.map((msg) => (msg.id === assistantId ? { ...msg, stats } : msg))
           );
@@ -323,6 +357,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
       if (gen === genRef.current) {
         setTyping(false);
         setDots(false);
+        setActiveTools([]);
       }
       // Only clear OUR controller — a newer send may have installed its own
       // controllerRef while this request was finishing, and nulling that
@@ -336,6 +371,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
     controllerRef.current?.abort();
     setTyping(false);
     setDots(false);
+    setActiveTools([]);
   };
 
   const clear = () => {
@@ -343,6 +379,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
     controllerRef.current?.abort();
     setTyping(false);
     setDots(false);
+    setActiveTools([]);
     setMessages([
       {
         id: nextId.current++,
@@ -365,11 +402,26 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
     }
   };
 
+  /** Re-run the last question: drop the final answer(s) and resend, with
+   *  context rebuilt from the trimmed conversation (no stale-answer bias). */
+  const regenerate = () => {
+    if (typing) return;
+    const cut = [...messages];
+    while (cut.length > 1 && cut[cut.length - 1].role === "assistant") cut.pop();
+    const lastUser = cut.length > 1 ? cut[cut.length - 1].text : null;
+    if (!lastUser) return;
+    setMessages(cut);
+    void send(lastUser, cut.slice(0, -1)); // exclude the question itself — send() re-adds it
+  };
+
   const isEmpty = messages.length <= 1 && messages[0]?.role === "assistant";
+  const lastMsg = messages[messages.length - 1];
+  const canRegenerate =
+    !embedded && !typing && lastMsg?.role === "assistant" && !lastMsg?.error && messages.length > 1;
 
   return (
     <div className={`w-full flex flex-col min-h-0 ${embedded ? "" : "flex-1"}`}>
-      {/* Header — title + status + new chat */}
+      {/* Header — identity + capabilities + new chat */}
       <div className={`${embedded ? "mb-4" : "mb-6"} flex items-center justify-between gap-3 flex-wrap`}>
         <div className="flex items-center gap-3">
           <div className="relative">
@@ -388,7 +440,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
             </h1>
             <div className="text-xs text-[var(--emerald)] flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 bg-[var(--emerald)] rounded-full" />
-              Online · {siteConfig.name}
+              Online · knows the server live
             </div>
           </div>
         </div>
@@ -443,6 +495,33 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
         {/* Messages */}
         <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto" id="chat-messages" aria-live="polite">
           <div className="px-4 sm:px-6 py-6 space-y-5">
+            {/* Welcome hero — only when fresh */}
+            {isEmpty && !typing ? (
+              <div className={`${embedded ? "pb-4" : "pb-6"} flex flex-col items-center text-center`}>
+                <div className={`relative ${embedded ? "mb-3" : "mb-4"}`}>
+                  <div className={`${embedded ? "w-14 h-14 text-2xl" : "w-20 h-20 text-3xl"} bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white rounded-2xl shadow-[0_14px_40px_-14px_var(--accent-glow)]`}>
+                    <i className="fa-solid fa-robot" />
+                  </div>
+                  <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-[var(--emerald)] border-2 border-[var(--card)] rounded-full shadow-[0_0_10px_var(--emerald-glow)]" />
+                </div>
+                <h2 className={`font-display font-bold ${embedded ? "text-lg" : "text-2xl"}`}>
+                  Hey{user?.username ? ` ${user.username}` : ""} — I&apos;m {ai.name}
+                </h2>
+                <p className={`text-sm text-[var(--muted)] mt-1.5 max-w-md ${embedded ? "px-2" : ""}`}>
+                  Your guide to {siteConfig.name}. I can pull live server data, look anything
+                  up on the site, and search the web for general Minecraft questions.
+                </p>
+                <div className="flex flex-wrap justify-center gap-1.5 mt-4 max-w-md">
+                  {CAPABILITIES.map((cap) => (
+                    <span key={cap.label} className="chat-cap-chip">
+                      <i className={`fa-solid ${cap.icon}`} aria-hidden="true" />
+                      {cap.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             {messages.map((m) => (
               <div key={m.id} className="group">
                 {m.role === "assistant" ? (
@@ -450,13 +529,24 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
                     <div className="w-8 h-8 mt-1 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white text-xs flex-shrink-0 rounded-lg">
                       <i className="fa-solid fa-robot" />
                     </div>
-                    <div className="max-w-[88%]">
+                    <div className="max-w-[88%] min-w-0">
+                      {/* Tool trace — what the assistant checked to answer */}
+                      {m.tools && m.tools.length > 0 && !(m.id === 0) ? (
+                        <div className="flex flex-wrap gap-1.5 mb-1.5">
+                          {m.tools.map((t, ti) => (
+                            <span key={`${t.name}-${ti}`} className="chat-tool-chip" title={t.name}>
+                              <i className={`fa-solid ${TOOL_ICONS[t.name] ?? "fa-gear"}`} aria-hidden="true" />
+                              {t.label}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
                       <div
                         className={`chat-bubble-ai px-4 py-3 ${
                           m.error ? "!border-[var(--redstone)]/40 !bg-[var(--redstone)]/5" : ""
                         }`}
                       >
-                        <div className="text-[15px] leading-relaxed text-[var(--fg-2)]">
+                        <div className="chat-md text-[15px] leading-relaxed text-[var(--fg-2)]">
                           {renderText(m.text)}
                         </div>
                         {m.error && m.retry ? (
@@ -483,6 +573,15 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
                           <i className="fa-regular fa-copy mr-1" />
                           Copy
                         </button>
+                        {canRegenerate && m.id === lastMsg?.id ? (
+                          <button
+                            className="text-[11px] text-[var(--muted)] hover:text-[var(--accent)] transition"
+                            onClick={regenerate}
+                          >
+                            <i className="fa-solid fa-rotate-right mr-1" />
+                            Regenerate
+                          </button>
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -516,35 +615,55 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
               </div>
             ))}
 
-            {/* Thinking indicator — animated dots + rotating line */}
-            {dots ? (
+            {/* Live activity — 3-dot indicator until the first event, then
+                real tool chips while the agent works. Hides once the reply
+                text itself is streaming (unless tools ran, which keep
+                spinning as a "still generating" affordance). */}
+            {typing && (dots || activeTools.length > 0) ? (
               <div className="flex gap-3">
                 <div className="w-8 h-8 mt-1 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white text-xs flex-shrink-0 rounded-lg">
                   <i className="fa-solid fa-robot" />
                 </div>
-                <div className="chat-bubble-ai px-4 py-3 flex items-center gap-2">
-                  <span className="text-[12px] text-[var(--fg-2)] italic">{thinkLine}</span>
-                  <span className="typing-dot" />
-                  <span className="typing-dot" />
-                  <span className="typing-dot" />
+                <div className="chat-bubble-ai px-4 py-3 flex items-center gap-2 flex-wrap">
+                  {activeTools.length === 0 ? (
+                    <>
+                      <span className="text-[12px] text-[var(--fg-2)] italic">Thinking</span>
+                      <span className="typing-dot" />
+                      <span className="typing-dot" />
+                      <span className="typing-dot" />
+                    </>
+                  ) : (
+                    activeTools.map((t, i) => (
+                      <span key={`${t.name}-${i}`} className="chat-tool-chip live">
+                        <i className={`fa-solid ${TOOL_ICONS[t.name] ?? "fa-gear"} fa-spin`} aria-hidden="true" />
+                        {t.label}…
+                      </span>
+                    ))
+                  )}
                 </div>
               </div>
             ) : null}
           </div>
         </div>
 
-        {/* Welcome suggestions — only when fresh */}
+        {/* Suggestion cards — only when fresh */}
         {isEmpty && !typing ? (
           <div className="flex-shrink-0 px-4 sm:px-6 pb-5">
             <div className="grid sm:grid-cols-2 gap-2.5">
               {SUGGESTIONS.map((s) => (
                 <button
-                  key={s.label}
+                  key={s.title}
                   className="card px-4 py-3.5 flex items-center gap-3 text-left hover:border-[var(--accent)] transition"
                   onClick={() => void send(s.text)}
                 >
-                  <i className={`fa-solid ${s.icon} text-[var(--accent)] text-sm`} />
-                  <span className="text-sm text-[var(--fg-2)]">{s.label}</span>
+                  <span className="w-9 h-9 rounded-lg bg-[var(--accent-dim)] border border-[var(--border)] text-[var(--accent)] flex items-center justify-center flex-shrink-0">
+                    <i className={`fa-solid ${s.icon} text-sm`} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-[var(--fg)] truncate">{s.title}</span>
+                    <span className="block text-xs text-[var(--muted)] truncate">{s.hint}</span>
+                  </span>
+                  <i className="fa-solid fa-arrow-right ml-auto text-[10px] text-[var(--muted-2)]" aria-hidden="true" />
                 </button>
               ))}
             </div>
@@ -592,7 +711,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
             )}
           </div>
           <p className="text-center text-xs text-[var(--muted-2)] mt-2.5">
-            {ai.name} can make mistakes — double-check important info.
+            {ai.name} can make mistakes — double-check important info. <span className="hidden sm:inline">Press <kbd className="chat-kbd">/</kbd> to focus, <kbd className="chat-kbd">Shift+Enter</kbd> for a new line.</span>
           </p>
         </div>
       </div>
@@ -602,66 +721,122 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
 }
 
 // ------------------------------------------------------------------
-// Tiny safe formatter: renders **bold**, `code`, ```blocks```, lists,
-// and paragraph breaks as React nodes (no dangerouslySetInnerHTML).
+// Safe markdown-ish renderer (no dangerouslySetInnerHTML): **bold**,
+// `code`, ```fenced blocks``` with a copy button, # headings, lists,
+// blockquotes, and [text](https://…) links.
 // ------------------------------------------------------------------
-function renderText(text: string): ReactNode[] {
-  const blocks = text.split(/\n{2,}/);
-  return blocks.map((block, bi) => {
-    // Code block — strip the opening fence (``` or ```lang) and closing ```.
-    if (block.trimStart().startsWith("```")) {
-      const lines = block.trim().split("\n");
-      const body = lines.filter((_, i) => i > 0 && i < lines.length - 1).join("\n");
-      return (
-        <pre
-          key={bi}
-          className="bg-[var(--bg)] border border-[var(--border)] rounded-lg p-3 my-2 overflow-x-auto text-[13px] leading-relaxed text-[var(--fg-2)] font-mono"
-        >
-          {body}
-        </pre>
-      );
+
+function CodeBlock({ code, lang }: { code: string; lang?: string }) {
+  const { show } = useToast();
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      show("Code copied");
+    } catch {
+      show("Couldn't copy");
     }
+  };
+  return (
+    <div className="chat-codeblock my-2">
+      <div className="chat-codeblock-header">
+        <span>{lang || "code"}</span>
+        <button onClick={() => void copy()} aria-label="Copy code">
+          <i className="fa-regular fa-copy" aria-hidden="true" /> Copy
+        </button>
+      </div>
+      <pre className="overflow-x-auto text-[13px] leading-relaxed text-[var(--fg-2)] font-mono p-3 m-0">{code}</pre>
+    </div>
+  );
+}
 
-    const lines = block.split("\n");
-    const listItems: string[] = [];
-    const out: ReactNode[] = [];
+function renderText(text: string): ReactNode[] {
+  // Split on fenced code blocks first so nothing else touches their contents.
+  const parts = text.split(/```(\w*)\n?([\s\S]*?)(?:```|$)/g);
+  const out: ReactNode[] = [];
+  parts.forEach((part, i) => {
+    if (i % 3 === 1) return; // language capture — used below
+    if (i % 3 === 2) {
+      const lang = parts[i - 1];
+      out.push(<CodeBlock key={`code-${i}`} code={part.replace(/\n$/, "")} lang={lang || undefined} />);
+      return;
+    }
+    out.push(...renderBlocks(part, `b-${i}`));
+  });
+  return out;
+}
 
-    const flushList = (key: number) => {
-      if (listItems.length === 0) return;
-      out.push(
-        <ul key={`ul-${key}`} className="list-none space-y-1 my-2">
-          {listItems.map((li, i) => (
-            <li key={i} className="flex items-start gap-2">
-              <span className="text-[var(--accent)] mt-1.5">▸</span>
-              <span>{inlineFormat(li)}</span>
-            </li>
-          ))}
-        </ul>
-      );
-      listItems.length = 0;
-    };
+function renderBlocks(text: string, keyPrefix: string): ReactNode[] {
+  return text
+    .split(/\n{2,}/)
+    .filter((b) => b.trim().length > 0)
+    .map((block, bi) => {
+      const lines = block.split("\n");
 
-    lines.forEach((line, i) => {
-      if (/^\s*[-•]\s+/.test(line)) {
-        listItems.push(line.replace(/^\s*[-•]\s+/, ""));
-      } else {
-        flushList(i);
-        out.push(
-          <p key={`p-${i}`} className="my-1">
-            {inlineFormat(line)}
-          </p>
+      // Heading — # / ## / ###
+      const heading = block.match(/^(#{1,3})\s+(.*)$/);
+      if (heading && lines.length === 1) {
+        const level = heading[1].length;
+        const cls =
+          level === 1
+            ? "font-display text-lg font-bold"
+            : level === 2
+              ? "font-display text-base font-bold"
+              : "font-semibold";
+        return (
+          <div key={`${keyPrefix}-h-${bi}`} className={`${cls} text-[var(--fg)] mt-2 mb-1`}>
+            {inlineFormat(heading[2])}
+          </div>
         );
       }
-    });
-    flushList(9999 + bi);
 
-    return <div key={`b-${bi}`}>{out}</div>;
-  });
+      // List — consecutive "- " / "• " lines
+      if (lines.every((l) => /^\s*[-•]\s+/.test(l) || l.trim() === "")) {
+        const items = lines.filter((l) => /^\s*[-•]\s+/.test(l));
+        if (items.length > 0) {
+          return (
+            <ul key={`${keyPrefix}-ul-${bi}`} className="list-none space-y-1 my-2">
+              {items.map((li, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="text-[var(--accent)] mt-[3px] text-xs">▸</span>
+                  <span>{inlineFormat(li.replace(/^\s*[-•]\s+/, ""))}</span>
+                </li>
+              ))}
+            </ul>
+          );
+        }
+      }
+
+      // Blockquote — "> " lines
+      if (lines.every((l) => /^\s*>\s?/.test(l) || l.trim() === "")) {
+        return (
+          <blockquote
+            key={`${keyPrefix}-q-${bi}`}
+            className="border-l-2 border-[var(--accent)]/50 pl-3 my-2 text-[var(--muted)]"
+          >
+            {lines.map((l, i) => (
+              <div key={i}>{inlineFormat(l.replace(/^\s*>\s?/, ""))}</div>
+            ))}
+          </blockquote>
+        );
+      }
+
+      // Paragraph(s)
+      return (
+        <div key={`${keyPrefix}-p-${bi}`}>
+          {lines.map((line, i) => (
+            <p key={i} className="my-1">
+              {line.trim() ? inlineFormat(line) : <br />}
+            </p>
+          ))}
+        </div>
+      );
+    });
 }
 
 function inlineFormat(line: string): ReactNode[] {
   const nodes: ReactNode[] = [];
-  // Split by `code` first, then handle **bold** inside non-code parts.
+  // Tokenize: `code` | **bold** | [text](url) — code first so links inside
+  // code stay literal.
   const parts = line.split(/(`[^`]+`)/g);
   parts.forEach((part, i) => {
     if (part.startsWith("`") && part.endsWith("`") && part.length > 1) {
@@ -675,17 +850,35 @@ function inlineFormat(line: string): ReactNode[] {
       );
       return;
     }
-    const boldParts = part.split(/(\*\*[^*]+\*\*)/g);
-    boldParts.forEach((bp, j) => {
-      if (bp.startsWith("**") && bp.endsWith("**") && bp.length > 4) {
+    const linkParts = part.split(/(\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g);
+    linkParts.forEach((lp, j) => {
+      const link = lp.match(/^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/);
+      if (link) {
         nodes.push(
-          <strong key={`${i}-${j}`} className="font-semibold text-[var(--fg)]">
-            {bp.slice(2, -2)}
-          </strong>
+          <a
+            key={`${i}-${j}`}
+            href={link[2]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[var(--accent-bright)] underline decoration-[var(--accent)]/40 hover:decoration-[var(--accent)] break-words"
+          >
+            {link[1]}
+          </a>
         );
-      } else if (bp) {
-        nodes.push(<span key={`${i}-${j}`}>{bp}</span>);
+        return;
       }
+      const boldParts = lp.split(/(\*\*[^*]+\*\*)/g);
+      boldParts.forEach((bp, k) => {
+        if (bp.startsWith("**") && bp.endsWith("**") && bp.length > 4) {
+          nodes.push(
+            <strong key={`${i}-${j}-${k}`} className="font-semibold text-[var(--fg)]">
+              {bp.slice(2, -2)}
+            </strong>
+          );
+        } else if (bp) {
+          nodes.push(<span key={`${i}-${j}-${k}`}>{bp}</span>);
+        }
+      });
     });
   });
   return nodes;
