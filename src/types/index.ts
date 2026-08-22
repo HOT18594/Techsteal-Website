@@ -97,6 +97,8 @@ export interface GalleryItem {
   height: "tall" | "medium" | "short";
   /** Discord-style account id of the poster. */
   authorId?: string;
+  /** Poster's resolved avatar (Discord PFP or MC head) for detail views. */
+  builderAvatar?: string | null;
   /** Markdown description shown in the lightbox. */
   description?: string;
   /** All images of the post (cover first). `image` mirrors the cover. */

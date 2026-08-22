@@ -74,13 +74,19 @@ export async function GET(
     .where(eq(galleryComments.itemId, itemId))
     .orderBy(asc(galleryComments.createdAt));
 
-  const avatars = await resolveAuthorAvatars(comments);
+  // One avatar lookup covers the poster and every commenter.
+  const avatars = await resolveAuthorAvatars([item, ...comments]);
+  const builderInfo = avatarInfoFor(avatars, item);
+  const itemOut: typeof item & { builderAvatar: string | null } = {
+    ...item,
+    builderAvatar: builderInfo?.avatarUrl ?? null,
+  };
   const enriched = comments.map((c) => {
     const info = avatarInfoFor(avatars, c);
     return { ...c, avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? "avatar-1" };
   });
 
-  return NextResponse.json({ item, comments: enriched });
+  return NextResponse.json({ item: itemOut, comments: enriched });
 }
 
 // Add a comment to a gallery post. Any signed-in member (not banned) can

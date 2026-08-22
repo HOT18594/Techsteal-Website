@@ -173,8 +173,12 @@ export default function GalleryPage() {
         const data = (await res.json()) as { item: GalleryItem; comments: GalleryComment[] };
         if (cancelled) return;
         setComments(data.comments);
-        // Mirror the bumped view count into the local list state.
-        setItemsLocal(viewingItemId, { views: data.item.views });
+        // Mirror the bumped view count and the poster's resolved avatar
+        // into the local list state.
+        setItemsLocal(viewingItemId, {
+          views: data.item.views,
+          builderAvatar: data.item.builderAvatar ?? null,
+        });
       })
       .catch(() => !cancelled && setComments([]))
       .finally(() => !cancelled && setCommentsLoading(false));
@@ -777,7 +781,7 @@ export default function GalleryPage() {
         <Modal
           label={currentItem.title}
           onClose={() => setViewing(null)}
-          cardClassName="overflow-hidden w-full max-w-5xl max-h-[calc(100dvh-3rem)] flex flex-col lg:flex-row modal-scroll lg:overflow-hidden"
+          cardClassName="overflow-hidden w-full max-w-5xl max-h-[calc(100dvh-3rem)] flex flex-col lg:flex-row"
         >
             {/* Image pane */}
             <div className="relative flex-1 min-w-0 bg-[var(--bg)] flex items-center justify-center">
@@ -816,7 +820,7 @@ export default function GalleryPage() {
             <div className="w-full lg:w-96 flex flex-col min-h-0 border-t lg:border-t-0 lg:border-l border-[var(--border)]">
               <div className="p-5 border-b border-[var(--border)]">
                 <div className="flex items-start gap-3">
-                  <Avatar name={currentItem.builder} size="sm" />
+                  <Avatar name={currentItem.builder} src={currentItem.builderAvatar} size="sm" />
                   <div className="flex-1 min-w-0">
                     <h3 className="font-display text-lg font-bold truncate">{currentItem.title}</h3>
                     <p className="text-xs text-[var(--muted)]">
@@ -876,8 +880,9 @@ export default function GalleryPage() {
                 </div>
               </div>
 
-              {/* Comments */}
-              <div className="flex-1 overflow-y-auto p-5 min-h-0">
+              {/* Comments — scroll inside the pane instead of stretching
+                  the dialog (thin-scroll gives a slim dark scrollbar) */}
+              <div className="flex-1 overflow-y-auto p-5 min-h-0 thin-scroll">
                 <h4 className="font-display text-sm font-bold mb-3 flex items-center gap-2">
                   <i className="fa-regular fa-comments text-[var(--accent)]" />
                   {currentItem.commentCount ?? 0} {currentItem.commentCount === 1 ? "comment" : "comments"}

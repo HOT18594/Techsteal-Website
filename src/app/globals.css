@@ -2298,3 +2298,27 @@ html.custom-cursor.cursor-on-text .cursor-ring {
 .modal-backdrop > .card:hover {
   transform: none;
 }
+
+/* Slim dark scrollbars for in-modal scroll regions (comments, forms) */
+.modal-scroll,
+.poll-announce-body,
+.thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.modal-scroll::-webkit-scrollbar,
+.poll-announce-body::-webkit-scrollbar,
+.thin-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.modal-scroll::-webkit-scrollbar-thumb,
+.poll-announce-body::-webkit-scrollbar-thumb,
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
+}
+.modal-scroll::-webkit-scrollbar-track,
+.poll-announce-body::-webkit-scrollbar-track,
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
