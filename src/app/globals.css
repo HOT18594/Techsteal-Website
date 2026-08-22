@@ -1508,7 +1508,10 @@ body.scrolled .site-nav {
   border: 1px solid var(--accent);
   border-radius: 12px;
   padding: 14px 18px;
-  transform: translateX(140%);
+  transform: translateX(calc(100% + 60px));
+  /* ^ Parked fully off-screen INCLUDING its 30px box-shadow glow — a plain
+     translateX(140%) left the element's left edge just past the viewport
+     while the glow still bled ~15px into view at the bottom-right. */
   transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   z-index: 100;
   display: flex;
