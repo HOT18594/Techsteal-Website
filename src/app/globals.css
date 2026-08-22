@@ -1508,11 +1508,14 @@ body.scrolled .site-nav {
   border: 1px solid var(--accent);
   border-radius: 12px;
   padding: 14px 18px;
+  max-width: min(420px, calc(100vw - 2rem));
   transform: translateX(calc(100% + 60px));
   /* ^ Parked fully off-screen INCLUDING its 30px box-shadow glow — a plain
      translateX(140%) left the element's left edge just past the viewport
      while the glow still bled ~15px into view at the bottom-right. */
-  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  visibility: hidden; /* the shell stays mounted so the slide-out can animate */
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0s 0.4s;
   z-index: 100;
   display: flex;
   align-items: center;
@@ -1525,6 +1528,15 @@ body.scrolled .site-nav {
 }
 .toast.show {
   transform: translateX(0);
+  visibility: visible;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), visibility 0s 0s;
+}
+/* Snug to the edge on phones, still clear of BackToTop */
+@media (max-width: 640px) {
+  .toast {
+    right: 1rem;
+    bottom: 5.5rem;
+  }
 }
 .toast-dismiss {
   background: none;

@@ -19,6 +19,8 @@ const eslintConfig = [
       "node_modules/**",
       "drizzle/meta/**",
       "next-env.d.ts",
+      // Local dev scripts (CommonJS tooling) — not part of the app bundle
+      "scripts/**",
     ],
   },
 ];

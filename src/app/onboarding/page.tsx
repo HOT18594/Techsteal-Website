@@ -12,7 +12,7 @@ const STEPS = ["Admin code", "Discord server", "Minecraft"];
 
 export default function OnboardingPage() {
   return (
-    <Suspense fallback={<SubPage className="max-w-2xl"><p className="text-sm text-[var(--muted)] text-center py-16">Loadingâ€¦</p></SubPage>}>
+    <Suspense fallback={<SubPage className="max-w-2xl"><p className="text-sm text-[var(--muted)] text-center py-16">Loading…</p></SubPage>}>
       <OnboardingContent />
     </Suspense>
   );
@@ -78,17 +78,17 @@ function OnboardingContent() {
     try {
       const res = await fetch("/api/auth/discord/verify", { method: "POST" });
       if (!res.ok) {
-        // Auth failure / server error â€” NOT "not configured". Re-check so
+        // Auth failure / server error — NOT "not configured". Re-check so
         // the user can try again instead of being told setup is missing.
         setVerifyState("idle");
-        show("Couldn't verify", "Something went wrong â€” try again in a moment.");
+        show("Couldn't verify", "Something went wrong — try again in a moment.");
         return;
       }
       const data = (await res.json()) as { configured: boolean; verified: boolean };
       if (!data.configured) {
         setVerifyState("not_configured");
       } else if (data.verified) {
-        // The verify endpoint persists the badge server-side â€” no PATCH.
+        // The verify endpoint persists the badge server-side — no PATCH.
         setVerifyState("verified");
       } else {
         setVerifyState("idle"); // offer a manual re-check
@@ -156,7 +156,7 @@ function OnboardingContent() {
         <div className="page-header mb-8">
           <h1 className="page-title">Let&apos;s get you set up</h1>
           <p className="text-sm text-[var(--muted)]">
-            A few optional steps â€” you can change everything later in{" "}
+            A few optional steps — you can change everything later in{" "}
             <Link href="/settings" className="text-[var(--accent)] hover:text-[var(--accent-bright)] transition">
               Profile & Settings
             </Link>
@@ -193,7 +193,7 @@ function OnboardingContent() {
           ))}
         </div>
 
-        {/* Step 1 â€” Admin code */}
+        {/* Step 1 — Admin code */}
         {step === 0 ? (
           <div className="card p-8">
             <div className="w-12 h-12 rounded-xl bg-[var(--accent-dim)] border border-[var(--border-strong)] flex items-center justify-center text-xl text-[var(--accent)] mb-5">
@@ -202,7 +202,7 @@ function OnboardingContent() {
             <h2 className="font-display text-2xl font-bold mb-2">Want admin powers?</h2>
             <p className="text-sm text-[var(--muted)] mb-6">
               If you have the admin code, enter it to unlock the admin role and the{" "}
-              <span className="text-[var(--fg-2)]">Manage Panel</span>. No code? Skip â€”
+              <span className="text-[var(--fg-2)]">Manage Panel</span>. No code? Skip —
               you can claim it later in settings.
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
@@ -222,7 +222,7 @@ function OnboardingContent() {
                 disabled={adminBusy || !adminCode.trim()}
               >
                 {adminBusy ? <i className="fa-solid fa-spinner fa-spin" /> : <i className="fa-solid fa-key" />}
-                {adminBusy ? "Checkingâ€¦" : adminDone ? "Unlocked!" : "Claim"}
+                {adminBusy ? "Checking…" : adminDone ? "Unlocked!" : "Claim"}
               </button>
             </div>
             {adminDone ? (
@@ -238,7 +238,7 @@ function OnboardingContent() {
           </div>
         ) : null}
 
-        {/* Step 2 â€” Discord server verification */}
+        {/* Step 2 — Discord server verification */}
         {step === 1 ? (
           <div className="card p-8">
             <div className="w-12 h-12 rounded-xl bg-[var(--accent-dim)] border border-[var(--border-strong)] flex items-center justify-center text-xl text-[var(--accent)] mb-5">
@@ -246,7 +246,7 @@ function OnboardingContent() {
             </div>
             <h2 className="font-display text-2xl font-bold mb-2">Are you in the official server?</h2>
             <p className="text-sm text-[var(--muted)] mb-6">
-              Verifying unlocks all member perks â€” the AI assistant, Gallery posting, and
+              Verifying unlocks all member perks — the AI assistant, Gallery posting, and
               Server Control. We can check right now if you&apos;re in the official{" "}
               {siteConfig.name} Discord server. Not in it yet? Join first, then verify.
             </p>
@@ -270,10 +270,10 @@ function OnboardingContent() {
                 }`}
               />
               <div className="text-sm">
-                {verifyState === "checking" ? "Checking membershipâ€¦" : null}
-                {verifyState === "verified" ? "Verified â€” you're a member. âœ…" : null}
+                {verifyState === "checking" ? "Checking membership…" : null}
+                {verifyState === "verified" ? "Verified — you're a member. âœ…" : null}
                 {verifyState === "not_configured"
-                  ? "Verification isn't set up yet â€” you can skip for now."
+                  ? "Verification isn't set up yet — you can skip for now."
                   : null}
                 {verifyState === "idle" || verifyState === "skipped"
                   ? "Not verified yet."
@@ -292,7 +292,7 @@ function OnboardingContent() {
                   disabled={verifyState === "checking"}
                 >
                   <i className="fa-solid fa-rotate" />
-                  {verifyState === "checking" ? "Checkingâ€¦" : "Verify now"}
+                  {verifyState === "checking" ? "Checking…" : "Verify now"}
                 </button>
               ) : null}
               <button
@@ -308,7 +308,7 @@ function OnboardingContent() {
           </div>
         ) : null}
 
-        {/* Step 3 â€” Minecraft username */}
+        {/* Step 3 — Minecraft username */}
         {step === 2 ? (
           <div className="card p-8">
             <div className="w-12 h-12 rounded-xl bg-[var(--accent-dim)] border border-[var(--border-strong)] flex items-center justify-center text-xl text-[var(--accent)] mb-5">
@@ -366,7 +366,7 @@ function OnboardingContent() {
               </button>
               <button className="btn-primary" onClick={() => void finish()} disabled={finishing}>
                 {finishing ? <i className="fa-solid fa-spinner fa-spin" /> : <i className="fa-solid fa-check" />}
-                {finishing ? "Savingâ€¦" : "Finish & save"}
+                {finishing ? "Saving…" : "Finish & save"}
               </button>
             </div>
           </div>

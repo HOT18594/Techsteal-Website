@@ -646,10 +646,11 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
           </div>
         </div>
 
-        {/* Suggestion cards — only when fresh */}
+        {/* Suggestion cards — only when fresh. Two columns even on phones:
+            a 6-card stack would crowd out the message area on short screens. */}
         {isEmpty && !typing ? (
           <div className="flex-shrink-0 px-4 sm:px-6 pb-5">
-            <div className="grid sm:grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
               {SUGGESTIONS.map((s) => (
                 <button
                   key={s.title}
