@@ -242,37 +242,13 @@ export default function StatusPage() {
               players online
             </div>
             <div className="mt-3 min-h-[2rem]">
-              {playerList.length > 0 ? (
-                <div className="space-y-1.5">
-                  {playerList.slice(0, 4).map((name) => (
-                    <span key={name} className="flex items-center gap-2 text-xs text-[var(--fg-2)]">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={minotarUrl(name)}
-                        alt=""
-                        loading="lazy"
-                        width={18}
-                        height={18}
-                        className="rounded-[3px] image-render-pixel"
-                      />
-                      <span className="truncate">{name}</span>
-                    </span>
-                  ))}
-                  {playerList.length > 4 ? (
-                    <span className="text-xs text-[var(--muted-2)]">
-                      +{playerList.length - 4} more
-                    </span>
-                  ) : null}
-                </div>
-              ) : (
-                <span className="text-xs text-[var(--muted-2)]">
-                  {statusLive
-                    ? online
-                      ? "The realm is quiet right now."
-                      : "Nobody here — the server is down."
-                    : "Status data unavailable right now."}
-                </span>
-              )}
+              <span className="text-xs text-[var(--muted-2)]">
+                {statusLive
+                  ? online
+                    ? "Live from the server panel."
+                    : "The panel is reachable; the server is down."
+                  : "Status data unavailable right now."}
+              </span>
             </div>
           </div>
 
@@ -301,26 +277,47 @@ export default function StatusPage() {
             </div>
           </div>
 
-          {/* Hosting credits */}
+          {/* In-game roster */}
           <div className="card stat-card p-5 flex flex-col">
             <div
               className="stat-icon"
-              style={{ color: "#ffd166", borderColor: "rgba(255,209,102,0.4)", background: "rgba(255,209,102,0.08)" }}
+              style={{ color: "var(--emerald)", borderColor: "var(--emerald-glow)", background: "var(--emerald-glow)" }}
             >
-              <i className="fa-solid fa-coins" />
+              <i className="fa-solid fa-user-group" />
             </div>
-            <div className="mt-4 flex items-baseline gap-1.5">
-              <span className="stat-number">
-                {STATUS.credits !== null && STATUS.credits !== undefined
-                  ? STATUS.credits.toLocaleString(undefined, { maximumFractionDigits: 0 })
-                  : "—"}
-              </span>
+            <div className="mt-4">
+              <span className="stat-number text-xl! leading-tight block">In-game now</span>
             </div>
             <div className="mt-1 text-xs text-[var(--muted)] uppercase tracking-wider">
-              hosting credits
+              {playerList.length} {playerList.length === 1 ? "player" : "players"} on the server
             </div>
-            <div className="mt-3 text-xs text-[var(--muted-2)]">
-              Live balance on the exaroton account that runs the server.
+            <div className="mt-3 min-h-[2rem]">
+              {online && playerList.length > 0 ? (
+                <div className="space-y-1.5">
+                  {playerList.map((name) => (
+                    <span key={name} className="flex items-center gap-2 text-xs text-[var(--fg-2)]">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={minotarUrl(name)}
+                        alt=""
+                        loading="lazy"
+                        width={18}
+                        height={18}
+                        className="rounded-[3px] image-render-pixel"
+                      />
+                      <span className="truncate">{name}</span>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-xs text-[var(--muted-2)]">
+                  {statusLive
+                    ? online
+                      ? "The realm is quiet right now."
+                      : "Nobody here — the server is down."
+                    : "Status data unavailable right now."}
+                </span>
+              )}
             </div>
           </div>
 

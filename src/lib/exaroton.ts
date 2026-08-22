@@ -81,11 +81,6 @@ interface ExarotonServerResponse {
   };
 }
 
-interface ExarotonAccountResponse {
-  success?: boolean;
-  data?: { credits?: number };
-}
-
 export interface ExarotonSnapshot {
   serverName: string | null;
   motd: string | null;
@@ -99,8 +94,6 @@ export interface ExarotonSnapshot {
   playerList: string[];
   software: string | null;
   version: string | null;
-  /** Hosting-account credits remaining, when the account endpoint answered. */
-  credits: number | null;
 }
 
 /** Strip Minecraft § formatting codes, keeping line breaks. */
@@ -109,34 +102,30 @@ export function stripFormattingCodes(text: string): string {
 }
 
 /**
- * Fetch the configured server's live state plus the account's credit
- * balance. Both requests run in parallel and tolerate individual failure
- * (a failed credits call just leaves `credits` null). Throws only when the
- * SERVER request fails outright so callers can fall back to ping-based
- * status.
+ * Fetch the configured server's live state. Only ONE request per poll —
+ * exaroton rate-limits the API, so nothing extra (credits etc.) is fetched
+ * here. Throws when the request fails outright so callers can fall back to
+ * ping-based status.
  */
 export async function getExarotonSnapshot(): Promise<ExarotonSnapshot> {
   const config = getExarotonConfig();
   if (!config) throw new Error("exaroton is not configured");
-  const headers = { Authorization: `Bearer ${config.token}` };
 
-  const [serverRes, accountRes] = await Promise.allSettled([
-    fetch(`${EXAROTON_API}/servers/${encodeURIComponent(config.serverId)}/`, {
-      headers,
+  const res = await fetch(
+    `${EXAROTON_API}/servers/${encodeURIComponent(config.serverId)}/`,
+    {
+      headers: { Authorization: `Bearer ${config.token}` },
       cache: "no-store",
       signal: AbortSignal.timeout(8_000),
-    }),
-    fetch(`${EXAROTON_API}/account/`, {
-      headers,
-      cache: "no-store",
-      signal: AbortSignal.timeout(8_000),
-    }),
-  ]);
-
-  if (serverRes.status !== "fulfilled" || !serverRes.value.ok) {
-    throw new Error("exaroton server query failed");
-  }
-  const server = (await serverRes.value.json()) as ExarotonServerResponse;
+    }
+  ).catch((err: unknown) => {
+    if (err instanceof Error && err.name === "TimeoutError") {
+      throw new Error("exaroton didn't respond");
+    }
+    throw err;
+  });
+  if (!res.ok) throw new Error(`exaroton server query failed (${res.status})`);
+  const server = (await res.json()) as ExarotonServerResponse;
   if (server.success === false || !server.data) {
     throw new Error("exaroton rejected the server query");
   }
@@ -144,33 +133,18 @@ export async function getExarotonSnapshot(): Promise<ExarotonSnapshot> {
 
   const mapped =
     d.status !== undefined ? STATE_BY_CODE[d.status] : undefined;
-  const state = mapped?.state ?? "unknown";
-  const stateLabel = mapped?.label ?? "Unknown";
-
-  let credits: number | null = null;
-  if (accountRes.status === "fulfilled" && accountRes.value.ok) {
-    try {
-      const acc = (await accountRes.value.json()) as ExarotonAccountResponse;
-      if (acc.success !== false && typeof acc.data?.credits === "number") {
-        credits = acc.data.credits;
-      }
-    } catch {
-      // Credits are a nice-to-have — ignore failures.
-    }
-  }
 
   return {
     serverName: d.name ?? null,
     motd: d.motd ? stripFormattingCodes(d.motd) : null,
     statusCode: d.status ?? null,
-    state,
-    stateLabel,
-    online: state === "online",
+    state: mapped?.state ?? "unknown",
+    stateLabel: mapped?.label ?? "Unknown",
+    online: (mapped?.state ?? "unknown") === "online",
     players: d.players?.count ?? 0,
     max: d.players?.max ?? 8,
     playerList: Array.isArray(d.players?.list) ? d.players.list : [],
     software: d.software?.name ?? null,
     version: d.software?.version ?? null,
-    credits,
   };
 }

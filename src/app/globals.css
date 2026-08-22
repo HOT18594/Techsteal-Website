@@ -23,11 +23,11 @@
   src: url("/fonts/Minecraftia-Regular.ttf") format("truetype");
   font-display: swap;
   font-weight: 400 700;
-  /* Minecraftia's glyphs sit +106.25% (optical center) above baseline but
-     its metrics claim only +68.75% average — the 37.5% phantom gap below.
-     Raise ascent / zero descent so the visual center lands dead on the
-     layout center. */
-  ascent-override: 212.5%;
+  /* Minecraftia's glyphs render visibly HIGH inside their line boxes even
+     though the naive metric math suggests perfect centering (same class of
+     error as the logo face). Extra ascent pushes the ink down: +25% here
+     shifts text ~12.5% of em lower than before. */
+  ascent-override: 237.5%;
   descent-override: 0%;
 }
 

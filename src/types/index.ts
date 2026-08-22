@@ -210,6 +210,4 @@ export interface ServerStatus {
   motd?: string | null;
   /** Server software, e.g. "NeoForge". */
   software?: string | null;
-  /** Remaining exaroton credits on the hosting account. */
-  credits?: number | null;
 }

@@ -26,7 +26,6 @@ export async function getLiveStatus(): Promise<ServerStatus> {
       serverName: snap.serverName,
       motd: snap.motd,
       software: snap.software,
-      credits: snap.credits,
       source: "live",
     };
   } catch {
