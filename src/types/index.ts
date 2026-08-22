@@ -192,4 +192,24 @@ export interface ServerStatus {
   version?: string;
   hostname?: string;
   source?: "live" | "fallback";
+  /** Fine-grained exaroton state behind the online/offline boolean. */
+  state?:
+    | "online"
+    | "starting"
+    | "loading"
+    | "stopping"
+    | "restarting"
+    | "crashed"
+    | "offline"
+    | "pending"
+    | "unknown";
+  /** Human label for the state, e.g. "Starting…". */
+  stateLabel?: string;
+  /** Server name and raw MOTD from exaroton (format codes stripped). */
+  serverName?: string | null;
+  motd?: string | null;
+  /** Server software, e.g. "NeoForge". */
+  software?: string | null;
+  /** Remaining exaroton credits on the hosting account. */
+  credits?: number | null;
 }

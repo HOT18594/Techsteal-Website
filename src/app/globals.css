@@ -81,6 +81,7 @@
   --emerald: #22c55e;
   --emerald-glow: rgba(34, 197, 94, 0.35);
   --redstone: #f43f5e;
+  --redstone-glow: rgba(244, 63, 94, 0.35);
   --diamond: #38d3f0;
 
   /* Scroll/parallax state (set by ScrollFx) */
@@ -2284,4 +2285,9 @@ html.custom-cursor.cursor-on-text .cursor-ring {
   /* Long option lists stay reachable without pushing buttons off-screen */
   overflow-y: auto;
   min-height: 0;
+}
+
+/* Pixel-crisp Minecraft player heads on the status page */
+.image-render-pixel {
+  image-rendering: pixelated;
 }
