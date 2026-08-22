@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fallbackGallery } from "@/lib/fallback-data";
 import { GALLERY_CATEGORIES } from "@/lib/storage";
-import { compressImage } from "@/lib/imaging";
+import { compressImage, MAX_UPLOAD_BYTES } from "@/lib/imaging";
 import { categoryClass } from "@/lib/forum-categories";
 import { Markdown } from "@/components/Markdown";
 import { RichEditor } from "@/components/RichEditor";
@@ -17,7 +17,6 @@ import { useSession } from "@/lib/use-session";
 import { timeAgo } from "@/lib/time";
 
 const MAX_IMAGES = 8;
-const MAX_BYTES = 8 * 1024 * 1024;
 
 /** One in-progress image in the composer. */
 interface PendingImage {
@@ -79,8 +78,10 @@ export default function GalleryPage() {
   const titleRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Lightbox — slide index into the flattened visible list.
-  const [slide, setSlide] = useState<number | null>(null);
+  // Lightbox — tracked by item id + image index (NOT a flat array index):
+  // likes/feature actions re-sort the grid, so an index captured earlier
+  // could silently point at a different post.
+  const [viewing, setViewing] = useState<{ itemId: number; image: number } | null>(null);
   const [comments, setComments] = useState<GalleryComment[] | null>(null);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentText, setCommentText] = useState("");
@@ -111,24 +112,42 @@ export default function GalleryPage() {
   }, [displayItems, filter, sort, search]);
 
   const slides = useMemo(() => buildSlides(visible), [visible]);
-  const currentSlide = slide !== null ? slides[slide] : null;
-  const current = currentSlide ? visible[currentSlide.item] : null;
 
-  // Escape closes whichever overlay is open; lock body scroll; restore
-  // focus to the opener on close.
+  // Resolve the lightbox target from the current (possibly re-sorted) list.
+  const currentItem = viewing ? visible.find((g) => g.id === viewing.itemId) ?? null : null;
+  const currentImages = currentItem ? imagesOf(currentItem) : [];
+  const slideIndex = (() => {
+    if (!viewing || !currentItem) return -1;
+    const itemPos = visible.findIndex((g) => g.id === viewing.itemId);
+    if (itemPos < 0) return -1;
+    return slides.findIndex((s) => s.item === itemPos && s.image === viewing.image);
+  })();
+
+  // Blob previews must not leak when the page unmounts mid-compose.
+  const pendingRef = useRef<PendingImage[]>([]);
+  pendingRef.current = pending;
   useEffect(() => {
-    if (!modalOpen && slide === null) return;
+    return () => {
+      for (const p of pendingRef.current) URL.revokeObjectURL(p.preview);
+    };
+  }, []);
+
+  // Escape closes whichever overlay is open; lock body scroll; arrow keys
+  // page through the lightbox.
+  useEffect(() => {
+    if (!modalOpen && !viewing) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setModalOpen(false);
-        setSlide(null);
+        setViewing(null);
       }
-      if (slide !== null && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
-        setSlide((s) =>
-          s === null ? s : (s + (e.key === "ArrowRight" ? 1 : slides.length - 1)) % slides.length
-        );
+      if (viewing && slides.length > 1 && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+        const dir = e.key === "ArrowRight" ? 1 : -1;
+        const idx = slideIndex >= 0 ? slideIndex : 0;
+        const next = slides[(idx + dir + slides.length) % slides.length];
+        setViewing({ itemId: visible[next.item].id ?? 0, image: next.image });
       }
     };
     if (modalOpen) titleRef.current?.focus();
@@ -137,30 +156,31 @@ export default function GalleryPage() {
       document.body.style.overflow = prevOverflow;
       document.removeEventListener("keydown", onKey);
     };
-  }, [modalOpen, slide, slides.length]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalOpen, viewing, slideIndex, slides.length]);
 
   // Load comments (and bump views) when the lightbox opens on a post.
+  const viewingItemId = viewing?.itemId ?? null;
   useEffect(() => {
-    if (slide === null || !current) return;
+    if (viewingItemId === null) return;
     let cancelled = false;
     setComments(null);
     setCommentsLoading(true);
-    fetch(`/api/gallery/${current.id}`)
+    fetch(`/api/gallery/${viewingItemId}`)
       .then(async (res) => {
         if (!res.ok) throw new Error("failed");
         const data = (await res.json()) as { item: GalleryItem; comments: GalleryComment[] };
         if (cancelled) return;
         setComments(data.comments);
         // Mirror the bumped view count into the local list state.
-        setItemsLocal(current.id ?? 0, { views: data.item.views });
+        setItemsLocal(viewingItemId, { views: data.item.views });
       })
       .catch(() => !cancelled && setComments([]))
       .finally(() => !cancelled && setCommentsLoading(false));
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slide !== null ? current?.id : null]);
+  }, [viewingItemId, setItemsLocal]);
 
   const openModal = () => {
     setTitle("");
@@ -191,8 +211,14 @@ export default function GalleryPage() {
         show("Unsupported image", `${f.name}: use JPG, PNG, WebP or GIF.`, "error");
         continue;
       }
-      if (f.size > MAX_BYTES) {
-        show("Image too large", `${f.name}: keep uploads under 8 MB.`, "error");
+      if (f.size > MAX_UPLOAD_BYTES) {
+        show(
+          "Image too large",
+          f.type === "image/gif"
+            ? `${f.name}: GIFs must be under 4 MB (animations can't be compressed).`
+            : `${f.name}: keep uploads under 4 MB.`,
+          "error"
+        );
         continue;
       }
       const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -333,7 +359,7 @@ export default function GalleryPage() {
         show("Couldn't delete", "The server rejected the request.", "error");
         return;
       }
-      setSlide(null);
+      setViewing(null);
       show("Deleted", `"${g.title}" was removed.`);
       void refetch();
     } catch {
@@ -344,12 +370,12 @@ export default function GalleryPage() {
   };
 
   const postComment = async () => {
-    if (!current) return;
+    if (!currentItem) return;
     const text = commentText.trim();
     if (!text || postingComment) return;
     setPostingComment(true);
     try {
-      const res = await fetch(`/api/gallery/${current.id}`, {
+      const res = await fetch(`/api/gallery/${currentItem.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: text }),
@@ -357,7 +383,11 @@ export default function GalleryPage() {
       if (res.ok) {
         const created = (await res.json()) as GalleryComment;
         setComments((prev) => [...(prev ?? []), created]);
-        setItemsLocal(current.id ?? 0, { commentCount: (current.commentCount ?? 0) + 1 });
+        setLocalItems((prev) =>
+          (prev ?? items).map((g) =>
+            g.id === currentItem.id ? { ...g, commentCount: (g.commentCount ?? 0) + 1 } : g
+          )
+        );
         setCommentText("");
       } else if (res.status === 401) {
         show("Sign in to comment", "Log in with Discord to comment.", "error");
@@ -373,11 +403,11 @@ export default function GalleryPage() {
   };
 
   const deleteComment = async (c: GalleryComment) => {
-    if (!current) return;
+    if (!currentItem) return;
     const ok = window.confirm("Delete this comment?");
     if (!ok) return;
     try {
-      const res = await fetch(`/api/gallery/${current.id}`, {
+      const res = await fetch(`/api/gallery/${currentItem.id}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ commentId: c.id }),
@@ -387,15 +417,28 @@ export default function GalleryPage() {
         return;
       }
       setComments((prev) => (prev ?? []).filter((x) => x.id !== c.id));
-      setItemsLocal(current.id ?? 0, { commentCount: Math.max(0, (current.commentCount ?? 1) - 1) });
+      setLocalItems((prev) =>
+        (prev ?? items).map((g) =>
+          g.id === currentItem.id ? { ...g, commentCount: Math.max(0, (g.commentCount ?? 1) - 1) } : g
+        )
+      );
     } catch {
       show("Couldn't delete", "Check your connection and try again.", "error");
     }
   };
 
-  const openLightbox = (visibleIndex: number) => {
-    const idx = slides.findIndex((s) => s.item === visibleIndex);
-    setSlide(idx >= 0 ? idx : 0);
+  const openLightbox = (visibleIndex: number, imageIndex = 0) => {
+    const item = visible[visibleIndex];
+    if (!item?.id) return;
+    setViewing({ itemId: item.id, image: imageIndex });
+  };
+
+  /** Step the lightbox across every image of every visible post. */
+  const stepSlide = (dir: 1 | -1) => {
+    if (!viewing || slides.length === 0) return;
+    const idx = slideIndex >= 0 ? slideIndex : 0;
+    const next = slides[(idx + dir + slides.length) % slides.length];
+    setViewing({ itemId: visible[next.item].id ?? 0, image: next.image });
   };
 
   const listError = error && displayItems.length === 0;
@@ -578,17 +621,17 @@ export default function GalleryPage() {
       {modalOpen ? (
         <div className="modal-backdrop" onClick={() => setModalOpen(false)}>
           <div
-            className="card p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
+            className="card p-6 w-full max-w-lg flex flex-col max-h-[calc(100dvh-3rem)]"
             role="dialog"
             aria-modal="true"
             aria-labelledby="post-gallery-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 id="post-gallery-title" className="font-display text-xl font-bold mb-5">Post to Gallery</h3>
+            <h3 id="post-gallery-title" className="font-display text-xl font-bold mb-4 flex-shrink-0">Post to Gallery</h3>
 
             {user ? (
               <form
-                className="space-y-4"
+                className="modal-scroll space-y-4 pr-1 -mr-1"
                 onSubmit={(e) => {
                   e.preventDefault();
                   void submit();
@@ -627,9 +670,9 @@ export default function GalleryPage() {
                     className="w-full bg-[var(--bg-2)] border border-dashed border-[var(--border-strong)] px-4 py-6 text-sm text-[var(--fg-2)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition rounded-2xl"
                     onClick={() => fileRef.current?.click()}
                   >
-                    <span className="flex items-center justify-center gap-2">
+                    <span className="flex items-center justify-center gap-2 text-center">
                       <i className="fa-solid fa-cloud-arrow-up" />
-                      Add images — up to {MAX_IMAGES} (JPG/PNG/WebP/GIF, under 8 MB each)
+                      Add images — up to {MAX_IMAGES} (JPG/PNG/WebP/GIF under 4 MB each)
                     </span>
                   </button>
                 </label>
@@ -695,6 +738,7 @@ export default function GalleryPage() {
                     rows={4}
                     maxLength={4000}
                     placeholder="Coordinates, farm rates, a story…"
+                    onUploadError={(m) => show("Couldn't upload image", m, "error")}
                   />
                 </div>
 
@@ -733,43 +777,43 @@ export default function GalleryPage() {
       ) : null}
 
       {/* Lightbox — full image + meta + comments, Esc/arrows navigate */}
-      {current && currentSlide ? (
+      {currentItem && viewing && slideIndex >= 0 ? (
         <div
           className="modal-backdrop"
-          onClick={() => setSlide(null)}
+          onClick={() => setViewing(null)}
           role="dialog"
           aria-modal="true"
-          aria-label={current.title}
+          aria-label={currentItem.title}
         >
           <div
-            className="card overflow-hidden w-full max-w-5xl max-h-[92vh] flex flex-col lg:flex-row"
+            className="card overflow-hidden w-full max-w-5xl max-h-[calc(100dvh-3rem)] flex flex-col lg:flex-row modal-scroll lg:overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Image pane */}
             <div className="relative flex-1 min-w-0 bg-[var(--bg)] flex items-center justify-center">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={currentSlide.url}
-                alt={current.title}
+                src={currentImages[viewing.image] ?? currentImages[0]}
+                alt={currentItem.title}
                 className="max-h-[55vh] lg:max-h-[92vh] w-full object-contain"
               />
-              {imagesOf(current).length > 1 ? (
+              {currentImages.length > 1 ? (
                 <span className="absolute bottom-3 left-1/2 -translate-x-1/2 text-xs text-[var(--fg-2)] bg-black/60 border border-[var(--border-strong)] rounded-full px-3 py-1">
-                  {currentSlide.image + 1} / {imagesOf(current).length}
+                  {viewing.image + 1} / {currentImages.length}
                 </span>
               ) : null}
               {slides.length > 1 ? (
                 <>
                   <button
                     className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 border border-white/15 text-white hover:bg-black/80 transition"
-                    onClick={() => setSlide((s) => (s === null ? s : (s + slides.length - 1) % slides.length))}
+                    onClick={() => stepSlide(-1)}
                     aria-label="Previous image"
                   >
                     <i className="fa-solid fa-chevron-left" />
                   </button>
                   <button
                     className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 border border-white/15 text-white hover:bg-black/80 transition"
-                    onClick={() => setSlide((s) => (s === null ? s : (s + 1) % slides.length))}
+                    onClick={() => stepSlide(1)}
                     aria-label="Next image"
                   >
                     <i className="fa-solid fa-chevron-right" />
@@ -782,61 +826,61 @@ export default function GalleryPage() {
             <div className="w-full lg:w-96 flex flex-col min-h-0 border-t lg:border-t-0 lg:border-l border-[var(--border)]">
               <div className="p-5 border-b border-[var(--border)]">
                 <div className="flex items-start gap-3">
-                  <Avatar name={current.builder} size="sm" />
+                  <Avatar name={currentItem.builder} size="sm" />
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-display text-lg font-bold truncate">{current.title}</h3>
+                    <h3 className="font-display text-lg font-bold truncate">{currentItem.title}</h3>
                     <p className="text-xs text-[var(--muted)]">
-                      by {current.builder}
-                      {current.createdAt ? ` · ${timeAgo(current.createdAt)}` : ""} ·{" "}
-                      <i className="fa-regular fa-eye" /> {current.views ?? 0}
+                      by {currentItem.builder}
+                      {currentItem.createdAt ? ` · ${timeAgo(currentItem.createdAt)}` : ""} ·{" "}
+                      <i className="fa-regular fa-eye" /> {currentItem.views ?? 0}
                     </p>
                   </div>
                   <span
-                    className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded border flex-shrink-0 ${categoryClass(current.category)}`}
+                    className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded border flex-shrink-0 ${categoryClass(currentItem.category)}`}
                   >
-                    {current.category}
+                    {currentItem.category}
                   </span>
                 </div>
 
-                {current.description ? (
+                {currentItem.description ? (
                   <div className="mt-3 text-sm text-[var(--fg-2)]">
-                    <Markdown text={current.description} />
+                    <Markdown text={currentItem.description} />
                   </div>
                 ) : null}
 
                 <div className="flex items-center gap-2 mt-4 flex-wrap">
                   <button
                     className={`inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg border px-3 py-2 transition disabled:opacity-40 ${
-                      user && (current.likedBy ?? []).includes(user.id)
+                      user && (currentItem.likedBy ?? []).includes(user.id)
                         ? "border-[var(--redstone)] text-[var(--redstone)] bg-[var(--redstone)]/10"
                         : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)]"
                     }`}
-                    onClick={() => void toggleLike(current)}
-                    disabled={busyLike === current.id}
+                    onClick={() => void toggleLike(currentItem)}
+                    disabled={busyLike === currentItem.id}
                   >
-                    <i className={`${user && (current.likedBy ?? []).includes(user.id) ? "fa-solid" : "fa-regular"} fa-heart`} />
-                    {current.likes} {current.likes === 1 ? "like" : "likes"}
+                    <i className={`${user && (currentItem.likedBy ?? []).includes(user.id) ? "fa-solid" : "fa-regular"} fa-heart`} />
+                    {currentItem.likes} {currentItem.likes === 1 ? "like" : "likes"}
                   </button>
                   {isAdmin ? (
                     <button
                       className="inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg border border-[var(--border)] px-3 py-2 text-[var(--muted)] hover:border-[#ffd166] hover:text-[#ffd166] transition disabled:opacity-40"
-                      onClick={() => void feature(current)}
+                      onClick={() => void feature(currentItem)}
                       disabled={busyItem !== null}
                     >
-                      <i className={`fa-${current.featured ? "solid" : "regular"} fa-star`} />
-                      {current.featured ? "Unfeature" : "Feature"}
+                      <i className={`fa-${currentItem.featured ? "solid" : "regular"} fa-star`} />
+                      {currentItem.featured ? "Unfeature" : "Feature"}
                     </button>
                   ) : null}
-                  {user && (isAdmin || (current.authorId === user.id && current.authorId !== "")) ? (
+                  {user && (isAdmin || (currentItem.authorId === user.id && currentItem.authorId !== "")) ? (
                     <button
                       className="inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg border border-[var(--border)] px-3 py-2 text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)] transition disabled:opacity-40"
-                      onClick={() => void deleteItem(current)}
+                      onClick={() => void deleteItem(currentItem)}
                       disabled={busyItem !== null}
                     >
                       <i className="fa-solid fa-trash" /> Delete
                     </button>
                   ) : null}
-                  <button className="btn-secondary btn-sm ml-auto" onClick={() => setSlide(null)} aria-label="Close">
+                  <button className="btn-secondary btn-sm ml-auto" onClick={() => setViewing(null)} aria-label="Close">
                     <i className="fa-solid fa-xmark" />
                   </button>
                 </div>
@@ -846,7 +890,7 @@ export default function GalleryPage() {
               <div className="flex-1 overflow-y-auto p-5 min-h-0">
                 <h4 className="font-display text-sm font-bold mb-3 flex items-center gap-2">
                   <i className="fa-regular fa-comments text-[var(--accent)]" />
-                  {current.commentCount ?? 0} {current.commentCount === 1 ? "comment" : "comments"}
+                  {currentItem.commentCount ?? 0} {currentItem.commentCount === 1 ? "comment" : "comments"}
                 </h4>
                 {commentsLoading ? (
                   <p className="text-sm text-[var(--muted)]">Loading comments…</p>

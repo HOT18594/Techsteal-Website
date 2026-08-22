@@ -7,6 +7,7 @@ import { Footer } from "@/components/Footer";
 import { Navbar } from "@/components/Navbar";
 import { OnboardingReminder } from "@/components/OnboardingReminder";
 import { PageEnter } from "@/components/PageEnter";
+import { PollAnnouncement } from "@/components/PollAnnouncement";
 import { RevealObserver } from "@/components/RevealObserver";
 import { ScrollFx } from "@/components/ScrollFx";
 import { ToastProvider } from "@/components/Toast";
@@ -67,6 +68,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <CursorFx />
           <Navbar />
           <OnboardingReminder />
+          <PollAnnouncement />
           <main className="flex-1 flex flex-col">
             <PageEnter>{children}</PageEnter>
           </main>

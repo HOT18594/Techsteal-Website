@@ -464,6 +464,7 @@ export default function ThreadPage() {
                     value={editing.content}
                     onChange={(v) => setEditing({ ...editing, content: v })}
                     rows={10}
+                    onUploadError={(m) => show("Couldn't upload image", m, "error")}
                   />
                   <div className="flex gap-3 mt-4">
                     <button className="btn-primary" onClick={() => void saveEdit()} disabled={savingEdit || !editing.content.trim()}>
@@ -644,6 +645,7 @@ export default function ThreadPage() {
                                 value={editing?.content ?? ""}
                                 onChange={(v) => editing && setEditing({ ...editing, content: v })}
                                 rows={5}
+                                onUploadError={(m) => show("Couldn't upload image", m, "error")}
                               />
                               <div className="flex gap-3 mt-3">
                                 <button
@@ -714,6 +716,7 @@ export default function ThreadPage() {
                     rows={5}
                     maxLength={20000}
                     placeholder="Write a reply… paste or drag screenshots straight in."
+                    onUploadError={(m) => show("Couldn't upload image", m, "error")}
                   />
                   <div className="flex items-center justify-between mt-3 gap-3 flex-wrap">
                     <span className="text-xs text-[var(--muted)]">

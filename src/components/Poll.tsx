@@ -164,23 +164,29 @@ export function PollViewer({
   canVote,
   signedIn,
   onVote,
+  bare = false,
 }: {
   poll: ForumPoll;
   canVote: boolean;
   signedIn: boolean;
   onVote: (optionId: string) => Promise<void>;
+  /** Render without the card wrapper (for use inside another card/modal). */
+  bare?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Recompute the countdown label every 30s while open.
+  // Recompute the countdown label every 30s while open — this also flips
+  // `ended` at the deadline even though the server snapshot is stale.
   const [, forceTick] = useState(0);
   useEffect(() => {
-    if (poll.ended) return;
     const t = setInterval(() => forceTick((n) => n + 1), 30_000);
     return () => clearInterval(t);
-  }, [poll.ended]);
+  }, []);
 
-  const ended = poll.ended ?? new Date(poll.endsAt).getTime() <= Date.now();
+  // Compute ended from endsAt NOW, not from the (possibly stale) server
+  // snapshot — a poll sitting open in a tab must close itself at the
+  // deadline without a refetch.
+  const ended = new Date(poll.endsAt).getTime() <= Date.now();
   const total = useMemo(
     () => poll.totalVotes ?? Object.values(poll.counts ?? {}).reduce((a, b) => a + b, 0),
     [poll]
@@ -201,7 +207,7 @@ export function PollViewer({
   };
 
   return (
-    <div className="card p-5 sm:p-6 mt-6 poll-card" aria-label={`Poll: ${poll.question}`}>
+    <div className={bare ? "" : "card p-5 sm:p-6 mt-6 poll-card"} aria-label={`Poll: ${poll.question}`}>
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <h3 className="font-display text-lg font-bold flex items-center gap-2">
           <i className="fa-solid fa-square-poll-vertical text-[var(--diamond)]" />

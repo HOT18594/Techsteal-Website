@@ -16,7 +16,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { Markdown } from "./Markdown";
-import { compressImage } from "@/lib/imaging";
+import { compressImage, MAX_UPLOAD_BYTES } from "@/lib/imaging";
 
 interface RichEditorProps {
   value: string;
@@ -32,6 +32,9 @@ interface RichEditorProps {
   /** Unique id prefix so multiple editors on one page don't clash. */
   idPrefix: string;
   className?: string;
+  /** Called with a friendly message when an embed upload fails — the
+   * editor itself only shows a spinner state, so hosts surface errors. */
+  onUploadError?: (message: string) => void;
 }
 
 interface ToolButton {
@@ -100,6 +103,7 @@ export function RichEditor({
   simple = false,
   idPrefix,
   className = "",
+  onUploadError,
 }: RichEditorProps) {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -186,7 +190,16 @@ export function RichEditor({
     async (file: File) => {
       if (disabled || uploading >= 4) return;
       if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type)) {
-        throw new Error("Only JPG, PNG, WebP and GIF images can be embedded.");
+        onUploadError?.("Only JPG, PNG, WebP and GIF images can be embedded.");
+        return;
+      }
+      if (file.size > MAX_UPLOAD_BYTES) {
+        onUploadError?.(
+          file.type === "image/gif"
+            ? "GIFs must be under 4 MB (they can't be compressed without losing the animation)."
+            : "Images must be under 4 MB — try a smaller screenshot."
+        );
+        return;
       }
       setUploading((n) => n + 1);
       setUploadPct(0);
@@ -196,19 +209,21 @@ export function RichEditor({
         const compressed = await compressImage(file, 1920, 0.85);
         const url = await xhrUpload(compressed, setUploadPct);
         insertAtCursor(`\n![${compressed.name.replace(/[^\w.-]/g, "").slice(0, 60) || "image"}](${url})\n`);
+      } catch (e) {
+        onUploadError?.(e instanceof Error ? e.message : "Upload failed — try again.");
       } finally {
         setUploadPct(null);
         setUploading((n) => Math.max(0, n - 1));
       }
     },
-    [disabled, insertAtCursor, uploading]
+    [disabled, insertAtCursor, onUploadError, uploading]
   );
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
     const file = Array.from(e.clipboardData.files).find((f) => f.type.startsWith("image/"));
     if (file) {
       e.preventDefault();
-      void uploadFile(file).catch(() => undefined);
+      void uploadFile(file);
     }
   };
 
@@ -216,7 +231,7 @@ export function RichEditor({
     e.preventDefault();
     setDragOver(false);
     const file = Array.from(e.dataTransfer.files).find((f) => f.type.startsWith("image/"));
-    if (file) void uploadFile(file).catch(() => undefined);
+    if (file) void uploadFile(file);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -353,7 +368,7 @@ export function RichEditor({
         tabIndex={-1}
         onChange={(e) => {
           const f = e.target.files?.[0];
-          if (f) void uploadFile(f).catch(() => undefined);
+          if (f) void uploadFile(f);
           e.target.value = "";
         }}
       />

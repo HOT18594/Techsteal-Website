@@ -13,6 +13,14 @@ export interface CompressResult {
   compressed: boolean;
 }
 
+/**
+ * Hard client-side cap for uploads. The server accepts 8 MB, but the Vercel
+ * request-body limit is 4.5 MB — anything larger fails at the edge with an
+ * opaque error before our API ever sees it. Enforce a safe margin here so
+ * users get a clear message instead.
+ */
+export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+
 export async function compressImage(
   file: File,
   maxDim = 1920,

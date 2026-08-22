@@ -568,17 +568,17 @@ export default function ForumPage() {
       {modalOpen ? (
         <div className="modal-backdrop" onClick={() => setModalOpen(false)}>
           <div
-            className="card p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            className="card p-6 w-full max-w-2xl flex flex-col max-h-[calc(100dvh-3rem)]"
             role="dialog"
             aria-modal="true"
             aria-labelledby="new-thread-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 id="new-thread-title" className="font-display text-xl font-bold mb-5">New Thread</h3>
+            <h3 id="new-thread-title" className="font-display text-xl font-bold mb-4 flex-shrink-0">New Thread</h3>
 
             {user ? (
               <form
-                className="space-y-4"
+                className="modal-scroll space-y-4 pr-1 -mr-1"
                 onSubmit={(e) => {
                   e.preventDefault();
                   void submit();
@@ -628,6 +628,7 @@ export default function ForumPage() {
                   rows={8}
                   maxLength={20000}
                   placeholder="What's on your mind? Markdown, images (paste/drag), spoilers…"
+                  onUploadError={(m) => show("Couldn't upload image", m, "error")}
                 />
 
                 {withPoll && isAdmin ? (
