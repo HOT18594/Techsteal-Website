@@ -1,43 +1,110 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { fallbackThreads } from "@/lib/fallback-data";
 import type { ForumThread } from "@/types";
 import { Avatar } from "@/components/Avatar";
 import { SubPage } from "@/components/SubPage";
-import { useApi } from "@/lib/use-api";
+import { RichEditor } from "@/components/RichEditor";
+import { EMPTY_POLL_DRAFT, PollBuilder, pollDraftPayload, pollDraftValid, type PollDraft } from "@/components/Poll";
 import { useToast } from "@/components/Toast";
 import { useSession } from "@/lib/use-session";
 import { timeAgo } from "@/lib/time";
+import { markdownExcerpt } from "@/lib/excerpt";
 import { CATEGORY_LIST, categoryClass } from "@/lib/forum-categories";
+
+const SORTS = [
+  { id: "new", label: "Latest" },
+  { id: "top", label: "Top" },
+  { id: "hot", label: "Hot" },
+  { id: "views", label: "Most viewed" },
+] as const;
+
+interface ListData {
+  threads: ForumThread[];
+  total: number;
+  page: number;
+  perPage: number;
+  hasMore: boolean;
+  categoryCounts: Record<string, number>;
+}
 
 export default function ForumPage() {
   const { show } = useToast();
+  const router = useRouter();
   const { user, loading: sessionLoading } = useSession();
-  const { data: apiThreads, refetch } = useApi<ForumThread[]>("/api/forum", fallbackThreads);
-  // Threads created this session (persisted server-side when a DB is present).
-  const [fresh, setFresh] = useState<ForumThread[]>([]);
-  // Pinned threads always float to the top, whether from the DB or this session.
-  const threads = useMemo(
-    () =>
-      [...fresh, ...apiThreads].sort(
-        (a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))
-      ),
-    [fresh, apiThreads]
-  );
-  const [filter, setFilter] = useState<"all" | "pinned" | "hot">("all");
-  const [categoryFilter, setCategoryFilter] = useState<string>("All");
+  const isAdmin = user?.role === "admin";
+
+  // ------------------------------------------------------------------
+  // List state — server-side search/sort/pagination.
+  // ------------------------------------------------------------------
+  const [list, setList] = useState<ListData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [sort, setSort] = useState<(typeof SORTS)[number]["id"]>("new");
+  const [categoryFilter, setCategoryFilter] = useState("All");
+  const [unanswered, setUnanswered] = useState(false);
   const [search, setSearch] = useState("");
+  const [debouncedQ, setDebouncedQ] = useState("");
+  const reqRef = useRef(0);
+
+  // Debounce the search box so typing doesn't fire a request per keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedQ(search.trim());
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const load = useCallback(async () => {
+    const reqId = ++reqRef.current;
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(page), sort });
+      if (debouncedQ) params.set("q", debouncedQ);
+      if (categoryFilter !== "All") params.set("category", categoryFilter);
+      if (unanswered) params.set("unanswered", "1");
+      const res = await fetch(`/api/forum?${params.toString()}`);
+      if (!res.ok) throw new Error("list failed");
+      const data = (await res.json()) as ListData | ForumThread[];
+      if (reqId !== reqRef.current) return;
+      // No-DB mode returns a bare array (fallback content) — normalize it.
+      setList(
+        Array.isArray(data)
+          ? { threads: data, total: data.length, page: 1, perPage: data.length, hasMore: false, categoryCounts: {} }
+          : data
+      );
+    } catch {
+      if (reqId === reqRef.current) setList(null);
+    } finally {
+      if (reqId === reqRef.current) setLoading(false);
+    }
+  }, [page, sort, debouncedQ, categoryFilter, unanswered]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const threads = list?.threads ?? [];
+  const totalPages = list ? Math.max(1, Math.ceil(list.total / list.perPage)) : 1;
+  const totalThreads =
+    list?.total ??
+    (Array.isArray(fallbackThreads) ? fallbackThreads.length : 0);
+
+  // ------------------------------------------------------------------
+  // Composer state.
+  // ------------------------------------------------------------------
   const [modalOpen, setModalOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [category, setCategory] = useState("General");
+  const [withPoll, setWithPoll] = useState(false);
+  const [pollDraft, setPollDraft] = useState<PollDraft>(EMPTY_POLL_DRAFT);
   const [submitting, setSubmitting] = useState(false);
-  const [busyThread, setBusyThread] = useState<number | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
-
-  const isAdmin = user?.role === "admin";
 
   // Escape closes the modal; autofocus the title field; lock body scroll.
   useEffect(() => {
@@ -55,58 +122,46 @@ export default function ForumPage() {
     };
   }, [modalOpen]);
 
-  const visible: ForumThread[] = (() => {
-    let list = threads;
-    if (categoryFilter !== "All") {
-      list = list.filter((t) => t.category === categoryFilter);
-    }
-    const q = search.trim().toLowerCase();
-    if (q) {
-      list = list.filter(
-        (t) =>
-          t.title.toLowerCase().includes(q) ||
-          (t.content ?? "").toLowerCase().includes(q) ||
-          t.author.toLowerCase().includes(q)
-      );
-    }
-    if (filter === "pinned") list = list.filter((t) => t.pinned);
-    if (filter === "hot") list = [...list].sort((a, b) => b.replies - a.replies);
-    return list;
-  })();
-
-  const openModal = () => {
-    // If the session is still loading, just open the modal — the composer
-    // section inside decides what to show once we know who this is.
-    setModalOpen(true);
-  };
+  const openModal = () => setModalOpen(true);
 
   const submit = async () => {
     const t = title.trim();
-    const c = content.trim();
     if (!t || submitting) return;
+    if (withPoll && !pollDraftValid(pollDraft)) {
+      show("Poll incomplete", "Give it a question, two options, and a future end date.", "error");
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch("/api/forum", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: t, content: c, category }),
+        body: JSON.stringify({
+          title: t,
+          content: content.trim(),
+          category,
+          ...(withPoll && isAdmin ? { poll: pollDraftPayload(pollDraft) } : {}),
+        }),
       });
       if (res.ok) {
         const created = (await res.json()) as ForumThread;
-        setFresh((prev) => [created, ...prev]);
+        setModalOpen(false);
         setTitle("");
         setContent("");
-        setModalOpen(false);
+        setWithPoll(false);
+        setPollDraft(EMPTY_POLL_DRAFT);
+        show("Posted", "Your thread is live.");
+        // Straight to the new thread — it may have a poll to admire.
+        if (created.id) router.push(`/forum/${created.id}`);
+        else void load();
       } else if (res.status === 401) {
         show("Sign in to post", "Log in with Discord to create threads.", "error");
-        setModalOpen(false);
-      } else if (res.status === 503) {
-        show("Can't post yet", "Posting needs the database — it isn't configured.");
         setModalOpen(false);
       } else if (res.status === 429) {
         show("Slow down", "You're posting too fast — wait a moment.", "error");
       } else {
-        show("Couldn't create thread", "The server rejected the request.", "error");
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        show("Couldn't create thread", data.error ?? "The server rejected the request.", "error");
       }
     } catch {
       show("Couldn't create thread", "Check your connection and try again.");
@@ -115,9 +170,16 @@ export default function ForumPage() {
     }
   };
 
-  const moderate = async (thread: ForumThread, action: "delete" | "pin") => {
+  // ------------------------------------------------------------------
+  // Moderation from the list (admin pin/lock/delete; owner delete).
+  // ------------------------------------------------------------------
+  const [busyThread, setBusyThread] = useState<number | null>(null);
+
+  const moderate = async (
+    thread: ForumThread,
+    action: "delete" | "pin" | "lock"
+  ) => {
     if (busyThread !== null) return;
-    // Deleting is destructive and unrecoverable — confirm first.
     if (action === "delete") {
       const ok = window.confirm(`Delete "${thread.title}"? This can't be undone.`);
       if (!ok) return;
@@ -134,49 +196,25 @@ export default function ForumPage() {
           : await fetch("/api/forum", {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ id: thread.id, pinned: !thread.pinned }),
+              body: JSON.stringify({
+                id: thread.id,
+                ...(action === "pin" ? { pinned: !thread.pinned } : { locked: !thread.locked }),
+              }),
             });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        if (res.status === 503) {
-          // No database configured — threads live only in client state, so
-          // the server can't moderate them. Mirror the action locally so the
-          // admin isn't stuck with an unpinnable/undeletable thread.
-          if (action === "delete") {
-            setFresh((prev) => prev.filter((t) => t.id !== thread.id));
-            show("Deleted", `"${thread.title}" was removed.`);
-          } else {
-            setFresh((prev) =>
-              prev.map((t) =>
-                t.id === thread.id ? { ...t, pinned: !t.pinned } : t
-              )
-            );
-            show(
-              thread.pinned ? "Unpinned" : "Pinned",
-              `"${thread.title}" ${thread.pinned ? "is no longer pinned" : "is now pinned"}.`
-            );
-          }
-          return;
-        }
         show("Couldn't update", data.error ?? "The server rejected the request.");
         return;
       }
-      if (action === "delete") {
-        setFresh((prev) => prev.filter((t) => t.id !== thread.id));
-        show("Deleted", `"${thread.title}" was removed.`);
-      } else {
-        const updated = (await res.json()) as ForumThread;
-        setFresh((prev) =>
-          prev.map((t) => (t.id === updated.id ? { ...t, pinned: updated.pinned } : t))
-        );
-        show(
-          updated.pinned ? "Pinned" : "Unpinned",
-          `"${thread.title}" ${updated.pinned ? "is now pinned" : "is no longer pinned"}.`
-        );
-      }
-      // The DB thread's pinned flag changed — pull it back so the list
-      // (and the pinned-first ordering) reflects the update immediately.
-      void refetch();
+      show(
+        action === "delete" ? "Deleted" : action === "pin" ? (thread.pinned ? "Unpinned" : "Pinned") : thread.locked ? "Unlocked" : "Locked",
+        action === "delete"
+          ? `"${thread.title}" was removed.`
+          : action === "pin"
+            ? `"${thread.title}" ${thread.pinned ? "is no longer pinned" : "is now pinned"}.`
+            : `"${thread.title}" ${thread.locked ? "accepts replies again" : "no longer accepts replies"}.`
+      );
+      void load();
     } catch {
       show("Couldn't update", "Check your connection and try again.");
     } finally {
@@ -187,6 +225,9 @@ export default function ForumPage() {
   const inputClass =
     "w-full bg-[var(--bg-2)] border border-[var(--border)] px-4 py-3 text-sm text-[var(--fg)] outline-none focus:border-[var(--accent)] transition placeholder:text-[var(--muted-2)] rounded-lg";
 
+  const canModerate = (t: ForumThread) =>
+    isAdmin || (user && t.authorId === user.id && t.authorId !== "");
+
   return (
     <SubPage>
       <div className="w-full">
@@ -194,7 +235,6 @@ export default function ForumPage() {
         <div className="page-header rowed mb-8 gap-4">
           <h1 className="page-title">Forum</h1>
           <div className="flex items-center gap-3 flex-1 justify-end min-w-0">
-            {/* Search — filters by title, body and author */}
             <div className="relative flex-1 max-w-xs min-w-[10rem]">
               <i className="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-[var(--muted-2)]" />
               <input
@@ -214,10 +254,7 @@ export default function ForumPage() {
                 </button>
               ) : null}
             </div>
-            <button
-              className="btn-secondary btn-sm flex-shrink-0"
-              onClick={openModal}
-            >
+            <button className="btn-secondary btn-sm flex-shrink-0" onClick={openModal}>
               <i className="fa-solid fa-pen-to-square" />
               New Thread
             </button>
@@ -229,44 +266,67 @@ export default function ForumPage() {
           <div className="lg:col-span-2 card p-6">
             <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
               <h2 className="font-display text-lg font-bold">
-                Recent discussions
-                {visible.length > 0 ? (
+                Discussions
+                {list ? (
                   <span className="ml-2 text-xs font-normal text-[var(--muted-2)]">
-                    {visible.length}
+                    {list.total === list.threads.length
+                      ? list.total
+                      : `${(list.page - 1) * list.perPage + 1}–${(list.page - 1) * list.perPage + list.threads.length} of ${list.total}`}
                   </span>
                 ) : null}
               </h2>
-              <div className="flex items-center gap-1 text-sm text-[var(--muted)]">
-                {(["all", "pinned", "hot"] as const).map((f) => (
+              <div className="flex items-center gap-1 text-sm text-[var(--muted)] flex-wrap">
+                {SORTS.map((s) => (
                   <button
-                    key={f}
-                    className={`px-3 py-1.5 rounded-lg capitalize transition ${
-                      filter === f
+                    key={s.id}
+                    className={`px-3 py-1.5 rounded-lg transition ${
+                      sort === s.id
                         ? "bg-[var(--accent-dim)] text-[var(--accent)] border border-[var(--accent)]"
                         : "border-transparent hover:text-[var(--accent)]"
                     }`}
-                    onClick={() => setFilter(f)}
+                    onClick={() => {
+                      setSort(s.id);
+                      setPage(1);
+                    }}
                   >
-                    {f}
+                    {s.label}
                   </button>
                 ))}
+                <button
+                  className={`px-3 py-1.5 rounded-lg transition border ${
+                    unanswered
+                      ? "bg-[var(--accent-dim)] text-[var(--accent)] border-[var(--accent)]"
+                      : "border-transparent hover:text-[var(--accent)]"
+                  }`}
+                  onClick={() => {
+                    setUnanswered((u) => !u);
+                    setPage(1);
+                  }}
+                  title="Threads with no replies yet"
+                >
+                  Unanswered
+                </button>
               </div>
             </div>
 
             <div id="forum-threads" className="space-y-3 stagger">
-              {visible.length === 0 ? (
+              {loading && !list ? (
+                <p className="text-sm text-[var(--muted)] py-12 text-center">Loading threads…</p>
+              ) : threads.length === 0 ? (
                 <div className="text-sm text-[var(--muted)] py-12 text-center border border-dashed border-[var(--border)] rounded-xl">
                   <i className="fa-solid fa-comments text-3xl text-[var(--muted-2)] mb-3 block" />
-                  {search.trim() || categoryFilter !== "All" ? (
+                  {search.trim() || categoryFilter !== "All" || unanswered ? (
                     <>
                       No threads match
                       {search.trim() ? ` "${search.trim()}"` : ""}
-                      {categoryFilter !== "All" ? ` in ${categoryFilter}` : ""}.
+                      {categoryFilter !== "All" ? ` in ${categoryFilter}` : ""}
+                      {unanswered ? " (unanswered)" : ""}.
                       <button
                         className="block mx-auto mt-3 text-[var(--accent)] hover:text-[var(--accent-bright)] transition"
                         onClick={() => {
                           setSearch("");
                           setCategoryFilter("All");
+                          setUnanswered(false);
                         }}
                       >
                         Clear filters
@@ -277,11 +337,8 @@ export default function ForumPage() {
                   )}
                 </div>
               ) : (
-                visible.map((t, i) => (
-                  <div
-                    key={t.id ?? `${i}-${t.title}`}
-                    className={`relative ${t.pinned ? "thread-row-pinned" : ""}`}
-                  >
+                threads.map((t, i) => (
+                  <div key={t.id ?? `${i}-${t.title}`} className={`relative ${t.pinned ? "thread-row-pinned" : ""}`}>
                     {/* The whole post opens the thread (X-style feed) */}
                     <Link
                       href={`/forum/${t.id ?? ""}`}
@@ -291,11 +348,9 @@ export default function ForumPage() {
                     <div className="relative z-10 thread-row group flex items-start gap-4 p-4 sm:p-5 pointer-events-none rounded-xl">
                       <Avatar name={t.author} src={t.avatarUrl} size="md" color={t.color} />
                       <div className="flex-1 min-w-0">
-                        {/* Meta row: author · time · category · pinned */}
+                        {/* Meta row: author · time · category · badges */}
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-semibold text-[var(--fg)]">
-                            {t.author}
-                          </span>
+                          <span className="text-sm font-semibold text-[var(--fg)]">{t.author}</span>
                           <span className="text-xs text-[var(--muted-2)]">· {timeAgo(t.last)}</span>
                           <span
                             className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded border ${categoryClass(t.category)}`}
@@ -307,35 +362,80 @@ export default function ForumPage() {
                               <i className="fa-solid fa-thumbtack" /> Pinned
                             </span>
                           ) : null}
+                          {t.locked ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[var(--diamond)] border border-[var(--diamond)]/40 rounded px-1.5 py-0.5">
+                              <i className="fa-solid fa-lock" /> Locked
+                            </span>
+                          ) : null}
+                          {t.hasPoll ? (
+                            <span
+                              className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[var(--diamond)] border border-[var(--diamond)]/40 bg-[var(--diamond)]/10 rounded px-1.5 py-0.5"
+                              title="This thread has a poll"
+                            >
+                              <i className="fa-solid fa-square-poll-vertical" /> Poll
+                            </span>
+                          ) : null}
                         </div>
                         <h3 className="thread-title mt-1.5 text-base font-bold text-[var(--fg)] leading-snug line-clamp-2 group-hover:text-[var(--accent)] transition">
                           {t.title}
                         </h3>
                         {t.content ? (
                           <p className="mt-1 text-sm text-[var(--muted)] line-clamp-2">
-                            {t.content}
+                            {markdownExcerpt(t.content)}
                           </p>
                         ) : null}
                       </div>
 
-                      {/* Right column: replies pill + moderation */}
+                      {/* Right column: stats + moderation */}
                       <div className="pointer-events-auto relative z-20 flex flex-col items-end gap-2 flex-shrink-0">
-                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--muted)] border border-[var(--border)] rounded-full px-2.5 py-1 group-hover:border-[var(--accent)]/50 group-hover:text-[var(--accent)] transition">
-                          <i className="fa-regular fa-comment" />
-                          {t.replies}
-                        </span>
-                        {isAdmin || (user && t.authorId === user.id && t.authorId !== "") ? (
+                        <div className="flex items-center gap-2 text-xs font-semibold text-[var(--muted)]">
+                          <span
+                            className="inline-flex items-center gap-1.5 border border-[var(--border)] rounded-full px-2.5 py-1 group-hover:border-[var(--accent)]/50 group-hover:text-[var(--accent)] transition"
+                            title="Replies"
+                          >
+                            <i className="fa-regular fa-comment" />
+                            {t.replies}
+                          </span>
+                          <span
+                            className="inline-flex items-center gap-1.5 border border-[var(--border)] rounded-full px-2.5 py-1 group-hover:border-[var(--redstone)]/50 group-hover:text-[var(--redstone)] transition"
+                            title="Likes"
+                          >
+                            <i className="fa-solid fa-heart" />
+                            {t.likes ?? 0}
+                          </span>
+                          {(t.views ?? 0) > 0 ? (
+                            <span
+                              className="hidden sm:inline-flex items-center gap-1.5 border border-[var(--border)] rounded-full px-2.5 py-1 transition"
+                              title="Views"
+                            >
+                              <i className="fa-regular fa-eye" />
+                              {t.views}
+                            </span>
+                          ) : null}
+                        </div>
+                        {canModerate(t) ? (
                           <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                             {isAdmin ? (
-                              <button
-                                className="w-8 h-8 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition disabled:opacity-40"
-                                onClick={() => void moderate(t, "pin")}
-                                disabled={busyThread !== null}
-                                aria-label={t.pinned ? "Unpin thread" : "Pin thread"}
-                                title={t.pinned ? "Unpin" : "Pin"}
-                              >
-                                <i className={`fa-solid fa-thumbtack text-xs ${t.pinned ? "text-[var(--accent)]" : ""}`} />
-                              </button>
+                              <>
+                                <button
+                                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition disabled:opacity-40"
+                                  onClick={() => void moderate(t, "pin")}
+                                  disabled={busyThread !== null}
+                                  aria-label={t.pinned ? "Unpin thread" : "Pin thread"}
+                                  title={t.pinned ? "Unpin" : "Pin"}
+                                >
+                                  <i className={`fa-solid fa-thumbtack text-xs ${t.pinned ? "text-[var(--accent)]" : ""}`} />
+                                </button>
+                                <button
+                                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--diamond)] hover:text-[var(--diamond)] transition disabled:opacity-40"
+                                  onClick={() => void moderate(t, "lock")}
+                                  disabled={busyThread !== null}
+                                  aria-label={t.locked ? "Unlock thread" : "Lock thread"}
+                                  title={t.locked ? "Unlock (allow replies)" : "Lock (close replies)"}
+                                >
+                                  <i className={`fa-solid text-xs ${t.locked ? "fa-lock text-[var(--diamond)]" : "fa-lock-open"}`} />
+                                </button>
+                              </>
                             ) : null}
                             <button
                               className="w-8 h-8 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)] transition disabled:opacity-40"
@@ -354,6 +454,29 @@ export default function ForumPage() {
                 ))
               )}
             </div>
+
+            {/* Pagination */}
+            {list && totalPages > 1 ? (
+              <div className="flex items-center justify-center gap-3 mt-6 text-sm">
+                <button
+                  className="btn-secondary btn-sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  <i className="fa-solid fa-chevron-left" /> Prev
+                </button>
+                <span className="text-[var(--muted)] text-xs">
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  className="btn-secondary btn-sm"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next <i className="fa-solid fa-chevron-right" />
+                </button>
+              </div>
+            ) : null}
           </div>
 
           {/* Sidebar */}
@@ -364,21 +487,20 @@ export default function ForumPage() {
                 {categoryFilter !== "All" ? (
                   <button
                     className="text-xs text-[var(--accent)] hover:text-[var(--accent-bright)] transition"
-                    onClick={() => setCategoryFilter("All")}
+                    onClick={() => {
+                      setCategoryFilter("All");
+                      setPage(1);
+                    }}
                   >
                     Reset
                   </button>
                 ) : null}
               </div>
               <div className="space-y-1">
-                {/* Clickable category filters. "All" resets; counts read
-                    from real threads. */}
                 {["All", ...CATEGORY_LIST].map((c) => {
                   const active = categoryFilter === c;
                   const count =
-                    c === "All"
-                      ? threads.length
-                      : threads.filter((t) => t.category === c).length;
+                    c === "All" ? totalThreads : list?.categoryCounts?.[c] ?? 0;
                   return (
                     <button
                       key={c}
@@ -387,7 +509,10 @@ export default function ForumPage() {
                           ? "bg-[var(--accent-dim)] text-[var(--accent)] border border-[var(--accent)]/50 font-semibold"
                           : "text-[var(--fg-2)] border border-transparent hover:bg-white/5 hover:text-[var(--fg)]"
                       }`}
-                      onClick={() => setCategoryFilter(c)}
+                      onClick={() => {
+                        setCategoryFilter(c);
+                        setPage(1);
+                      }}
                       aria-pressed={active}
                     >
                       <span className="flex items-center gap-2">
@@ -415,6 +540,10 @@ export default function ForumPage() {
                       </span>
                     ) : null}
                   </p>
+                  <p className="text-xs text-[var(--muted-2)] mt-2">
+                    Posts support markdown, images and spoilers.
+                    {isAdmin ? " Admins can attach polls with an end date." : ""}
+                  </p>
                 </>
               ) : sessionLoading ? (
                 <p className="text-sm text-[var(--muted)]">Checking session…</p>
@@ -422,7 +551,7 @@ export default function ForumPage() {
                 <>
                   <h3 className="font-display text-base font-bold mb-1">Want to post?</h3>
                   <p className="text-sm text-[var(--muted)] mb-3">
-                    Sign in with Discord to create threads and reply.
+                    Sign in with Discord to create threads, reply, and vote in polls.
                   </p>
                   <Link href="/login?next=/forum" className="btn-primary w-full justify-center">
                     <i className="fa-brands fa-discord" />
@@ -439,7 +568,7 @@ export default function ForumPage() {
       {modalOpen ? (
         <div className="modal-backdrop" onClick={() => setModalOpen(false)}>
           <div
-            className="card p-6 w-full max-w-md"
+            className="card p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
             role="dialog"
             aria-modal="true"
             aria-labelledby="new-thread-title"
@@ -449,7 +578,7 @@ export default function ForumPage() {
 
             {user ? (
               <form
-                className="space-y-3"
+                className="space-y-4"
                 onSubmit={(e) => {
                   e.preventDefault();
                   void submit();
@@ -463,31 +592,57 @@ export default function ForumPage() {
                   onChange={(e) => setTitle(e.target.value)}
                   maxLength={120}
                 />
-                <textarea
-                  className={`${inputClass} min-h-[120px] resize-y`}
-                  placeholder="What's on your mind? (optional)"
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  maxLength={4000}
-                />
                 <div className="flex items-center gap-2 px-1 text-xs text-[var(--muted)]">
                   <Avatar name={user.username} src={user.avatarUrl} size="sm" className="!w-5 !h-5" />
                   Posting as <span className="text-[var(--fg-2)] font-medium">{user.username}</span>
                 </div>
-                <select className={inputClass} value={category} onChange={(e) => setCategory(e.target.value)}>
-                  {CATEGORY_LIST.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+                <div className="grid grid-cols-2 gap-3">
+                  <select className={inputClass} value={category} onChange={(e) => setCategory(e.target.value)}>
+                    {CATEGORY_LIST.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                  {isAdmin ? (
+                    <button
+                      type="button"
+                      className={`btn-sm justify-center border rounded-lg transition flex items-center gap-2 px-4 ${
+                        withPoll
+                          ? "border-[var(--diamond)] text-[var(--diamond)] bg-[var(--diamond)]/10"
+                          : "border-[var(--border)] text-[var(--muted)] hover:text-[var(--fg)]"
+                      }`}
+                      onClick={() => setWithPoll((p) => !p)}
+                      aria-pressed={withPoll}
+                    >
+                      <i className="fa-solid fa-square-poll-vertical" />
+                      {withPoll ? "Poll attached" : "Add a poll"}
+                    </button>
+                  ) : null}
+                </div>
+
+                <RichEditor
+                  idPrefix="new-thread"
+                  value={content}
+                  onChange={setContent}
+                  rows={8}
+                  maxLength={20000}
+                  placeholder="What's on your mind? Markdown, images (paste/drag), spoilers…"
+                />
+
+                {withPoll && isAdmin ? (
+                  <div className="border border-[var(--diamond)]/30 rounded-xl p-4 bg-[var(--diamond)]/5">
+                    <PollBuilder draft={pollDraft} onChange={setPollDraft} />
+                  </div>
+                ) : null}
+
                 <div className="flex gap-3 pt-1">
                   <button
                     type="submit"
                     className="btn-primary w-full"
-                    disabled={submitting || !title.trim()}
+                    disabled={submitting || !title.trim() || (withPoll && !pollDraftValid(pollDraft))}
                   >
-                    {submitting ? "Posting…" : "Create Thread"}
+                    {submitting ? "Posting…" : withPoll ? "Post Thread + Poll" : "Create Thread"}
                   </button>
                   <button type="button" className="btn-secondary w-full" onClick={() => setModalOpen(false)}>
                     Cancel

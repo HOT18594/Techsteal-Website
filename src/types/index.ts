@@ -33,6 +33,36 @@ export interface ForumThread {
   authorId?: string;
   /** Minecraft skin head URL when the author has one set. */
   avatarUrl?: string | null;
+  /** View counter (thread detail page loads). */
+  views?: number;
+  /** Locked threads accept no new replies (admin toggle). */
+  locked?: boolean;
+  /** Thread-level likes. */
+  likes?: number;
+  likedBy?: string[];
+  /** Set when the post was edited; shown as an "edited" marker. */
+  editedAt?: string | null;
+  createdAt?: string | null;
+  /** Present on list rows when the thread carries a poll. */
+  hasPoll?: boolean;
+}
+
+/** Poll attached to a thread (admins create them, with an end date). */
+export interface ForumPoll {
+  id: number;
+  threadId: number;
+  question: string;
+  options: Array<{ id: string; text: string }>;
+  endsAt: string;
+  createdAt?: string | null;
+  /** Vote counts per option id — only included when results are visible. */
+  counts?: Record<string, number>;
+  /** Total votes cast. */
+  totalVotes?: number;
+  /** The signed-in user's chosen option id, if any. */
+  myVote?: string | null;
+  /** Derived: the end date has passed. */
+  ended?: boolean;
 }
 
 export interface ForumReply {
@@ -53,6 +83,8 @@ export interface ForumReply {
   likedBy?: string[];
   /** Admin-pinned comment — shows first with a pin badge. */
   pinned?: boolean;
+  /** Set when the reply was edited; shown as an "edited" marker. */
+  editedAt?: string | null;
 }
 
 export interface GalleryItem {
@@ -63,6 +95,31 @@ export interface GalleryItem {
   likes: number;
   image: string;
   height: "tall" | "medium" | "short";
+  /** Discord-style account id of the poster. */
+  authorId?: string;
+  /** Markdown description shown in the lightbox. */
+  description?: string;
+  /** All images of the post (cover first). `image` mirrors the cover. */
+  images?: string[];
+  /** Account ids that liked this post. */
+  likedBy?: string[];
+  /** Admin-pinned posts float to the top with a badge. */
+  featured?: boolean;
+  views?: number;
+  createdAt?: string | null;
+  /** Comment count (list responses). */
+  commentCount?: number;
+}
+
+export interface GalleryComment {
+  id?: number;
+  itemId: number;
+  content: string;
+  author: string;
+  authorId?: string;
+  avatarUrl?: string | null;
+  color?: string;
+  createdAt?: string | null;
 }
 
 export interface TimelineEvent {

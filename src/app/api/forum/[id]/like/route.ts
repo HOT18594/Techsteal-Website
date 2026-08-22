@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { forumReplies } from "@/lib/schema";
+import { forumReplies, forumThreads } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 
 export const dynamic = "force-dynamic";
 
-// Toggle a like on a reply. Signed-in users only; each account can like a
-// comment once (removing their id from `likedBy` un-likes it).
-// Body: { replyId }
+// Toggle a like. Body: { replyId } likes a REPLY; omitting replyId likes
+// the THREAD itself. Signed-in users only; each account can like once
+// (sending the request again un-likes).
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -26,10 +26,7 @@ export async function POST(
   }
 
   const body = await request.json().catch(() => ({}));
-  const replyId = Number(body?.replyId);
-  if (!Number.isInteger(replyId)) {
-    return NextResponse.json({ error: "replyId is required" }, { status: 400 });
-  }
+  const replyId = body?.replyId !== undefined ? Number(body.replyId) : null;
 
   const db = getDb();
   if (!db) {
@@ -39,11 +36,46 @@ export async function POST(
   // Locking read + write inside a transaction: two simultaneous "like"
   // clicks used to both read the old likedBy, both append the id, and
   // one vote would silently vanish. `FOR UPDATE` serializes them.
+  if (Number.isInteger(replyId) && replyId !== null && replyId > 0) {
+    const updated = await db.transaction(async (tx) => {
+      const locked = await tx
+        .select()
+        .from(forumReplies)
+        .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
+        .for("update")
+        .limit(1);
+      if (locked.length === 0) return null;
+      const currentLikedBy = (locked[0].likedBy ?? []) as string[];
+      const already = currentLikedBy.includes(user.id);
+      const updatedLikedBy = already
+        ? currentLikedBy.filter((x) => x !== user.id)
+        : [...currentLikedBy, user.id];
+      const [row] = await tx
+        .update(forumReplies)
+        .set({ likedBy: updatedLikedBy, likes: updatedLikedBy.length })
+        .where(eq(forumReplies.id, replyId))
+        .returning();
+      return row;
+    });
+    if (!updated) {
+      return NextResponse.json({ error: "Reply not found" }, { status: 404 });
+    }
+
+    const avatars = await resolveAuthorAvatars([updated]);
+    const info = avatarInfoFor(avatars, updated);
+    return NextResponse.json({
+      reply: { ...updated, avatarUrl: info?.avatarUrl ?? null },
+      // Derived from the DB's final state — true if the user's id is in it.
+      liked: (updated.likedBy ?? []).includes(user.id),
+    });
+  }
+
+  // Thread like.
   const updated = await db.transaction(async (tx) => {
     const locked = await tx
       .select()
-      .from(forumReplies)
-      .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
+      .from(forumThreads)
+      .where(eq(forumThreads.id, threadId))
       .for("update")
       .limit(1);
     if (locked.length === 0) return null;
@@ -53,24 +85,18 @@ export async function POST(
       ? currentLikedBy.filter((x) => x !== user.id)
       : [...currentLikedBy, user.id];
     const [row] = await tx
-      .update(forumReplies)
+      .update(forumThreads)
       .set({ likedBy: updatedLikedBy, likes: updatedLikedBy.length })
-      .where(eq(forumReplies.id, replyId))
+      .where(eq(forumThreads.id, threadId))
       .returning();
     return row;
   });
   if (!updated) {
-    return NextResponse.json({ error: "Reply not found" }, { status: 404 });
+    return NextResponse.json({ error: "Thread not found" }, { status: 404 });
   }
 
-  const avatars = await resolveAuthorAvatars([updated]);
-  const info = avatarInfoFor(avatars, updated);
   return NextResponse.json({
-    reply: {
-      ...updated,
-      avatarUrl: info?.avatarUrl ?? null,
-    },
-    // Derived from the DB's final state — true if the user's id is in it.
+    thread: { ...updated, hasPoll: undefined },
     liked: (updated.likedBy ?? []).includes(user.id),
   });
 }

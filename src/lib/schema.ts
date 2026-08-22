@@ -7,6 +7,7 @@ import {
   serial,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 // NOTE: `createdAt` is only used for ordering. Every other field is edited
@@ -37,6 +38,12 @@ export const forumThreads = pgTable("forum_threads", {
   replies: integer("replies").notNull().default(0),
   last: text("last").notNull().default("just now"),
   pinned: boolean("pinned").notNull().default(false),
+  // --- Forum overhaul additions (all defaulted → additive migration) ---
+  views: integer("views").notNull().default(0),
+  locked: boolean("locked").notNull().default(false),
+  likes: integer("likes").notNull().default(0),
+  likedBy: jsonb("liked_by").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  editedAt: timestamp("edited_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -51,8 +58,34 @@ export const forumReplies = pgTable("forum_replies", {
   likes: integer("likes").notNull().default(0),
   likedBy: jsonb("liked_by").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   pinned: boolean("pinned").notNull().default(false),
+  editedAt: timestamp("edited_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// Polls attach 1:1 to a thread. Only admins create them (enforced in the
+// API, not the schema — the schema just stores). `options` carries the
+// choice list; votes live in forumPollVotes so one-account-one-vote is a
+// UNIQUE constraint instead of a hoped-for race-free jsonb update.
+export const forumPolls = pgTable("forum_polls", {
+  id: serial("id").primaryKey(),
+  threadId: integer("thread_id").notNull(),
+  question: text("question").notNull(),
+  options: jsonb("options").$type<Array<{ id: string; text: string }>>().notNull().default([]),
+  endsAt: timestamp("ends_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const forumPollVotes = pgTable(
+  "forum_poll_votes",
+  {
+    id: serial("id").primaryKey(),
+    pollId: integer("poll_id").notNull(),
+    userId: text("user_id").notNull(),
+    optionId: text("option_id").notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (t) => [uniqueIndex("forum_poll_votes_poll_user_uq").on(t.pollId, t.userId)]
+);
 
 export const galleryItems = pgTable("gallery_items", {
   id: serial("id").primaryKey(),
@@ -62,6 +95,25 @@ export const galleryItems = pgTable("gallery_items", {
   likes: integer("likes").notNull().default(0),
   image: text("image").notNull(),
   height: text("height").notNull().default("medium"),
+  // --- Gallery overhaul additions (all defaulted → additive migration) ---
+  authorId: text("author_id").notNull().default(""),
+  description: text("description").notNull().default(""),
+  // All image URLs of the post; `image` stays the cover for backward compat.
+  images: jsonb("images").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  likedBy: jsonb("liked_by").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  featured: boolean("featured").notNull().default(false),
+  views: integer("views").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Comments on gallery posts — same shape/pattern as forum replies.
+export const galleryComments = pgTable("gallery_comments", {
+  id: serial("id").primaryKey(),
+  itemId: integer("item_id").notNull(),
+  content: text("content").notNull(),
+  author: text("author").notNull(),
+  authorId: text("author_id").notNull().default(""),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const timelineEvents = pgTable("timeline_events", {

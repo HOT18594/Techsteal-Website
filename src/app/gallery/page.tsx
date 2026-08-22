@@ -1,70 +1,133 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fallbackGallery } from "@/lib/fallback-data";
 import { GALLERY_CATEGORIES } from "@/lib/storage";
+import { compressImage } from "@/lib/imaging";
 import { categoryClass } from "@/lib/forum-categories";
-import type { GalleryItem } from "@/types";
+import { Markdown } from "@/components/Markdown";
+import { RichEditor } from "@/components/RichEditor";
+import type { GalleryComment, GalleryItem } from "@/types";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState, ErrorState } from "@/components/EmptyState";
 import { SubPage } from "@/components/SubPage";
 import { useApi } from "@/lib/use-api";
 import { useToast } from "@/components/Toast";
 import { useSession } from "@/lib/use-session";
+import { timeAgo } from "@/lib/time";
 
+const MAX_IMAGES = 8;
 const MAX_BYTES = 8 * 1024 * 1024;
+
+/** One in-progress image in the composer. */
+interface PendingImage {
+  key: string;
+  name: string;
+  preview: string; // blob URL
+  url?: string; // storage URL once uploaded
+  progress: number; // 0–100
+  error?: string;
+}
+
+/** Flatten a post list into per-image slides for the lightbox. */
+function buildSlides(items: GalleryItem[]): Array<{ item: number; image: number; url: string }> {
+  const slides: Array<{ item: number; image: number; url: string }> = [];
+  items.forEach((g, gi) => {
+    const imgs = g.images && g.images.length > 0 ? g.images : [g.image];
+    imgs.forEach((url, ii) => slides.push({ item: gi, image: ii, url }));
+  });
+  return slides;
+}
+
+function imagesOf(g: GalleryItem): string[] {
+  return g.images && g.images.length > 0 ? g.images : [g.image];
+}
 
 export default function GalleryPage() {
   const { show } = useToast();
   const { user, loading: sessionLoading } = useSession();
-  const { data: items, loading, error, refetch } = useApi<GalleryItem[]>(
-    "/api/gallery",
-    fallbackGallery
-  );
-  const [filter, setFilter] = useState("All");
-  const [sort, setSort] = useState<"new" | "liked">("new");
+  const isAdmin = user?.role === "admin";
 
+  const { data: items, loading, error, refetch } = useApi<GalleryItem[]>("/api/gallery", fallbackGallery);
+
+  // Local override layer on top of useApi's data — likes/feature/delete
+  // patch items instantly without refetching the whole grid.
+  const [localItems, setLocalItems] = useState<GalleryItem[] | null>(null);
+  useEffect(() => {
+    setLocalItems(items);
+  }, [items]);
+  const displayItems = localItems ?? items;
+
+  /** Patch one item in the local list without a full refetch. */
+  const setItemsLocal = useCallback((id: number, patch: Partial<GalleryItem>) => {
+    setLocalItems((prev) => (prev ?? items).map((g) => (g.id === id ? { ...g, ...patch } : g)));
+  }, [items]);
+
+  const [filter, setFilter] = useState("All");
+  const [sort, setSort] = useState<"new" | "liked" | "viewed">("new");
+  const [search, setSearch] = useState("");
+
+  // ------------------------------------------------------------------
+  // Composer state.
+  // ------------------------------------------------------------------
   const [modalOpen, setModalOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState<string>(GALLERY_CATEGORIES[0]);
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
+  const [description, setDescription] = useState("");
+  const [pending, setPending] = useState<PendingImage[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Lightbox
-  const [lightbox, setLightbox] = useState<number | null>(null);
+  // Lightbox — slide index into the flattened visible list.
+  const [slide, setSlide] = useState<number | null>(null);
+  const [comments, setComments] = useState<GalleryComment[] | null>(null);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentText, setCommentText] = useState("");
+  const [postingComment, setPostingComment] = useState(false);
+  const [busyItem, setBusyItem] = useState<number | null>(null);
+  const [busyLike, setBusyLike] = useState<number | null>(null);
 
   const categories = useMemo(() => {
-    const set = new Set(items.map((i) => i.category));
+    const set = new Set(displayItems.map((i) => i.category));
     return ["All", ...Array.from(set)];
-  }, [items]);
+  }, [displayItems]);
 
   const visible = useMemo(() => {
-    const list = filter === "All" ? items : items.filter((i) => i.category === filter);
-    // Newest first by id (ids are assigned in insertion order); "liked"
-    // surfaces the community favourites.
-    return sort === "liked"
-      ? [...list].sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0))
-      : [...list].sort((a, b) => (b.id ?? 0) - (a.id ?? 0));
-  }, [items, filter, sort]);
+    const q = search.trim().toLowerCase();
+    let list = filter === "All" ? displayItems : displayItems.filter((i) => i.category === filter);
+    if (q) {
+      list = list.filter(
+        (i) => i.title.toLowerCase().includes(q) || i.builder.toLowerCase().includes(q)
+      );
+    }
+    // Featured always floats first; then the chosen sort.
+    return [...list].sort((a, b) => {
+      if (Boolean(b.featured) !== Boolean(a.featured)) return Number(Boolean(b.featured)) - Number(a.featured);
+      if (sort === "liked") return (b.likes ?? 0) - (a.likes ?? 0);
+      if (sort === "viewed") return (b.views ?? 0) - (a.views ?? 0);
+      return (b.id ?? 0) - (a.id ?? 0);
+    });
+  }, [displayItems, filter, sort, search]);
+
+  const slides = useMemo(() => buildSlides(visible), [visible]);
+  const currentSlide = slide !== null ? slides[slide] : null;
+  const current = currentSlide ? visible[currentSlide.item] : null;
 
   // Escape closes whichever overlay is open; lock body scroll; restore
   // focus to the opener on close.
   useEffect(() => {
-    if (!modalOpen && lightbox === null) return;
+    if (!modalOpen && slide === null) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setModalOpen(false);
-        setLightbox(null);
+        setSlide(null);
       }
-      // Arrow keys page through the lightbox.
-      if (lightbox !== null && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
-        setLightbox((i) =>
-          i === null ? i : (i + (e.key === "ArrowRight" ? 1 : visible.length - 1)) % visible.length
+      if (slide !== null && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+        setSlide((s) =>
+          s === null ? s : (s + (e.key === "ArrowRight" ? 1 : slides.length - 1)) % slides.length
         );
       }
     };
@@ -74,50 +137,119 @@ export default function GalleryPage() {
       document.body.style.overflow = prevOverflow;
       document.removeEventListener("keydown", onKey);
     };
-  }, [modalOpen, lightbox, visible.length]);
+  }, [modalOpen, slide, slides.length]);
+
+  // Load comments (and bump views) when the lightbox opens on a post.
+  useEffect(() => {
+    if (slide === null || !current) return;
+    let cancelled = false;
+    setComments(null);
+    setCommentsLoading(true);
+    fetch(`/api/gallery/${current.id}`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error("failed");
+        const data = (await res.json()) as { item: GalleryItem; comments: GalleryComment[] };
+        if (cancelled) return;
+        setComments(data.comments);
+        // Mirror the bumped view count into the local list state.
+        setItemsLocal(current.id ?? 0, { views: data.item.views });
+      })
+      .catch(() => !cancelled && setComments([]))
+      .finally(() => !cancelled && setCommentsLoading(false));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slide !== null ? current?.id : null]);
 
   const openModal = () => {
     setTitle("");
     setCategory(GALLERY_CATEGORIES[0]);
-    setFile(null);
-    // Revoke any leftover preview blob URL so it doesn't leak memory.
-    setPreview((old) => {
-      if (old) URL.revokeObjectURL(old);
-      return null;
+    setDescription("");
+    // Revoke leftover blob previews so they don't leak memory.
+    setPending((prev) => {
+      for (const p of prev) URL.revokeObjectURL(p.preview);
+      return [];
     });
     setModalOpen(true);
   };
 
-  const onPick = (f: File | undefined) => {
-    if (!f) return;
-    if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(f.type)) {
-      show("Unsupported image", "Use JPG, PNG, WebP or GIF.", "error");
-      if (fileRef.current) fileRef.current.value = "";
+  // ------------------------------------------------------------------
+  // Composer: pick → compress → upload each image separately.
+  // ------------------------------------------------------------------
+
+  const onPick = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const room = MAX_IMAGES - pending.length;
+    if (room <= 0) {
+      show("Too many images", `Posts can have at most ${MAX_IMAGES} images.`, "error");
       return;
     }
-    if (f.size > MAX_BYTES) {
-      show("Image too large", "Keep uploads under 8 MB.", "error");
-      if (fileRef.current) fileRef.current.value = "";
-      return;
+    const picked = Array.from(files).slice(0, room);
+    for (const f of picked) {
+      if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(f.type)) {
+        show("Unsupported image", `${f.name}: use JPG, PNG, WebP or GIF.`, "error");
+        continue;
+      }
+      if (f.size > MAX_BYTES) {
+        show("Image too large", `${f.name}: keep uploads under 8 MB.`, "error");
+        continue;
+      }
+      const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const preview = URL.createObjectURL(f);
+      setPending((prev) => [...prev, { key, name: f.name, preview, progress: 0 }]);
+      // Compress in the browser, then upload — each file is its own request
+      // so we stay well below the serverless body limit and get progress.
+      void (async () => {
+        try {
+          const compressed = await compressImage(f, 1920, 0.85);
+          const url = await xhrUpload("/api/upload", compressed, (pct) =>
+            setPending((prev) => prev.map((p) => (p.key === key ? { ...p, progress: pct } : p)))
+          );
+          setPending((prev) => prev.map((p) => (p.key === key ? { ...p, url, progress: 100 } : p)));
+        } catch (err) {
+          setPending((prev) =>
+            prev.map((p) =>
+              p.key === key
+                ? { ...p, error: err instanceof Error ? err.message : "Upload failed" }
+                : p
+            )
+          );
+        }
+      })();
     }
-    setFile(f);
-    // Revoke the previous blob URL when replacing the preview.
-    setPreview((old) => {
-      if (old) URL.revokeObjectURL(old);
-      return URL.createObjectURL(f);
+  };
+
+  const removePending = (key: string) => {
+    setPending((prev) => {
+      const p = prev.find((x) => x.key === key);
+      if (p) URL.revokeObjectURL(p.preview);
+      return prev.filter((x) => x.key !== key);
+    });
+  };
+
+  const makeCover = (key: string) => {
+    setPending((prev) => {
+      const idx = prev.findIndex((x) => x.key === key);
+      if (idx <= 0) return prev;
+      const next = [...prev];
+      const [item] = next.splice(idx, 1);
+      next.unshift(item);
+      return next;
     });
   };
 
   const submit = async () => {
     const t = title.trim();
-    if (!t || !file || submitting) return;
+    const urls = pending.map((p) => p.url).filter((u): u is string => Boolean(u));
+    if (!t || submitting || urls.length === 0) return;
     setSubmitting(true);
     try {
-      const body = new FormData();
-      body.set("title", t);
-      body.set("category", category);
-      body.set("image", file);
-      const res = await fetch("/api/gallery", { method: "POST", body });
+      const res = await fetch("/api/gallery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: t, category, description: description.trim(), images: urls }),
+      });
       if (res.ok) {
         show("Posted", "Your build is now in the gallery.");
         setModalOpen(false);
@@ -139,7 +271,136 @@ export default function GalleryPage() {
     }
   };
 
-  const current = lightbox !== null ? visible[lightbox] : null;
+  // ------------------------------------------------------------------
+  // Likes / moderation.
+  // ------------------------------------------------------------------
+
+  const toggleLike = async (g: GalleryItem) => {
+    if (!user) {
+      show("Sign in to like", "Log in with Discord to like builds.", "error");
+      return;
+    }
+    if (busyLike !== null) return;
+    setBusyLike(g.id ?? 0);
+    const liked = (g.likedBy ?? []).includes(user.id);
+    setItemsLocal(g.id ?? 0, {
+      likedBy: liked ? (g.likedBy ?? []).filter((x) => x !== user.id) : [...(g.likedBy ?? []), user.id],
+      likes: (g.likes ?? 0) + (liked ? -1 : 1),
+    });
+    try {
+      const res = await fetch(`/api/gallery/${g.id}/like`, { method: "POST" });
+      if (!res.ok) throw new Error("like failed");
+      const data = (await res.json()) as { item: GalleryItem; liked: boolean };
+      setItemsLocal(g.id ?? 0, { likes: data.item.likes, likedBy: data.item.likedBy });
+    } catch {
+      setItemsLocal(g.id ?? 0, { likedBy: g.likedBy ?? [], likes: g.likes ?? 0 });
+      show("Couldn't like", "The server rejected the request.", "error");
+    } finally {
+      setBusyLike(null);
+    }
+  };
+
+  const feature = async (g: GalleryItem) => {
+    if (!isAdmin || busyItem !== null) return;
+    setBusyItem(g.id ?? 0);
+    try {
+      const res = await fetch(`/api/gallery/${g.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ featured: !g.featured }),
+      });
+      if (!res.ok) {
+        show("Couldn't update", "The server rejected the request.", "error");
+        return;
+      }
+      setItemsLocal(g.id ?? 0, { featured: !g.featured });
+      show(g.featured ? "Unfeatured" : "Featured", `"${g.title}" ${g.featured ? "returned to the grid" : "now floats to the top"}.`);
+    } catch {
+      show("Couldn't update", "Check your connection and try again.");
+    } finally {
+      setBusyItem(null);
+    }
+  };
+
+  const deleteItem = async (g: GalleryItem) => {
+    if (busyItem !== null) return;
+    const ok = window.confirm(`Delete "${g.title}"? This can't be undone.`);
+    if (!ok) return;
+    setBusyItem(g.id ?? 0);
+    try {
+      const res = await fetch(`/api/gallery/${g.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        show("Couldn't delete", "The server rejected the request.", "error");
+        return;
+      }
+      setSlide(null);
+      show("Deleted", `"${g.title}" was removed.`);
+      void refetch();
+    } catch {
+      show("Couldn't delete", "Check your connection and try again.");
+    } finally {
+      setBusyItem(null);
+    }
+  };
+
+  const postComment = async () => {
+    if (!current) return;
+    const text = commentText.trim();
+    if (!text || postingComment) return;
+    setPostingComment(true);
+    try {
+      const res = await fetch(`/api/gallery/${current.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: text }),
+      });
+      if (res.ok) {
+        const created = (await res.json()) as GalleryComment;
+        setComments((prev) => [...(prev ?? []), created]);
+        setItemsLocal(current.id ?? 0, { commentCount: (current.commentCount ?? 0) + 1 });
+        setCommentText("");
+      } else if (res.status === 401) {
+        show("Sign in to comment", "Log in with Discord to comment.", "error");
+      } else {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        show("Couldn't comment", data.error ?? "The server rejected the request.", "error");
+      }
+    } catch {
+      show("Couldn't comment", "Check your connection and try again.", "error");
+    } finally {
+      setPostingComment(false);
+    }
+  };
+
+  const deleteComment = async (c: GalleryComment) => {
+    if (!current) return;
+    const ok = window.confirm("Delete this comment?");
+    if (!ok) return;
+    try {
+      const res = await fetch(`/api/gallery/${current.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ commentId: c.id }),
+      });
+      if (!res.ok) {
+        show("Couldn't delete", "The server rejected the request.", "error");
+        return;
+      }
+      setComments((prev) => (prev ?? []).filter((x) => x.id !== c.id));
+      setItemsLocal(current.id ?? 0, { commentCount: Math.max(0, (current.commentCount ?? 1) - 1) });
+    } catch {
+      show("Couldn't delete", "Check your connection and try again.", "error");
+    }
+  };
+
+  const openLightbox = (visibleIndex: number) => {
+    const idx = slides.findIndex((s) => s.item === visibleIndex);
+    setSlide(idx >= 0 ? idx : 0);
+  };
+
+  const listError = error && displayItems.length === 0;
+  const okCount = pending.filter((p) => p.url).length;
+  const stillUploading = pending.some((p) => !p.url && !p.error);
 
   return (
     <SubPage>
@@ -153,19 +414,29 @@ export default function GalleryPage() {
             </p>
             <h1 className="page-title">Gallery</h1>
           </div>
-          {/* Always enabled — signed-out visitors get the modal, which
-              explains the Discord login instead of a dead button. */}
-          <button className="btn-primary btn-sm" onClick={openModal}>
-            <i className="fa-solid fa-upload" />
-            Post a build
-          </button>
+          <div className="flex items-center gap-3 flex-1 justify-end min-w-0">
+            <div className="relative flex-1 max-w-xs min-w-[9rem]">
+              <i className="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-[var(--muted-2)]" />
+              <input
+                className="w-full bg-[var(--bg-2)] border border-[var(--border)] pl-9 pr-8 py-2.5 text-sm text-[var(--fg)] outline-none focus:border-[var(--accent)] transition placeholder:text-[var(--muted-2)] rounded-lg"
+                placeholder="Search builds…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                aria-label="Search builds"
+              />
+            </div>
+            <button className="btn-primary btn-sm flex-shrink-0" onClick={openModal}>
+              <i className="fa-solid fa-upload" />
+              Post a build
+            </button>
+          </div>
         </div>
 
         {/* Toolbar: category chips with counts + sort */}
         <div className="flex items-center justify-between gap-3 flex-wrap mb-8">
           <div className="flex gap-2 flex-wrap">
             {categories.map((c) => {
-              const count = c === "All" ? items.length : items.filter((i) => i.category === c).length;
+              const count = c === "All" ? displayItems.length : displayItems.filter((i) => i.category === c).length;
               return (
                 <button
                   key={c}
@@ -184,7 +455,7 @@ export default function GalleryPage() {
             })}
           </div>
           <div className="flex items-center gap-1 text-sm text-[var(--muted)]">
-            {(["new", "liked"] as const).map((s) => (
+            {(["new", "liked", "viewed"] as const).map((s) => (
               <button
                 key={s}
                 onClick={() => setSort(s)}
@@ -195,13 +466,13 @@ export default function GalleryPage() {
                     : "border-transparent hover:text-[var(--accent)]"
                 }`}
               >
-                {s === "new" ? "Newest" : "Most liked"}
+                {s === "new" ? "Newest" : s === "liked" ? "Most liked" : "Most viewed"}
               </button>
             ))}
           </div>
         </div>
 
-        {error && items.length === 0 ? (
+        {listError ? (
           <ErrorState onRetry={() => void refetch()} what="gallery" />
         ) : loading ? (
           <div className="gallery-grid">
@@ -236,37 +507,69 @@ export default function GalleryPage() {
         ) : (
           /* Console-style thumbnail grid */
           <div className="gallery-grid stagger">
-            {visible.map((g, i) => (
-              <button
-                key={g.id ?? `${i}-${g.title}`}
-                className="gallery-item aspect-[4/3] text-left"
-                onClick={() => setLightbox(i)}
-                aria-label={`View ${g.title} by ${g.builder}`}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={g.image} alt={g.title} loading="lazy" className="aspect-[4/3] object-cover" />
-                <div className="overlay">
-                  <span
-                    className={`inline-block px-2 py-0.5 mb-2 text-[10px] font-bold uppercase tracking-wider rounded border ${categoryClass(g.category)}`}
+            {visible.map((g, i) => {
+              const liked = user ? (g.likedBy ?? []).includes(user.id) : false;
+              const imgs = imagesOf(g);
+              return (
+                <div key={g.id ?? `${i}-${g.title}`} className="relative group/gallery">
+                  <button
+                    className="gallery-item aspect-[4/3] text-left w-full"
+                    onClick={() => openLightbox(i)}
+                    aria-label={`View ${g.title} by ${g.builder}`}
                   >
-                    {g.category}
-                  </span>
-                  <h3 className="font-display text-xl font-bold text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
-                    {g.title}
-                  </h3>
-                  <div className="flex items-center gap-4 mt-1 text-sm text-[var(--fg-2)]">
-                    <span className="flex items-center gap-1.5">
-                      <i className="fa-solid fa-user text-xs text-[var(--accent-bright)]" />
-                      {g.builder}
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <i className="fa-solid fa-heart text-xs text-[var(--redstone)]" />
-                      {g.likes}
-                    </span>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={imgs[0]} alt={g.title} loading="lazy" decoding="async" className="aspect-[4/3] object-cover" />
+                    <div className="overlay">
+                      <span
+                        className={`inline-block px-2 py-0.5 mb-2 text-[10px] font-bold uppercase tracking-wider rounded border ${categoryClass(g.category)}`}
+                      >
+                        {g.category}
+                      </span>
+                      <h3 className="font-display text-xl font-bold text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
+                        {g.title}
+                      </h3>
+                      <div className="flex items-center gap-4 mt-1 text-sm text-[var(--fg-2)]">
+                        <span className="flex items-center gap-1.5">
+                          <i className="fa-solid fa-user text-xs text-[var(--accent-bright)]" />
+                          {g.builder}
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                          <i className="fa-solid fa-heart text-xs text-[var(--redstone)]" />
+                          {g.likes}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                  {/* Floating badges & actions */}
+                  <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 pointer-events-none">
+                    {g.featured ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[#ffd166] border border-[#ffd166]/50 bg-black/50 rounded px-1.5 py-0.5">
+                        <i className="fa-solid fa-star" /> Featured
+                      </span>
+                    ) : null}
+                    {imgs.length > 1 ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[var(--fg-2)] border border-[var(--border-strong)] bg-black/50 rounded px-1.5 py-0.5">
+                        <i className="fa-solid fa-images" /> {imgs.length}
+                      </span>
+                    ) : null}
                   </div>
+                  {/* Like without opening the lightbox */}
+                  <button
+                    className={`absolute bottom-2.5 right-2.5 inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg border px-2.5 py-1.5 backdrop-blur transition ${
+                      liked
+                        ? "border-[var(--redstone)] text-[var(--redstone)] bg-[var(--redstone)]/20"
+                        : "border-white/20 text-white/90 bg-black/50 hover:border-[var(--redstone)] hover:text-[var(--redstone)]"
+                    }`}
+                    onClick={() => void toggleLike(g)}
+                    disabled={busyLike === g.id}
+                    aria-label={liked ? `Unlike ${g.title}` : `Like ${g.title}`}
+                  >
+                    <i className={`${liked ? "fa-solid" : "fa-regular"} fa-heart`} />
+                    {g.likes}
+                  </button>
                 </div>
-              </button>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -275,7 +578,7 @@ export default function GalleryPage() {
       {modalOpen ? (
         <div className="modal-backdrop" onClick={() => setModalOpen(false)}>
           <div
-            className="card p-6 w-full max-w-md"
+            className="card p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
             role="dialog"
             aria-modal="true"
             aria-labelledby="post-gallery-title"
@@ -285,7 +588,7 @@ export default function GalleryPage() {
 
             {user ? (
               <form
-                className="space-y-3"
+                className="space-y-4"
                 onSubmit={(e) => {
                   e.preventDefault();
                   void submit();
@@ -312,43 +615,96 @@ export default function GalleryPage() {
                     ref={fileRef}
                     type="file"
                     accept="image/jpeg,image/png,image/webp,image/gif"
+                    multiple
                     className="hidden"
-                    onChange={(e) => onPick(e.target.files?.[0])}
+                    onChange={(e) => {
+                      void onPick(e.target.files);
+                      e.target.value = "";
+                    }}
                   />
                   <button
                     type="button"
                     className="w-full bg-[var(--bg-2)] border border-dashed border-[var(--border-strong)] px-4 py-6 text-sm text-[var(--fg-2)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition rounded-2xl"
                     onClick={() => fileRef.current?.click()}
                   >
-                    {preview ? (
-                      <span className="flex items-center gap-2 overflow-hidden">
-                        <i className="fa-solid fa-image text-[var(--accent)]" />
-                        <span className="truncate">{file?.name}</span>
-                        <span className="text-[var(--muted-2)]">— click to change</span>
-                      </span>
-                    ) : (
-                      <span className="flex items-center justify-center gap-2">
-                        <i className="fa-solid fa-cloud-arrow-up" />
-                        Choose an image (JPG/PNG/WebP/GIF, under 8 MB)
-                      </span>
-                    )}
+                    <span className="flex items-center justify-center gap-2">
+                      <i className="fa-solid fa-cloud-arrow-up" />
+                      Add images — up to {MAX_IMAGES} (JPG/PNG/WebP/GIF, under 8 MB each)
+                    </span>
                   </button>
                 </label>
 
-                {preview ? (
-                  <div className="rounded-xl overflow-hidden border border-[var(--border)]">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={preview} alt="Preview" className="max-h-56 w-full object-cover" />
+                {pending.length > 0 ? (
+                  <div className="grid grid-cols-4 gap-2">
+                    {pending.map((p, idx) => (
+                      <div key={p.key} className="relative group/pending rounded-lg overflow-hidden border border-[var(--border)]">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={p.preview} alt={p.name} className="aspect-square w-full object-cover" />
+                        {p.error ? (
+                          <div
+                            className="absolute inset-0 bg-black/75 flex items-center justify-center text-[var(--redstone)] text-xs p-1 text-center"
+                            title={p.error}
+                          >
+                            <i className="fa-solid fa-triangle-exclamation" />
+                          </div>
+                        ) : p.url ? null : (
+                          <div className="absolute inset-x-0 bottom-0 h-1 bg-black/60">
+                            <div className="h-full bg-[var(--accent)] transition-all" style={{ width: `${p.progress}%` }} />
+                          </div>
+                        )}
+                        {idx === 0 && !p.error ? (
+                          <span className="absolute top-1 left-1 text-[9px] font-bold uppercase tracking-wider text-[#ffd166] bg-black/60 border border-[#ffd166]/40 rounded px-1 py-0.5">
+                            Cover
+                          </span>
+                        ) : null}
+                        <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover/pending:opacity-100 transition-opacity">
+                          {idx > 0 && !p.error ? (
+                            <button
+                              type="button"
+                              className="w-6 h-6 flex items-center justify-center rounded bg-black/70 text-[#ffd166] hover:bg-black"
+                              onClick={() => makeCover(p.key)}
+                              title="Make cover"
+                              aria-label="Make cover image"
+                            >
+                              <i className="fa-solid fa-star text-[10px]" />
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="w-6 h-6 flex items-center justify-center rounded bg-black/70 text-white hover:text-[var(--redstone)] hover:bg-black"
+                            onClick={() => removePending(p.key)}
+                            title="Remove"
+                            aria-label="Remove image"
+                          >
+                            <i className="fa-solid fa-xmark text-[10px]" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ) : null}
+
+                <div>
+                  <p className="text-xs text-[var(--muted)] mb-2 font-semibold uppercase tracking-wider">
+                    Description <span className="normal-case font-normal">(optional, markdown)</span>
+                  </p>
+                  <RichEditor
+                    idPrefix="gallery-description"
+                    value={description}
+                    onChange={setDescription}
+                    rows={4}
+                    maxLength={4000}
+                    placeholder="Coordinates, farm rates, a story…"
+                  />
+                </div>
 
                 <div className="flex gap-3 pt-1">
                   <button
                     type="submit"
                     className="btn-primary w-full"
-                    disabled={submitting || !title.trim() || !file}
+                    disabled={submitting || !title.trim() || okCount === 0 || stillUploading}
                   >
-                    {submitting ? "Uploading…" : "Post Build"}
+                    {submitting ? "Posting…" : stillUploading ? "Uploading…" : "Post Build"}
                   </button>
                   <button type="button" className="btn-secondary w-full" onClick={() => setModalOpen(false)}>
                     Cancel
@@ -376,56 +732,187 @@ export default function GalleryPage() {
         </div>
       ) : null}
 
-      {/* Lightbox — full image + meta, Esc/arrows navigate */}
-      {current ? (
+      {/* Lightbox — full image + meta + comments, Esc/arrows navigate */}
+      {current && currentSlide ? (
         <div
           className="modal-backdrop"
-          onClick={() => setLightbox(null)}
+          onClick={() => setSlide(null)}
           role="dialog"
           aria-modal="true"
           aria-label={current.title}
         >
           <div
-            className="card overflow-hidden w-full max-w-3xl"
+            className="card overflow-hidden w-full max-w-5xl max-h-[92vh] flex flex-col lg:flex-row"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={current.image} alt={current.title} className="w-full max-h-[65vh] object-contain bg-[var(--bg)]" />
-            <div className="p-5 flex items-center gap-4 flex-wrap">
-              <Avatar name={current.builder} size="sm" />
-              <div className="flex-1 min-w-0">
-                <h3 className="font-display text-lg font-bold truncate">{current.title}</h3>
-                <p className="text-xs text-[var(--muted)]">
-                  by {current.builder} · {current.likes} likes
-                </p>
-              </div>
-              <span
-                className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded border ${categoryClass(current.category)}`}
-              >
-                {current.category}
-              </span>
-              <div className="flex items-center gap-2">
-                {visible.length > 1 ? (
-                  <>
-                    <button
-                      className="btn-secondary btn-sm"
-                      onClick={() => setLightbox((i) => (i === null ? i : (i + visible.length - 1) % visible.length))}
-                      aria-label="Previous build"
-                    >
-                      <i className="fa-solid fa-chevron-left" />
-                    </button>
-                    <button
-                      className="btn-secondary btn-sm"
-                      onClick={() => setLightbox((i) => (i === null ? i : (i + 1) % visible.length))}
-                      aria-label="Next build"
-                    >
-                      <i className="fa-solid fa-chevron-right" />
-                    </button>
-                  </>
+            {/* Image pane */}
+            <div className="relative flex-1 min-w-0 bg-[var(--bg)] flex items-center justify-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={currentSlide.url}
+                alt={current.title}
+                className="max-h-[55vh] lg:max-h-[92vh] w-full object-contain"
+              />
+              {imagesOf(current).length > 1 ? (
+                <span className="absolute bottom-3 left-1/2 -translate-x-1/2 text-xs text-[var(--fg-2)] bg-black/60 border border-[var(--border-strong)] rounded-full px-3 py-1">
+                  {currentSlide.image + 1} / {imagesOf(current).length}
+                </span>
+              ) : null}
+              {slides.length > 1 ? (
+                <>
+                  <button
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 border border-white/15 text-white hover:bg-black/80 transition"
+                    onClick={() => setSlide((s) => (s === null ? s : (s + slides.length - 1) % slides.length))}
+                    aria-label="Previous image"
+                  >
+                    <i className="fa-solid fa-chevron-left" />
+                  </button>
+                  <button
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 border border-white/15 text-white hover:bg-black/80 transition"
+                    onClick={() => setSlide((s) => (s === null ? s : (s + 1) % slides.length))}
+                    aria-label="Next image"
+                  >
+                    <i className="fa-solid fa-chevron-right" />
+                  </button>
+                </>
+              ) : null}
+            </div>
+
+            {/* Meta + comments pane */}
+            <div className="w-full lg:w-96 flex flex-col min-h-0 border-t lg:border-t-0 lg:border-l border-[var(--border)]">
+              <div className="p-5 border-b border-[var(--border)]">
+                <div className="flex items-start gap-3">
+                  <Avatar name={current.builder} size="sm" />
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-display text-lg font-bold truncate">{current.title}</h3>
+                    <p className="text-xs text-[var(--muted)]">
+                      by {current.builder}
+                      {current.createdAt ? ` · ${timeAgo(current.createdAt)}` : ""} ·{" "}
+                      <i className="fa-regular fa-eye" /> {current.views ?? 0}
+                    </p>
+                  </div>
+                  <span
+                    className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded border flex-shrink-0 ${categoryClass(current.category)}`}
+                  >
+                    {current.category}
+                  </span>
+                </div>
+
+                {current.description ? (
+                  <div className="mt-3 text-sm text-[var(--fg-2)]">
+                    <Markdown text={current.description} />
+                  </div>
                 ) : null}
-                <button className="btn-secondary btn-sm" onClick={() => setLightbox(null)} aria-label="Close">
-                  <i className="fa-solid fa-xmark" />
-                </button>
+
+                <div className="flex items-center gap-2 mt-4 flex-wrap">
+                  <button
+                    className={`inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg border px-3 py-2 transition disabled:opacity-40 ${
+                      user && (current.likedBy ?? []).includes(user.id)
+                        ? "border-[var(--redstone)] text-[var(--redstone)] bg-[var(--redstone)]/10"
+                        : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)]"
+                    }`}
+                    onClick={() => void toggleLike(current)}
+                    disabled={busyLike === current.id}
+                  >
+                    <i className={`${user && (current.likedBy ?? []).includes(user.id) ? "fa-solid" : "fa-regular"} fa-heart`} />
+                    {current.likes} {current.likes === 1 ? "like" : "likes"}
+                  </button>
+                  {isAdmin ? (
+                    <button
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg border border-[var(--border)] px-3 py-2 text-[var(--muted)] hover:border-[#ffd166] hover:text-[#ffd166] transition disabled:opacity-40"
+                      onClick={() => void feature(current)}
+                      disabled={busyItem !== null}
+                    >
+                      <i className={`fa-${current.featured ? "solid" : "regular"} fa-star`} />
+                      {current.featured ? "Unfeature" : "Feature"}
+                    </button>
+                  ) : null}
+                  {user && (isAdmin || (current.authorId === user.id && current.authorId !== "")) ? (
+                    <button
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg border border-[var(--border)] px-3 py-2 text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)] transition disabled:opacity-40"
+                      onClick={() => void deleteItem(current)}
+                      disabled={busyItem !== null}
+                    >
+                      <i className="fa-solid fa-trash" /> Delete
+                    </button>
+                  ) : null}
+                  <button className="btn-secondary btn-sm ml-auto" onClick={() => setSlide(null)} aria-label="Close">
+                    <i className="fa-solid fa-xmark" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Comments */}
+              <div className="flex-1 overflow-y-auto p-5 min-h-0">
+                <h4 className="font-display text-sm font-bold mb-3 flex items-center gap-2">
+                  <i className="fa-regular fa-comments text-[var(--accent)]" />
+                  {current.commentCount ?? 0} {current.commentCount === 1 ? "comment" : "comments"}
+                </h4>
+                {commentsLoading ? (
+                  <p className="text-sm text-[var(--muted)]">Loading comments…</p>
+                ) : (comments ?? []).length === 0 ? (
+                  <p className="text-sm text-[var(--muted-2)]">No comments yet.</p>
+                ) : (
+                  <div className="space-y-4">
+                    {(comments ?? []).map((c) => (
+                      <div key={c.id} className="flex items-start gap-2.5">
+                        <Avatar name={c.author} src={c.avatarUrl} size="sm" className="!w-7 !h-7" color={c.color} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-[var(--fg)]">{c.author}</span>
+                            <span className="text-[11px] text-[var(--muted-2)]">{timeAgo(c.createdAt)}</span>
+                            {user && (isAdmin || (c.authorId === user.id && c.authorId !== "")) ? (
+                              <button
+                                className="text-[11px] text-[var(--muted-2)] hover:text-[var(--redstone)] transition"
+                                onClick={() => void deleteComment(c)}
+                                aria-label="Delete comment"
+                              >
+                                <i className="fa-solid fa-trash" />
+                              </button>
+                            ) : null}
+                          </div>
+                          <div className="text-sm text-[var(--fg-2)] mt-0.5">
+                            <Markdown text={c.content} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Comment composer */}
+              <div className="p-4 border-t border-[var(--border)]">
+                {user ? (
+                  <div className="flex gap-2">
+                    <input
+                      className="input flex-1"
+                      placeholder="Add a comment…"
+                      value={commentText}
+                      maxLength={2000}
+                      onChange={(e) => setCommentText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          void postComment();
+                        }
+                      }}
+                      aria-label="Add a comment"
+                    />
+                    <button
+                      className="btn-primary btn-sm"
+                      onClick={() => void postComment()}
+                      disabled={postingComment || !commentText.trim()}
+                    >
+                      {postingComment ? <i className="fa-solid fa-spinner fa-spin" /> : <i className="fa-solid fa-paper-plane" />}
+                    </button>
+                  </div>
+                ) : (
+                  <a href={`/login?next=/gallery`} className="btn-secondary btn-sm w-full justify-center">
+                    <i className="fa-brands fa-discord" />
+                    Sign in to comment
+                  </a>
+                )}
               </div>
             </div>
           </div>
@@ -433,4 +920,28 @@ export default function GalleryPage() {
       ) : null}
     </SubPage>
   );
+}
+
+/** Upload with real progress events (fetch has none for request bodies). */
+function xhrUpload(url: string, file: File, onProgress: (pct: number) => void): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const body = new FormData();
+    body.set("image", file);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      try {
+        const data = JSON.parse(xhr.responseText) as { url?: string; error?: string };
+        if (xhr.status >= 200 && xhr.status < 300 && data.url) resolve(data.url);
+        else reject(new Error(data.error ?? `Upload failed (${xhr.status})`));
+      } catch {
+        reject(new Error("Upload failed"));
+      }
+    };
+    xhr.onerror = () => reject(new Error("Upload failed — check your connection."));
+    xhr.send(body);
+  });
 }

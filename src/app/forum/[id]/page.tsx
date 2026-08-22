@@ -2,14 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { Avatar } from "@/components/Avatar";
+import { Markdown } from "@/components/Markdown";
+import { RichEditor } from "@/components/RichEditor";
+import { PollViewer } from "@/components/Poll";
 import { useToast } from "@/components/Toast";
 import { SubPage } from "@/components/SubPage";
 import { useSession } from "@/lib/use-session";
 import { timeAgo } from "@/lib/time";
 import { categoryClass } from "@/lib/forum-categories";
-import type { ForumReply, ForumThread } from "@/types";
+import type { ForumPoll, ForumReply, ForumThread } from "@/types";
 
 /** Pinned comments first, then oldest. */
 function sortReplies(rs: ForumReply[]): ForumReply[] {
@@ -22,20 +25,26 @@ function sortReplies(rs: ForumReply[]): ForumReply[] {
 
 export default function ThreadPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const { show } = useToast();
   const { user, loading: sessionLoading } = useSession();
+  const isAdmin = user?.role === "admin";
 
   const [thread, setThread] = useState<ForumThread | null>(null);
   const [replies, setReplies] = useState<ForumReply[]>([]);
+  const [poll, setPoll] = useState<ForumPoll | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
   const [replyText, setReplyText] = useState("");
   const [replying, setReplying] = useState(false);
   const [busyReply, setBusyReply] = useState<number | null>(null);
-  const [busyLike, setBusyLike] = useState<number | null>(null);
+  const [busyLike, setBusyLike] = useState<number | "thread" | null>(null);
+  const [busyThreadAction, setBusyThreadAction] = useState(false);
 
-  const isAdmin = user?.role === "admin";
+  // Inline editing state (thread or reply).
+  const [editing, setEditing] = useState<{ kind: "thread" | "reply"; id: number; title?: string; content: string } | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,9 +55,14 @@ export default function ThreadPage() {
         setNotFound(true);
         return;
       }
-      const data = (await res.json()) as { thread: ForumThread; replies: ForumReply[] };
+      const data = (await res.json()) as {
+        thread: ForumThread;
+        replies: ForumReply[];
+        poll: ForumPoll | null;
+      };
       setThread(data.thread);
       setReplies(sortReplies(data.replies));
+      setPoll(data.poll);
     } catch {
       setNotFound(true);
     } finally {
@@ -59,6 +73,10 @@ export default function ThreadPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // ------------------------------------------------------------------
+  // Replies
+  // ------------------------------------------------------------------
 
   const submitReply = async () => {
     const text = replyText.trim();
@@ -77,8 +95,12 @@ export default function ThreadPage() {
         setReplyText("");
       } else if (res.status === 401) {
         show("Sign in to reply", "Log in with Discord to reply.", "error");
+      } else if (res.status === 423) {
+        show("Thread locked", "This thread no longer accepts replies.", "error");
+        setThread((t) => (t ? { ...t, locked: true } : t));
       } else {
-        show("Couldn't reply", "The server rejected the request.", "error");
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        show("Couldn't reply", data.error ?? "The server rejected the request.", "error");
       }
     } catch {
       show("Couldn't reply", "Check your connection and try again.");
@@ -112,8 +134,12 @@ export default function ThreadPage() {
     }
   };
 
-  /** Toggle the signed-in user's like on a reply (optimistic). */
-  const toggleLike = async (reply: ForumReply) => {
+  // ------------------------------------------------------------------
+  // Likes — replies and the thread itself.
+  // ------------------------------------------------------------------
+
+  /** Toggle the signed-in user's like (optimistic). */
+  const toggleLikeReply = async (reply: ForumReply) => {
     if (!user) {
       show("Sign in to like", "Log in with Discord to like comments.", "error");
       return;
@@ -121,7 +147,6 @@ export default function ThreadPage() {
     if (busyLike !== null) return;
     setBusyLike(reply.id ?? 0);
     const liked = (reply.likedBy ?? []).includes(user.id);
-    // Optimistic flip.
     setReplies((prev) =>
       prev.map((r) =>
         r.id === reply.id
@@ -141,13 +166,10 @@ export default function ThreadPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ replyId: reply.id }),
       });
-      if (!res.ok) {
-        throw new Error(`like failed (${res.status})`);
-      }
+      if (!res.ok) throw new Error(`like failed (${res.status})`);
       const data = (await res.json()) as { reply: ForumReply };
       setReplies((prev) => prev.map((r) => (r.id === reply.id ? data.reply : r)));
     } catch {
-      // Roll back the optimistic update.
       setReplies((prev) =>
         prev.map((r) =>
           r.id === reply.id ? { ...r, likedBy: reply.likedBy ?? [], likes: reply.likes ?? 0 } : r
@@ -159,7 +181,121 @@ export default function ThreadPage() {
     }
   };
 
-  /** Admin: pin/unpin a comment. */
+  const toggleLikeThread = async () => {
+    if (!user) {
+      show("Sign in to like", "Log in with Discord to like posts.", "error");
+      return;
+    }
+    if (!thread || busyLike !== null) return;
+    setBusyLike("thread");
+    const liked = (thread.likedBy ?? []).includes(user.id);
+    setThread((t) =>
+      t
+        ? {
+            ...t,
+            likedBy: liked
+              ? (t.likedBy ?? []).filter((x) => x !== user.id)
+              : [...(t.likedBy ?? []), user.id],
+            likes: (t.likes ?? 0) + (liked ? -1 : 1),
+          }
+        : t
+    );
+    try {
+      const res = await fetch(`/api/forum/${id}/like`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) throw new Error(`like failed (${res.status})`);
+      const data = (await res.json()) as { thread: ForumThread };
+      setThread((t) =>
+        t
+          ? {
+              ...t,
+              likes: data.thread.likes,
+              likedBy: data.thread.likedBy,
+            }
+          : t
+      );
+    } catch {
+      setThread((t) => (t ? { ...t, likedBy: thread.likedBy ?? [], likes: thread.likes ?? 0 } : t));
+      show("Couldn't like", "The server rejected the request.", "error");
+    } finally {
+      setBusyLike(null);
+    }
+  };
+
+  // ------------------------------------------------------------------
+  // Poll voting.
+  // ------------------------------------------------------------------
+
+  const castVote = async (optionId: string) => {
+    const res = await fetch(`/api/forum/${id}/vote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ optionId }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { poll?: ForumPoll; error?: string };
+    if (!res.ok || !data.poll) {
+      throw new Error(data.error ?? "Couldn't vote — try again.");
+    }
+    setPoll(data.poll);
+  };
+
+  // ------------------------------------------------------------------
+  // Moderation: pin/lock/delete thread, pin reply.
+  // ------------------------------------------------------------------
+
+  const threadAction = async (action: "pin" | "lock" | "delete") => {
+    if (!thread || busyThreadAction) return;
+    if (action === "delete") {
+      const ok = window.confirm(`Delete "${thread.title}"? This can't be undone.`);
+      if (!ok) return;
+    }
+    setBusyThreadAction(true);
+    try {
+      if (action === "delete") {
+        const res = await fetch("/api/forum", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: thread.id }),
+        });
+        if (!res.ok) {
+          show("Couldn't delete", "The server rejected the request.", "error");
+          return;
+        }
+        show("Deleted", "Thread removed.");
+        router.push("/forum");
+        return;
+      }
+      const res = await fetch("/api/forum", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: thread.id,
+          ...(action === "pin" ? { pinned: !thread.pinned } : { locked: !thread.locked }),
+        }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        show("Couldn't update", data.error ?? "The server rejected the request.", "error");
+        return;
+      }
+      const updated = (await res.json()) as ForumThread;
+      setThread((t) => (t ? { ...t, pinned: updated.pinned, locked: updated.locked } : t));
+      show(
+        action === "pin" ? (updated.pinned ? "Pinned" : "Unpinned") : updated.locked ? "Locked" : "Unlocked",
+        action === "pin"
+          ? `Thread ${updated.pinned ? "is now pinned" : "is no longer pinned"}.`
+          : `Replies are ${updated.locked ? "closed" : "open"} again.`
+      );
+    } catch {
+      show("Couldn't update", "Check your connection and try again.");
+    } finally {
+      setBusyThreadAction(false);
+    }
+  };
+
   const pinReply = async (reply: ForumReply) => {
     if (!isAdmin || busyReply !== null) return;
     setBusyReply(reply.id ?? 0);
@@ -175,10 +311,7 @@ export default function ThreadPage() {
       }
       const updated = (await res.json()) as ForumReply;
       setReplies((prev) => sortReplies(prev.map((r) => (r.id === updated.id ? updated : r))));
-      show(
-        updated.pinned ? "Pinned" : "Unpinned",
-        `Comment ${updated.pinned ? "pinned" : "unpinned"}.`
-      );
+      show(updated.pinned ? "Pinned" : "Unpinned", `Comment ${updated.pinned ? "pinned" : "unpinned"}.`);
     } catch {
       show("Couldn't update", "Check your connection and try again.");
     } finally {
@@ -186,8 +319,74 @@ export default function ThreadPage() {
     }
   };
 
-  const inputClass =
-    "w-full bg-[var(--bg-2)] border border-[var(--border)] px-4 py-3 text-sm text-[var(--fg)] outline-none focus:border-[var(--accent)] transition placeholder:text-[var(--muted-2)] rounded-lg";
+  // ------------------------------------------------------------------
+  // Editing (thread + replies).
+  // ------------------------------------------------------------------
+
+  const startEditThread = () => {
+    if (!thread) return;
+    setEditing({ kind: "thread", id: thread.id ?? 0, title: thread.title, content: thread.content ?? "" });
+  };
+
+  const startEditReply = (r: ForumReply) => {
+    setEditing({ kind: "reply", id: r.id ?? 0, content: r.content });
+  };
+
+  const saveEdit = async () => {
+    if (!editing || savingEdit) return;
+    const content = editing.content.trim();
+    if (!content) return;
+    setSavingEdit(true);
+    try {
+      const url = editing.kind === "thread" ? "/api/forum" : `/api/forum/${id}`;
+      const res = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          editing.kind === "thread"
+            ? { id: editing.id, title: editing.title?.trim() || undefined, content }
+            : { replyId: editing.id, content }
+        ),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        show("Couldn't save", data.error ?? "The server rejected the request.", "error");
+        return;
+      }
+      const updated = (await res.json()) as ForumThread & ForumReply;
+      if (editing.kind === "thread") {
+        setThread((t) =>
+          t
+            ? {
+                ...t,
+                title: updated.title ?? t.title,
+                content: updated.content ?? t.content,
+                editedAt: updated.editedAt ?? new Date().toISOString(),
+              }
+            : t
+        );
+      } else {
+        setReplies((prev) =>
+          prev.map((r) =>
+            r.id === editing.id
+              ? { ...r, content: updated.content, editedAt: updated.editedAt ?? new Date().toISOString() }
+              : r
+          )
+        );
+      }
+      setEditing(null);
+      show("Saved", "Your edit is live.");
+    } catch {
+      show("Couldn't save", "Check your connection and try again.");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const likedThread = thread && user ? (thread.likedBy ?? []).includes(user.id) : false;
+  const canEditThread =
+    thread && user && (isAdmin || (thread.authorId === user.id && thread.authorId !== ""));
+  const locked = Boolean(thread?.locked);
 
   return (
     <SubPage className="max-w-4xl">
@@ -220,26 +419,143 @@ export default function ThreadPage() {
                         <i className="fa-solid fa-thumbtack" /> Pinned
                       </span>
                     ) : null}
+                    {thread.locked ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[var(--diamond)] border border-[var(--diamond)]/40 rounded px-1.5 py-0.5">
+                        <i className="fa-solid fa-lock" /> Locked
+                      </span>
+                    ) : null}
                     <span
                       className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded border ${categoryClass(thread.category)}`}
                     >
                       {thread.category}
                     </span>
                   </div>
-                  <h1 className="font-display text-2xl sm:text-3xl font-bold leading-tight">
-                    {thread.title}
-                  </h1>
-                  <div className="text-xs text-[var(--muted)] mt-2">
-                    by <span className="text-[var(--fg-2)]">{thread.author}</span> · {timeAgo(thread.last)}
+                  {editing?.kind === "thread" ? (
+                    <input
+                      className="input font-display text-xl font-bold"
+                      value={editing.title ?? ""}
+                      onChange={(e) => setEditing({ ...editing, title: e.target.value })}
+                      maxLength={120}
+                      aria-label="Edit title"
+                    />
+                  ) : (
+                    <h1 className="font-display text-2xl sm:text-3xl font-bold leading-tight">
+                      {thread.title}
+                    </h1>
+                  )}
+                  <div className="text-xs text-[var(--muted)] mt-2 flex items-center gap-2 flex-wrap">
+                    <span>
+                      by <span className="text-[var(--fg-2)]">{thread.author}</span> · {timeAgo(thread.last)}
+                    </span>
+                    {thread.editedAt ? (
+                      <span className="text-[var(--muted-2)] italic">· edited {timeAgo(thread.editedAt)}</span>
+                    ) : null}
+                    <span className="inline-flex items-center gap-1" title="Views">
+                      <i className="fa-regular fa-eye" /> {thread.views ?? 0}
+                    </span>
                   </div>
                 </div>
               </div>
-              {thread.content ? (
-                <p className="mt-6 text-[var(--fg-2)] leading-relaxed whitespace-pre-wrap">
-                  {thread.content}
-                </p>
-              ) : null}
+
+              {editing?.kind === "thread" ? (
+                <div className="mt-6">
+                  <RichEditor
+                    idPrefix="edit-thread"
+                    value={editing.content}
+                    onChange={(v) => setEditing({ ...editing, content: v })}
+                    rows={10}
+                  />
+                  <div className="flex gap-3 mt-4">
+                    <button className="btn-primary" onClick={() => void saveEdit()} disabled={savingEdit || !editing.content.trim()}>
+                      {savingEdit ? "Saving…" : "Save changes"}
+                    </button>
+                    <button className="btn-secondary" onClick={() => setEditing(null)} disabled={savingEdit}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {thread.content ? (
+                    <div className="mt-6">
+                      <Markdown text={thread.content} />
+                    </div>
+                  ) : null}
+
+                  {/* Actions: like + moderation */}
+                  <div className="mt-6 flex items-center gap-2 flex-wrap">
+                    <button
+                      className={`inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg border px-3 py-2 transition disabled:opacity-40 ${
+                        likedThread
+                          ? "border-[var(--redstone)] text-[var(--redstone)] bg-[var(--redstone)]/10 shadow-[0_0_14px_-6px_var(--redstone)]"
+                          : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)]"
+                      }`}
+                      onClick={() => void toggleLikeThread()}
+                      disabled={busyLike !== null}
+                      aria-label={likedThread ? "Unlike post" : "Like post"}
+                    >
+                      <i className={`${likedThread ? "fa-solid" : "fa-regular"} fa-heart`} />
+                      <span>{thread.likes ?? 0}</span>
+                      <span className="hidden sm:inline normal-case tracking-normal">
+                        {likedThread ? "Liked" : "Like"}
+                      </span>
+                    </button>
+                    {canEditThread ? (
+                      <button
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg border border-[var(--border)] px-3 py-2 text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition"
+                        onClick={startEditThread}
+                      >
+                        <i className="fa-solid fa-pen text-xs" /> Edit
+                      </button>
+                    ) : null}
+                    {isAdmin ? (
+                      <>
+                        <button
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg border border-[var(--border)] px-3 py-2 text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition disabled:opacity-40"
+                          onClick={() => void threadAction("pin")}
+                          disabled={busyThreadAction}
+                        >
+                          <i className="fa-solid fa-thumbtack text-xs" />
+                          {thread.pinned ? "Unpin" : "Pin"}
+                        </button>
+                        <button
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg border border-[var(--border)] px-3 py-2 text-[var(--muted)] hover:border-[var(--diamond)] hover:text-[var(--diamond)] transition disabled:opacity-40"
+                          onClick={() => void threadAction("lock")}
+                          disabled={busyThreadAction}
+                        >
+                          <i className="fa-solid text-xs fa-lock" />
+                          {thread.locked ? "Unlock" : "Lock"}
+                        </button>
+                        <button
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg border border-[var(--border)] px-3 py-2 text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)] transition disabled:opacity-40"
+                          onClick={() => void threadAction("delete")}
+                          disabled={busyThreadAction}
+                        >
+                          <i className="fa-solid fa-trash text-xs" /> Delete
+                        </button>
+                      </>
+                    ) : canEditThread ? (
+                      <button
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg border border-[var(--border)] px-3 py-2 text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)] transition"
+                        onClick={() => void threadAction("delete")}
+                      >
+                        <i className="fa-solid fa-trash text-xs" /> Delete
+                      </button>
+                    ) : null}
+                  </div>
+                </>
+              )}
             </article>
+
+            {/* Poll */}
+            {poll ? (
+              <PollViewer
+                poll={poll}
+                signedIn={Boolean(user)}
+                canVote={Boolean(user) && !locked}
+                onVote={castVote}
+              />
+            ) : null}
 
             {/* Replies — X-style feed: divider-separated posts */}
             <div className="mt-8">
@@ -251,12 +567,15 @@ export default function ThreadPage() {
               {replies.length === 0 ? (
                 <div className="text-sm text-[var(--muted)] py-12 text-center border border-dashed border-[var(--border)] rounded-xl">
                   <i className="fa-regular fa-comment text-3xl text-[var(--muted-2)] mb-3 block" />
-                  No replies yet — be the first!
+                  {locked ? "Thread locked — replies are closed." : "No replies yet — be the first!"}
                 </div>
               ) : (
                 <div className="card overflow-hidden">
                   {replies.map((r, i) => {
                     const liked = (r.likedBy ?? []).includes(user?.id ?? "");
+                    const canEdit =
+                      user && (isAdmin || (r.authorId === user.id && r.authorId !== ""));
+                    const isEditing = editing?.kind === "reply" && editing.id === r.id;
                     return (
                       <div
                         key={r.id}
@@ -267,27 +586,33 @@ export default function ThreadPage() {
                         <Avatar name={r.author} src={r.avatarUrl} size="md" color={r.color} />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-semibold text-[var(--fg)]">
-                                {r.author}
-                              </span>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-semibold text-[var(--fg)]">{r.author}</span>
                               {thread.authorId && r.authorId === thread.authorId ? (
                                 <span className="text-[9px] font-bold uppercase tracking-wider text-[var(--accent-bright)] bg-[var(--accent)]/15 border border-[var(--accent)]/30 rounded px-1.5 py-0.5">
                                   OP
                                 </span>
                               ) : null}
-                              <span className="text-xs text-[var(--muted-2)]">
-                                {timeAgo(r.createdAt)}
-                              </span>
+                              <span className="text-xs text-[var(--muted-2)]">{timeAgo(r.createdAt)}</span>
+                              {r.editedAt ? (
+                                <span className="text-xs text-[var(--muted-2)] italic">edited</span>
+                              ) : null}
                               {r.pinned ? (
                                 <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-[var(--accent)] border border-[var(--accent)] rounded px-1.5 py-0.5">
-                                  <i className="fa-solid fa-thumbtack" />
-                                  Pinned
+                                  <i className="fa-solid fa-thumbtack" /> Pinned
                                 </span>
                               ) : null}
                             </div>
-                            {isAdmin || (user && r.authorId === user.id && r.authorId !== "") ? (
+                            {canEdit && !isEditing ? (
                               <div className="flex items-center gap-1.5">
+                                <button
+                                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition"
+                                  onClick={() => startEditReply(r)}
+                                  aria-label="Edit reply"
+                                  title="Edit"
+                                >
+                                  <i className="fa-solid fa-pen text-xs" />
+                                </button>
                                 {isAdmin ? (
                                   <button
                                     className="w-8 h-8 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition disabled:opacity-40"
@@ -304,35 +629,60 @@ export default function ThreadPage() {
                                   onClick={() => void deleteReply(r)}
                                   disabled={busyReply !== null}
                                   aria-label="Delete reply"
-                                  title="Delete reply"
+                                  title="Delete"
                                 >
                                   <i className="fa-solid fa-trash text-xs" />
                                 </button>
                               </div>
                             ) : null}
                           </div>
-                          <p className="mt-2 text-[var(--fg-2)] leading-relaxed whitespace-pre-wrap">
-                            {r.content}
-                          </p>
-                          <div className="mt-3">
-                            <button
-                              className={`inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg border px-2.5 py-1.5 transition disabled:opacity-40 ${
-                                liked
-                                  ? "border-[var(--redstone)] text-[var(--redstone)] bg-[var(--redstone)]/10 shadow-[0_0_14px_-6px_var(--redstone)]"
-                                  : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)]"
-                              }`}
-                              onClick={() => void toggleLike(r)}
-                              disabled={busyLike === r.id}
-                              aria-label={liked ? "Unlike comment" : "Like comment"}
-                              title={liked ? "Unlike" : "Like"}
-                            >
-                              <i className={`${liked ? "fa-solid" : "fa-regular"} fa-heart`} />
-                              <span>{r.likes ?? 0}</span>
-                              <span className="hidden sm:inline normal-case tracking-normal">
-                                {liked ? "Liked" : "Like"}
-                              </span>
-                            </button>
-                          </div>
+
+                          {isEditing ? (
+                            <div className="mt-2">
+                              <RichEditor
+                                idPrefix={`edit-reply-${r.id}`}
+                                value={editing?.content ?? ""}
+                                onChange={(v) => editing && setEditing({ ...editing, content: v })}
+                                rows={5}
+                              />
+                              <div className="flex gap-3 mt-3">
+                                <button
+                                  className="btn-primary py-2.5! px-5! text-xs!"
+                                  onClick={() => void saveEdit()}
+                                  disabled={savingEdit || !(editing?.content.trim())}
+                                >
+                                  {savingEdit ? "Saving…" : "Save"}
+                                </button>
+                                <button className="btn-secondary" onClick={() => setEditing(null)} disabled={savingEdit}>
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="mt-2 text-[var(--fg-2)] leading-relaxed">
+                                <Markdown text={r.content} />
+                              </div>
+                              <div className="mt-3">
+                                <button
+                                  className={`inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg border px-2.5 py-1.5 transition disabled:opacity-40 ${
+                                    liked
+                                      ? "border-[var(--redstone)] text-[var(--redstone)] bg-[var(--redstone)]/10 shadow-[0_0_14px_-6px_var(--redstone)]"
+                                      : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)]"
+                                  }`}
+                                  onClick={() => void toggleLikeReply(r)}
+                                  disabled={busyLike === r.id}
+                                  aria-label={liked ? "Unlike comment" : "Like comment"}
+                                >
+                                  <i className={`${liked ? "fa-solid" : "fa-regular"} fa-heart`} />
+                                  <span>{r.likes ?? 0}</span>
+                                  <span className="hidden sm:inline normal-case tracking-normal">
+                                    {liked ? "Liked" : "Like"}
+                                  </span>
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                     );
@@ -343,41 +693,38 @@ export default function ThreadPage() {
 
             {/* Reply composer */}
             <div className="mt-8 card p-6">
-              <h3 className="font-display text-base font-bold mb-4">Reply</h3>
-              {user ? (
+              <h3 className="font-display text-base font-bold mb-4 flex items-center gap-2">
+                <i className="fa-regular fa-comment-dots text-[var(--accent)]" />
+                Reply
+              </h3>
+              {locked ? (
+                <div className="text-center py-6 border border-dashed border-[var(--diamond)]/40 rounded-xl bg-[var(--diamond)]/5">
+                  <i className="fa-solid fa-lock text-2xl text-[var(--diamond)] mb-3 block" />
+                  <p className="text-sm text-[var(--muted)]">
+                    This thread is locked — replies are closed.
+                    {isAdmin ? " Unlock it from the controls above the post." : ""}
+                  </p>
+                </div>
+              ) : user ? (
                 <>
-                  <textarea
-                    className={`${inputClass} min-h-[100px] resize-y`}
-                    placeholder="Write a reply…"
+                  <RichEditor
+                    idPrefix="reply"
                     value={replyText}
-                    onChange={(e) => setReplyText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                        e.preventDefault();
-                        void submitReply();
-                      }
-                    }}
-                    maxLength={4000}
+                    onChange={setReplyText}
+                    rows={5}
+                    maxLength={20000}
+                    placeholder="Write a reply… paste or drag screenshots straight in."
                   />
                   <div className="flex items-center justify-between mt-3 gap-3 flex-wrap">
                     <span className="text-xs text-[var(--muted)]">
                       Replying as <span className="text-[var(--fg-2)]">{user.username}</span>
-                      {" · "}
-                      <kbd className="inline-flex items-center gap-0.5 text-[10px] text-[var(--muted-2)] border border-[var(--border)] rounded px-1 py-0.5">
-                        Ctrl+Enter
-                      </kbd>{" "}
-                      to post
                     </span>
                     <button
                       className="btn-primary py-2.5! px-5! text-xs!"
                       onClick={() => void submitReply()}
                       disabled={replying || !replyText.trim()}
                     >
-                      {replying ? (
-                        <i className="fa-solid fa-spinner fa-spin" />
-                      ) : (
-                        <i className="fa-solid fa-paper-plane" />
-                      )}
+                      {replying ? <i className="fa-solid fa-spinner fa-spin" /> : <i className="fa-solid fa-paper-plane" />}
                       {replying ? "Posting…" : "Post Reply"}
                     </button>
                   </div>
@@ -387,9 +734,7 @@ export default function ThreadPage() {
               ) : (
                 <div className="text-center py-4">
                   <i className="fa-brands fa-discord text-3xl text-[#5865F2] mb-4 block" />
-                  <p className="text-sm text-[var(--muted)] mb-5">
-                    Sign in with Discord to reply.
-                  </p>
+                  <p className="text-sm text-[var(--muted)] mb-5">Sign in with Discord to reply.</p>
                   <Link href={`/login?next=/forum/${id}`} className="btn-primary w-full sm:w-auto justify-center">
                     <i className="fa-brands fa-discord" />
                     Log in with Discord

@@ -1,24 +1,49 @@
 import { NextRequest, NextResponse } from "next/server";
+import { count, desc } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { galleryItems } from "@/lib/schema";
+import { galleryComments, galleryItems } from "@/lib/schema";
 import { fallbackGallery } from "@/lib/fallback-data";
 import { getSessionUser } from "@/lib/auth";
 import { canPostToGallery, findAccount } from "@/lib/accounts";
-import { ALLOWED_MIME, GALLERY_CATEGORIES, MAX_BYTES, sniffImageMime, uploadImage } from "@/lib/storage";
+import { GALLERY_CATEGORIES } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
-// List all gallery items.
+const MAX_IMAGES = 8;
+
+/** Images must live in this project's Supabase storage — gallery posts are
+ * uploaded files, not arbitrary hotlinks (which could rot or smuggle
+ * tracking). Forum embeds have no such rule; the gallery grid does. */
+function isOurStorageUrl(url: string): boolean {
+  const base = process.env.SUPABASE_URL?.replace(/\/$/, "");
+  return Boolean(base) && url.startsWith(`${base}/storage/v1/object/public/`);
+}
+
+// List all gallery items, featured first then newest, with comment counts.
 export async function GET() {
   const db = getDb();
   if (!db) return NextResponse.json(fallbackGallery);
-  const rows = await db.select().from(galleryItems);
-  return NextResponse.json(rows);
+  const [rows, commentCounts] = await Promise.all([
+    db.select().from(galleryItems).orderBy(desc(galleryItems.featured), desc(galleryItems.id)),
+    db
+      .select({ itemId: galleryComments.itemId, n: count() })
+      .from(galleryComments)
+      .groupBy(galleryComments.itemId),
+  ]);
+  const counts = new Map(commentCounts.map((c) => [c.itemId, c.n]));
+  return NextResponse.json(
+    rows.map((row) => ({ ...row, commentCount: counts.get(row.id) ?? 0 }))
+  );
 }
 
 // Post a new gallery item. Requires a signed-in account that is verified in
 // the Discord server (or admin, or an explicit gallery_post permission).
-// Body is multipart/form-data: { title, category, image <File> }.
+//
+// Body is JSON: { title, category, description?, images: string[] }. The
+// images are URLs returned by /api/upload — the client uploads each file
+// separately (with progress + compression), which keeps every request far
+// below the serverless 4.5 MB body limit that a multi-file multipart POST
+// would blow through.
 export async function POST(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) {
@@ -40,22 +65,16 @@ export async function POST(request: NextRequest) {
       );
     }
   } else {
-    // Without a DB nothing persists — reject before attempting an upload so we
-    // don't orphan a file in storage.
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
 
-  let form: FormData;
-  try {
-    form = await request.formData();
-  } catch {
-    return NextResponse.json({ error: "Malformed request." }, { status: 400 });
-  }
-
-  const title = typeof form.get("title") === "string" ? (form.get("title") as string).trim() : "";
-  const category =
-    typeof form.get("category") === "string" ? (form.get("category") as string) : "";
-  const file = form.get("image");
+  const body = await request.json().catch(() => ({}));
+  const title = typeof body.title === "string" ? body.title.trim() : "";
+  const category = typeof body.category === "string" ? body.category : "";
+  const description = typeof body.description === "string" ? body.description.trim() : "";
+  const images = Array.isArray(body.images)
+    ? body.images.filter((u: unknown): u is string => typeof u === "string" && isOurStorageUrl(u))
+    : [];
 
   if (!title) {
     return NextResponse.json({ error: "A title is required." }, { status: 400 });
@@ -64,61 +83,33 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Titles can be at most 60 characters." }, { status: 400 });
   }
   if (!GALLERY_CATEGORIES.includes(category as (typeof GALLERY_CATEGORIES)[number])) {
-    return NextResponse.json(
-      { error: "Pick a valid category." },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Pick a valid category." }, { status: 400 });
   }
-  if (!(file instanceof File)) {
-    return NextResponse.json({ error: "An image is required." }, { status: 400 });
+  if (description.length > 4000) {
+    return NextResponse.json({ error: "Descriptions can be at most 4,000 characters." }, { status: 400 });
   }
-  if (!ALLOWED_MIME.includes(file.type as (typeof ALLOWED_MIME)[number])) {
-    return NextResponse.json(
-      { error: "Images must be JPG, PNG, WebP or GIF." },
-      { status: 400 }
-    );
+  if (images.length === 0) {
+    return NextResponse.json({ error: "Upload at least one image." }, { status: 400 });
   }
-  if (file.size > MAX_BYTES) {
-    return NextResponse.json({ error: "Images must be under 8 MB." }, { status: 400 });
+  if (images.length > MAX_IMAGES) {
+    return NextResponse.json({ error: `Posts can have at most ${MAX_IMAGES} images.` }, { status: 400 });
   }
 
-  // Upload to Supabase Storage, then persist.
-  let imageUrl: string;
-  try {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    // Magic-byte check: the client-declared MIME type is not proof. Only
-    // real JPG/PNG/WebP/GIF bytes may enter the public bucket.
-    const sniffed = sniffImageMime(buffer);
-    if (!sniffed) {
-      return NextResponse.json(
-        { error: "That file doesn't look like a real JPG, PNG, WebP or GIF image." },
-        { status: 400 }
-      );
-    }
-    imageUrl = await uploadImage(buffer, sniffed, file.name);
-  } catch (err) {
-    // Log the raw error internally, but never echo it to the client (it can
-    // reveal env var names / internal layout).
-    console.error("gallery: upload failed", err);
-    const configured = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
-    return NextResponse.json(
-      { error: configured ? "Upload failed — try again in a moment." : "Gallery storage isn't configured yet." },
-      { status: 503 }
-    );
-  }
-
-  const createdAt = new Date().toISOString();
   const [created] = await getDb()!
     .insert(galleryItems)
     .values({
       title,
       builder: user.username,
+      authorId: user.id,
       category,
+      description,
       likes: 0,
-      image: imageUrl,
+      image: images[0],
+      images,
       height: "medium",
+      createdAt: new Date(),
     })
     .returning();
 
-  return NextResponse.json({ ...created, createdAt }, { status: 201 });
+  return NextResponse.json({ ...created, commentCount: 0 }, { status: 201 });
 }

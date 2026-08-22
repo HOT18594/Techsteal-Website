@@ -11,6 +11,36 @@ content.
 
 ---
 
+## Forum & Gallery (overhauled)
+
+**Forum**
+- Rich markdown editor: toolbar (bold/italic/strike, headings, lists, quotes,
+  code blocks, spoilers, links), live preview, `Ctrl+B/I/K` shortcuts.
+- Image embedding in posts and replies — pick, **paste**, or drag a file; it's
+  compressed in the browser and uploaded to Supabase Storage with progress.
+- Threads and replies are editable by their authors (admins anytime), with an
+  "edited" marker. Thread/reply **likes**, **view counters**, and **pins**.
+- Admins can **lock** threads (closes replies) and attach **polls** with an end
+  date: one vote per account (changeable until the poll ends), live results
+  with percentage bars, and a countdown.
+- Server-side search, category filters, sort modes (Latest/Top/Hot/Most
+  viewed/Unanswered) and pagination keep the list fast as it grows.
+
+**Gallery**
+- Multi-image posts (up to 8) with a cover pick, markdown descriptions, and
+  real per-user likes.
+- Client-side image compression (≤1920px WebP) before upload — screenshots
+  shrink ~80–95%, so pages load fast and uploads stay under the serverless
+  body limit. Each image uploads separately with its own progress bar.
+- Comments on every post, view counters, admin **featured** (pinned) posts,
+  delete-your-own, and a split-pane lightbox with keyboard navigation across
+  every image.
+
+All content renders through a safe, dependency-free markdown renderer (React
+nodes, never `dangerouslySetInnerHTML`; links/images limited to http(s)).
+
+---
+
 ## Tech stack & structure
 
 ```

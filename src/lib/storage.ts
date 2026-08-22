@@ -65,8 +65,16 @@ function serviceRoleKey(): string {
  * Upload raw image bytes to the public `gallery` bucket and return its stable
  * public URL. Throws a descriptive Error when storage isn't configured or the
  * upload fails so the API route can surface a clean message.
+ *
+ * `folder` separates gallery posts (`gallery/`) from forum embeds (`embeds/`)
+ * inside the same bucket.
  */
-export async function uploadImage(buffer: Buffer, mime: string, originalName: string): Promise<string> {
+export async function uploadImage(
+  buffer: Buffer,
+  mime: string,
+  originalName: string,
+  folder = "gallery"
+): Promise<string> {
   if (!ALLOWED_MIME.includes(mime as (typeof ALLOWED_MIME)[number])) {
     throw new Error("Unsupported image type.");
   }
@@ -76,7 +84,7 @@ export async function uploadImage(buffer: Buffer, mime: string, originalName: st
   // Safe file extension from the mime, with a random suffix to avoid collisions.
   const base = (originalName || "image").replace(/[^\w.-]/g, "").replace(/^[.]+/, "").slice(0, 60) || "image";
   const ext = MIME_EXT[mime] ?? "jpg";
-  const path = `gallery/${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${base}.${ext}`;
+  const path = `${folder}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${base}.${ext}`;
 
   const res = await fetch(`${url}/storage/v1/object/${BUCKET}/${path}`, {
     method: "POST",
