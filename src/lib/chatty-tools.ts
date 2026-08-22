@@ -9,7 +9,7 @@
 import { count, desc, eq, ilike, or } from "drizzle-orm";
 import { getDb } from "./db";
 import { forumReplies, forumThreads, galleryItems, profiles, ruleSections, timelineEvents } from "./schema";
-import { getServerStatus } from "./mcsrv";
+import { getLiveStatus } from "./live-status";
 import { formatSearchResults, webSearch } from "./web-search";
 
 export interface ChattyToolDef {
@@ -163,11 +163,13 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
     case "get_server_status": {
       const label = "Checking live status";
       try {
-        const status = await getServerStatus();
+        const status = await getLiveStatus();
         if (status.source !== "live") {
           return { ok: true, label, content: "Live status is unavailable right now (the status API is unreachable). Say so honestly." };
         }
-        if (!status.online) return { ok: true, label, content: "The server is currently OFFLINE." };
+        if (!status.online) {
+          return { ok: true, label, content: `The server is currently ${status.stateLabel ?? "OFFLINE"}.` };
+        }
         const names = (status.playerList ?? []).filter(Boolean);
         return {
           ok: true,

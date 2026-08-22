@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { profiles } from "@/lib/schema";
 import { fallbackMembers } from "@/lib/fallback-data";
-import { getServerStatus } from "@/lib/mcsrv";
+import { getLiveStatus } from "@/lib/live-status";
 import { minotarUrl } from "@/lib/forum-avatars";
 import type { Member } from "@/types";
 
@@ -35,10 +35,12 @@ export async function GET() {
     .orderBy(profiles.username);
 
   // Fetch live status once and build a set of currently-online Minecraft
-  // names so each account can be marked without per-row API calls.
+  // names so each account can be marked without per-row API calls. The
+  // exaroton panel list is authoritative — ping-based lists (mcsrvstat)
+  // are often empty even with players online.
   let onlineNames = new Set<string>();
   try {
-    const status = await getServerStatus();
+    const status = await getLiveStatus();
     if (status.source === "live" && status.online) {
       onlineNames = new Set((status.playerList ?? []).map((n) => n.toLowerCase()));
     }
