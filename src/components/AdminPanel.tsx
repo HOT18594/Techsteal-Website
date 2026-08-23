@@ -139,7 +139,7 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
                       name={account.username}
                       src={account.avatarUrl ?? null}
                       size="sm"
-                      className="!w-10 !h-10 flex-shrink-0"
+                      className="w-10! h-10! flex-shrink-0"
                     />
                     <div className="min-w-0">
                       <div className="font-medium break-words leading-snug">
@@ -234,7 +234,7 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
                   className="card p-4 flex items-center justify-between gap-4 opacity-80"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <Avatar name={account.username} src={account.avatarUrl} size="sm" className="!w-8 !h-8" />
+                    <Avatar name={account.username} src={account.avatarUrl} size="sm" className="w-8! h-8!" />
                     <span className="text-sm font-medium truncate line-through decoration-[var(--redstone)]/60">
                       {account.username}
                     </span>

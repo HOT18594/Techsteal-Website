@@ -6,7 +6,6 @@ import { useEffect } from "react";
  * Cinematic scroll engine (dependency-free).
  *
  * Runs a requestAnimationFrame loop that:
- * - exposes `--scroll-y` / `--scroll-v` CSS variables (velocity-aware),
  * - drives the top scroll-progress bar,
  * - toggles `.scrolled` on <body> (navbar glow),
  * - applies multi-layer parallax to every `[data-parallax]` element
@@ -141,8 +140,6 @@ export function ScrollFx() {
 
       // Velocity in "frames of direction" — clamped so it stays subtle.
       const v = Math.max(-6, Math.min(6, vel / 14));
-      doc.style.setProperty("--scroll-y", `${y}px`);
-      doc.style.setProperty("--scroll-v", v.toFixed(3));
 
       // Scroll progress bar
       const h = doc.scrollHeight - window.innerHeight;
@@ -187,8 +184,6 @@ export function ScrollFx() {
       window.removeEventListener("scroll", onScroll);
       progress.remove();
       document.body.classList.remove("scrolled");
-      doc.style.removeProperty("--scroll-y");
-      doc.style.removeProperty("--scroll-v");
       doc.style.scrollBehavior = "";
       document
         .querySelectorAll<HTMLElement>("[data-parallax], [data-drift]")

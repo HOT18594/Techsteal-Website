@@ -351,13 +351,17 @@ export default function ForumPage() {
               ) : (
                 threads.map((t, i) => (
                   <div key={t.id ?? `${i}-${t.title}`} className={`relative ${t.pinned ? "thread-row-pinned" : ""}`}>
-                    {/* The whole post opens the thread (X-style feed) */}
-                    <Link
-                      href={`/forum/${t.id ?? ""}`}
-                      className="absolute inset-0 z-0 rounded-xl"
-                      aria-label={`Open thread: ${t.title}`}
-                    />
-                    <div className="relative z-10 thread-row group flex items-start gap-4 p-4 sm:p-5 pointer-events-none rounded-xl">
+                    <div className="relative thread-row group rounded-xl">
+                      {/* The whole post opens the thread (X-style feed). The
+                          link is the hit target; the visual row opts out of
+                          pointer events so hover still lands on this wrapper
+                          and .thread-row:hover / group-hover styles apply. */}
+                      <Link
+                        href={`/forum/${t.id ?? ""}`}
+                        className="absolute inset-0 z-0 rounded-xl"
+                        aria-label={`Open thread: ${t.title}`}
+                      />
+                      <div className="relative z-10 flex items-start gap-4 p-4 sm:p-5 pointer-events-none">
                       <Avatar name={t.author} src={t.avatarUrl} size="md" color={t.color} />
                       <div className="flex-1 min-w-0">
                         {/* Meta row: author · time · category · badges */}
@@ -461,6 +465,7 @@ export default function ForumPage() {
                           </div>
                         ) : null}
                       </div>
+                      </div>
                     </div>
                   </div>
                 ))
@@ -544,7 +549,7 @@ export default function ForumPage() {
                 <>
                   <h3 className="font-display text-base font-bold mb-1">Posting as</h3>
                   <p className="text-sm text-[var(--fg-2)] flex items-center gap-2">
-                    <Avatar name={user.username} src={user.avatarUrl} size="sm" className="!w-6 !h-6" />
+                    <Avatar name={user.username} src={user.avatarUrl} size="sm" className="w-6! h-6!" />
                     {user.username}
                     {isAdmin ? (
                       <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent)] border border-[var(--accent)] rounded px-1.5 py-0.5">
@@ -602,7 +607,7 @@ export default function ForumPage() {
                   maxLength={120}
                 />
                 <div className="flex items-center gap-2 px-1 text-xs text-[var(--muted)]">
-                  <Avatar name={user.username} src={user.avatarUrl} size="sm" className="!w-5 !h-5" />
+                  <Avatar name={user.username} src={user.avatarUrl} size="sm" className="w-5! h-5!" />
                   Posting as <span className="text-[var(--fg-2)] font-medium">{user.username}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-3">

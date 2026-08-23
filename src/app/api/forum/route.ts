@@ -87,20 +87,27 @@ export async function GET(request: NextRequest) {
     orderBy.push(desc(forumThreads.createdAt));
   }
 
-  const [rows, totals, categoryRows] = await Promise.all([
-    db
-      .select()
-      .from(forumThreads)
-      .where(where)
-      .orderBy(...orderBy)
-      .limit(PER_PAGE)
-      .offset((page - 1) * PER_PAGE),
+  const [totals, categoryRows] = await Promise.all([
     db.select({ n: count() }).from(forumThreads).where(where),
     db
       .select({ category: forumThreads.category, n: count() })
       .from(forumThreads)
       .groupBy(forumThreads.category),
   ]);
+  const total = totals[0]?.n ?? 0;
+
+  // Clamp to the last available page (e.g. threads deleted while a reader
+  // sits on page 5) so the client's "the server clamps" assumption holds.
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+  const safePage = Math.min(page, totalPages);
+
+  const rows = await db
+    .select()
+    .from(forumThreads)
+    .where(where)
+    .orderBy(...orderBy)
+    .limit(PER_PAGE)
+    .offset((safePage - 1) * PER_PAGE);
 
   // One poll-existence query for the whole page.
   const threadIds = rows.map((r) => r.id);
@@ -114,7 +121,6 @@ export async function GET(request: NextRequest) {
   const pollThreadIds = new Set(pollRows.map((p) => p.threadId));
 
   const avatars = await resolveAuthorAvatars(rows);
-  const total = totals[0]?.n ?? 0;
 
   const categoryCounts: Record<string, number> = {};
   for (const c of categoryRows) categoryCounts[c.category] = c.n;
@@ -125,9 +131,9 @@ export async function GET(request: NextRequest) {
       return serializeThread(row, info?.avatarUrl ?? null, pollThreadIds.has(row.id), info?.color ?? row.color);
     }),
     total,
-    page,
+    page: safePage,
     perPage: PER_PAGE,
-    hasMore: page * PER_PAGE < total,
+    hasMore: safePage * PER_PAGE < total,
     categoryCounts,
   });
 }

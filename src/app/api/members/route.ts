@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { profiles } from "@/lib/schema";
 import { fallbackMembers } from "@/lib/fallback-data";
@@ -32,6 +33,9 @@ export async function GET() {
       createdAt: profiles.createdAt,
     })
     .from(profiles)
+    // Removed (banned) accounts are a denylist, not directory entries —
+    // every other account surface filters them out; this one must too.
+    .where(eq(profiles.banned, false))
     .orderBy(profiles.username);
 
   // Fetch live status once and build a set of currently-online Minecraft

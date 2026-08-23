@@ -5,6 +5,7 @@ import { galleryComments, galleryItems } from "@/lib/schema";
 import { fallbackGallery } from "@/lib/fallback-data";
 import { getSessionUser } from "@/lib/auth";
 import { canPostToGallery, findAccount } from "@/lib/accounts";
+import { isRateLimited } from "@/lib/rate-limit";
 import { GALLERY_CATEGORIES } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +49,13 @@ export async function POST(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) {
     return NextResponse.json({ error: "You must be signed in to post." }, { status: 401 });
+  }
+
+  if (isRateLimited(`gallerypost:${user.id}`, 5, 60_000)) {
+    return NextResponse.json(
+      { error: "You're posting too fast — wait a moment." },
+      { status: 429 }
+    );
   }
 
   const db = getDb();

@@ -286,7 +286,7 @@ export default function StatusPage() {
           <div className="card stat-card p-5 flex flex-col">
             <div
               className="stat-icon"
-              style={{ color: "var(--emerald)", borderColor: "var(--emerald-glow)", background: "var(--emerald-glow)" }}
+              style={{ color: "var(--emerald)", borderColor: "var(--emerald-glow)", background: "rgba(34,197,94,0.08)" }}
             >
               <i className="fa-solid fa-user-group" />
             </div>

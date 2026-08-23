@@ -6,7 +6,7 @@
 // ("Checking live status…"). Nothing here mutates state — Chatty is a
 // support rep, not a sysadmin.
 
-import { count, desc, eq, ilike, or } from "drizzle-orm";
+import { and, count, desc, eq, ilike, or } from "drizzle-orm";
 import { getDb } from "./db";
 import { forumReplies, forumThreads, galleryItems, profiles, ruleSections, timelineEvents } from "./schema";
 import { getLiveStatus } from "./live-status";
@@ -201,11 +201,14 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
         .from(profiles)
         .where(
           q
-            ? or(
-                ilike(profiles.username, `%${escapeLike(q)}%`),
-                ilike(profiles.minecraftUsername, `%${escapeLike(q)}%`)
+            ? and(
+                eq(profiles.banned, false),
+                or(
+                  ilike(profiles.username, `%${escapeLike(q)}%`),
+                  ilike(profiles.minecraftUsername, `%${escapeLike(q)}%`)
+                )
               )
-            : undefined
+            : eq(profiles.banned, false)
         )
         .orderBy(profiles.username)
         .limit(15);
@@ -352,7 +355,7 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
       const db = getDb();
       if (!db) return { ok: true, label, content: NO_DB };
       const [[memberCount], [threadCount], [replyCount], [buildCount], [eventCount]] = await Promise.all([
-        db.select({ n: count() }).from(profiles),
+        db.select({ n: count() }).from(profiles).where(eq(profiles.banned, false)),
         db.select({ n: count() }).from(forumThreads),
         db.select({ n: count() }).from(forumReplies),
         db.select({ n: count() }).from(galleryItems),

@@ -51,8 +51,16 @@ export async function POST() {
       verified = true;
       definitive = true;
     } else if (res.status === 404) {
-      // Definitive "not a member".
-      definitive = true;
+      // A 404 only means "not a member" when Discord names the MEMBER as
+      // unknown (code 10007). The same status also covers an unknown GUILD
+      // (code 10004 — bot kicked or the guild id changed), which must not
+      // wipe stored state; treat that like any other hiccup.
+      try {
+        const payload = (await res.json()) as { code?: number } | null;
+        definitive = payload?.code === 10007;
+      } catch {
+        definitive = false;
+      }
     }
     // 401/403/429/5xx → leave stored state untouched (report below).
   } catch {

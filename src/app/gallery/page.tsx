@@ -902,7 +902,7 @@ export default function GalleryPage() {
                   <div className="space-y-4">
                     {(comments ?? []).map((c) => (
                       <div key={c.id} className="flex items-start gap-2.5">
-                        <Avatar name={c.author} src={c.avatarUrl} size="sm" className="!w-7 !h-7" color={c.color} />
+                        <Avatar name={c.author} src={c.avatarUrl} size="sm" className="w-7! h-7!" color={c.color} />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-semibold text-[var(--fg)]">{c.author}</span>

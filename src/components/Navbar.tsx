@@ -154,7 +154,7 @@ export function Navbar() {
               aria-controls="profile-popover"
               title="Profile"
             >
-              <Avatar name={user.username} src={user.avatarUrl} size="sm" className="!w-7 !h-7" />
+              <Avatar name={user.username} src={user.avatarUrl} size="sm" className="w-7! h-7!" />
               <i className={`fa-solid ${profileOpen ? "fa-chevron-up" : "fa-chevron-down"} hidden sm:inline-block text-[10px] text-[var(--muted)]`} />
             </button>
           ) : (

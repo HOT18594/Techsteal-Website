@@ -198,7 +198,7 @@ function SettingsContent() {
             name={profile?.username ?? user?.username ?? "?"}
             src={profile?.avatarUrl}
             size="lg"
-            className="!w-16 !h-16 flex-shrink-0"
+            className="w-16! h-16! flex-shrink-0"
           />
           <div className="min-w-0">
             <div className="font-display text-xl font-bold break-words leading-snug">{profile?.username ?? user?.username}</div>

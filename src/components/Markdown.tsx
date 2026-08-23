@@ -132,7 +132,12 @@ function inlineNodes(src: string, keyPrefix: string, depth = 0): ReactNode[] {
         let j = i + 1;
         while (j < src.length) {
           const c = src[j];
-          if ("`*~|[_!".includes(c) || src.slice(j).match(/^https?:\/\//)) break;
+          // startsWith(offset form) — no per-position substring copy.
+          if (
+            "`*~|[_!".includes(c) ||
+            ((c === "h" && (src.startsWith("http://", j) || src.startsWith("https://", j))))
+          )
+            break;
           j++;
         }
         push(src.slice(i, j), j - i, "t");

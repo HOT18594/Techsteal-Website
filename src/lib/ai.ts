@@ -14,7 +14,7 @@
 // The client (Chatty.tsx) renders text as it arrives and tool events as
 // live activity chips. Never throws: failures become error events.
 
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { siteConfig } from "./site";
 import { getDb } from "./db";
 import { forumThreads, galleryItems, profiles, ruleSections, timelineEvents } from "./schema";
@@ -198,6 +198,7 @@ async function buildKnowledgeSnapshot(): Promise<{ text: string; hasDb: boolean 
           minecraftUsername: profiles.minecraftUsername,
         })
         .from(profiles)
+        .where(eq(profiles.banned, false))
         .orderBy(profiles.username)
         .limit(30),
       db.select().from(timelineEvents).orderBy(desc(timelineEvents.id)).limit(15),

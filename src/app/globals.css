@@ -134,7 +134,9 @@ body {
   width: 0;
   background: linear-gradient(90deg, var(--accent), var(--diamond));
   box-shadow: 0 0 12px var(--accent-glow);
-  z-index: 999;
+  /* Below the modal layer (90) so it never draws a bright line across an
+     open dialog's backdrop. */
+  z-index: 80;
   pointer-events: none;
 }
 
@@ -890,7 +892,9 @@ body.scrolled .site-nav {
 
 /* ---------- Hero ---------- */
 .hero {
+  /* dvh so mobile URL bars don't push the fold below the visible viewport */
   min-height: 100vh;
+  min-height: 100dvh;
   position: relative;
   overflow: hidden;
   display: flex;
@@ -1148,10 +1152,12 @@ body.scrolled .site-nav {
   display: inline-block;
   animation: typing 1.4s infinite;
 }
-.typing-dot:nth-child(2) {
+/* The bubble's first child is the "Thinking" label — the dots are children
+   2–4, so stagger from :nth-child(3) to wave left-to-right. */
+.typing-dot:nth-child(3) {
   animation-delay: 0.2s;
 }
-.typing-dot:nth-child(3) {
+.typing-dot:nth-child(4) {
   animation-delay: 0.4s;
 }
 @keyframes typing {
@@ -1633,7 +1639,7 @@ body.scrolled .site-nav {
 /* Hover-revealed controls must stay visible on touch devices */
 @media (hover: none) {
   .group:hover .group-hover\:opacity-100,
-  .group-focus-within .group-focus-within\:opacity-100 {
+  .group:focus-within .group-focus-within\:opacity-100 {
     opacity: 1;
   }
 }
@@ -1697,22 +1703,23 @@ body.scrolled .site-nav {
   opacity: 1;
 }
 
-/* Shine sweep across the tile */
+/* Shine sweep across the tile — animated via transform so it never
+   triggers layout on every frame of the hover. */
 .tile::before {
   content: "";
   position: absolute;
   top: 0;
-  left: -80%;
+  left: 0;
   width: 55%;
   height: 100%;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
-  transform: skewX(-20deg);
-  transition: left 0.7s ease;
+  transform: translateX(-140%) skewX(-20deg);
+  transition: transform 0.7s ease;
   pointer-events: none;
   z-index: 2;
 }
 .tile:hover::before {
-  left: 130%;
+  transform: translateX(240%) skewX(-20deg);
 }
 
 /* Icon pop + rotate on hover */

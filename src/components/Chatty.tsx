@@ -130,6 +130,9 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
   const controllerRef = useRef<AbortController | null>(null);
   const autoAsked = useRef(false);
   const activeToolsRef = useRef<ToolTrace[]>([]);
+  // Autoscroll only while the reader is already at (or near) the bottom —
+  // streaming tokens must not yank the view away from earlier messages.
+  const stickToBottom = useRef(true);
   // Panel-scoped keyboard shortcut: "/" focuses the input (ignore while typing)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -169,12 +172,21 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
     } catch {}
   }, [messages, hydrated]);
 
-  // Keep the newest message in view — no scrolling the page to read it.
+  // Keep the newest message in view — no scrolling the page to read it —
+  // but only while the reader hasn't scrolled up to re-read something.
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    const el = scrollRef.current;
+    if (el && stickToBottom.current) {
+      el.scrollTop = el.scrollHeight;
     }
   }, [messages, typing, activeTools]);
+
+  // Navigating away mid-stream must not leave the request running.
+  useEffect(() => {
+    return () => {
+      controllerRef.current?.abort();
+    };
+  }, []);
 
   // Personalize the welcome bubble once we know who's logged in — only
   // while the chat is still in its fresh (welcome-only) state.
@@ -217,6 +229,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
     controllerRef.current = controller;
     const basis = baseMessages ?? messages;
 
+    stickToBottom.current = true; // sending means "show me the newest"
     setMessages((m) => [
       ...m,
       { id: nextId.current++, role: "user", text, time: nowTime() },
@@ -437,7 +450,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
             <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[var(--emerald)] border-2 border-[var(--bg)] rounded-full" />
           </div>
           <div>
-            <h1 className={embedded ? "font-display text-lg font-bold" : "page-title !text-3xl md:!text-4xl"}>
+            <h1 className={embedded ? "font-display text-lg font-bold" : "page-title text-3xl! md:text-4xl!"}>
               {ai.name}
             </h1>
             <div className="text-xs text-[var(--emerald)] flex items-center gap-1.5">
@@ -495,7 +508,17 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
         }`}
       >
         {/* Messages */}
-        <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto" id="chat-messages" aria-live="polite">
+        <div
+          ref={scrollRef}
+          onScroll={() => {
+            const el = scrollRef.current;
+            if (!el) return;
+            stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+          }}
+          className="flex-1 min-h-0 overflow-y-auto"
+          id="chat-messages"
+          aria-live="polite"
+        >
           <div className="px-4 sm:px-6 py-6 space-y-5">
             {/* Welcome hero — only when fresh */}
             {isEmpty && !typing ? (
@@ -545,7 +568,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
                       ) : null}
                       <div
                         className={`chat-bubble-ai px-4 py-3 ${
-                          m.error ? "!border-[var(--redstone)]/40 !bg-[var(--redstone)]/5" : ""
+                          m.error ? "border-[var(--redstone)]/40! bg-[var(--redstone)]/5!" : ""
                         }`}
                       >
                         <div className="chat-md text-[15px] leading-relaxed text-[var(--fg-2)]">
@@ -610,7 +633,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
                       name={user?.username ?? "You"}
                       src={user?.avatarUrl}
                       size="sm"
-                      className="!w-8 !h-8 mt-1 flex-shrink-0"
+                      className="w-8! h-8! mt-1 flex-shrink-0"
                     />
                   </div>
                 )}

@@ -55,7 +55,7 @@ export default function MembersPage() {
           <div className="relative w-full max-w-xs min-w-[10rem]">
             <i className="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-[var(--muted-2)]" />
             <input
-              className="input !pl-9 !pr-8 !py-2.5"
+              className="input pl-9! pr-8! py-2.5!"
               placeholder="Search name or MC username…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
