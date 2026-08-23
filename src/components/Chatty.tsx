@@ -1,7 +1,8 @@
 "use client";
 
 // Chatty Jr. — the site's AI assistant, now a tool-using agent.
-//   - "full":     the standalone assistant page (welcome hero, tall chat)
+//   - "full":     the standalone assistant page — a two-pane app: identity/
+//                 capability/prompt sidebar rail beside a focused chat console
 //   - "embedded": a compact card you can drop on any page (e.g. /join)
 // The backend streams NDJSON events: text chunks plus live tool activity
 // ("Checking live status…") which render as chips on the reply. History
@@ -462,315 +463,417 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
   const canRegenerate =
     !embedded && !typing && lastMsg?.role === "assistant" && !lastMsg?.error && messages.length > 1;
 
-  return (
-    <div className={`w-full flex flex-col min-h-0 ${embedded ? "" : "flex-1"}`}>
-      {/* Header — identity + capabilities + new chat */}
-      <div className={`${embedded ? "mb-4" : "mb-6"} flex items-center justify-between gap-3 flex-wrap`}>
+  // ------------------------------------------------------------------
+  // Desktop sidebar rail (full variant): identity, capabilities and a rich
+  // prompt list that stays reachable mid-conversation. On small screens it
+  // hides entirely — fresh chats show compact suggestion pills instead.
+  // ------------------------------------------------------------------
+  const railDisabled = typing || !user || !hasAccess;
+  const askFromRail = (text: string) => {
+    if (railDisabled) return;
+    void send(text);
+    inputRef.current?.focus();
+  };
+  const rail = (
+    <aside className="hidden lg:flex w-72 xl:w-80 flex-shrink-0 flex-col gap-4 min-h-0 overflow-y-auto pr-0.5">
+      {/* Identity */}
+      <div className="card p-5">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <div
-              className={`${
-                embedded ? "w-10 h-10" : "w-11 h-11"
-              } bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white rounded-xl`}
-            >
+            <div className="w-11 h-11 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white rounded-xl">
               <i className="fa-solid fa-robot text-lg" />
             </div>
-            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[var(--emerald)] border-2 border-[var(--bg)] rounded-full" />
+            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[var(--emerald)] border-2 border-[var(--bg)] rounded-full" />
           </div>
-          <div>
-            <h1 className={embedded ? "font-display text-lg font-bold" : "page-title text-3xl! md:text-4xl!"}>
-              {ai.name}
-            </h1>
-            <div className="text-xs text-[var(--emerald)] flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 bg-[var(--emerald)] rounded-full" />
-              Online · knows the server live
-            </div>
+          <div className="min-w-0">
+            <p className="font-display font-bold leading-tight truncate">{ai.name}</p>
+            <p className="text-xs text-[var(--emerald)]">{ai.tagline}</p>
           </div>
         </div>
-        <button className="btn-ghost py-2! px-3!" onClick={clear} aria-label="New chat">
-          <i className="fa-solid fa-rotate-right" />
-          <span className="hidden sm:inline">New chat</span>
-        </button>
+        <p className="text-xs text-[var(--muted)] leading-relaxed mt-3">
+          The official {siteConfig.name} support agent. Answers come straight
+          from live tools — server status, members, rules, builds, forum —
+          never guesses.
+        </p>
       </div>
 
-      {/* Chat card — member perk: signed in Discord + verified */}
-      {sessionLoading ? (
-        <div className="card p-8 text-center min-h-[26rem] flex items-center justify-center">
-          <p className="text-sm text-[var(--muted)]">Checking session…</p>
+      {/* Capabilities */}
+      <div className="card p-5">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted-2)] mb-3">
+          What I can check
+        </p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {CAPABILITIES.map((cap) => (
+            <span key={cap.label} className="chat-cap-chip justify-center! min-w-0">
+              <i className={`fa-solid ${cap.icon}`} aria-hidden="true" />
+              <span className="truncate">{cap.label}</span>
+            </span>
+          ))}
         </div>
-      ) : !user ? (
-        <div className="card p-8 text-center flex flex-col items-center justify-center min-h-[26rem]">
-          <div className="w-14 h-14 rounded-2xl bg-[#5865F2] text-white flex items-center justify-center text-2xl mb-4 shadow-[0_10px_30px_-10px_rgba(88,101,242,0.7)]">
-            <i className="fa-brands fa-discord" />
-          </div>
-          <h2 className="font-display text-xl font-bold mb-2">Sign in to chat with {ai.name}</h2>
-          <p className="text-sm text-[var(--muted)] mb-6 max-w-sm">
-            Chatty Jr. is a member perk — log in with Discord to start chatting.
+      </div>
+
+      {/* Prompt list */}
+      <div className="card p-3 flex-1 min-h-0">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted-2)] px-2 pt-2 pb-2">
+          Try asking
+        </p>
+        <div className="space-y-0.5">
+          {SUGGESTIONS.map((s) => (
+            <button
+              key={s.title}
+              type="button"
+              className="w-full flex items-center gap-2.5 text-left px-2 py-2 rounded-lg border border-transparent hover:border-[var(--border)] hover:bg-[var(--bg-2)] transition disabled:opacity-40 disabled:pointer-events-none"
+              onClick={() => askFromRail(s.text)}
+              disabled={railDisabled}
+            >
+              <span className="w-7 h-7 rounded-md bg-[var(--accent-dim)] border border-[var(--border)] text-[var(--accent)] flex items-center justify-center text-xs flex-shrink-0">
+                <i className={`fa-solid ${s.icon}`} aria-hidden="true" />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[13px] font-semibold text-[var(--fg)] truncate">
+                  {s.title}
+                </span>
+                <span className="block text-[11px] text-[var(--muted)] truncate">{s.hint}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <p className="text-[11px] text-[var(--muted-2)] leading-relaxed px-1 pb-1">
+        {ai.name} can make mistakes — double-check anything important against
+        the Rules page or Discord.
+      </p>
+    </aside>
+  );
+
+  // Gate screens share one shell — full-height inside the console column on
+  // desktop so they sit level with the rail.
+  const gateClass = embedded ? "min-h-[26rem]" : "min-h-[24rem] lg:h-full";
+
+  // ------------------------------------------------------------------
+  // The console: gates when gated, otherwise the chat card. Shared by both
+  // variants (heights adapt via `embedded`).
+  // ------------------------------------------------------------------
+  const consoleBody = sessionLoading ? (
+    <div className={`card p-8 text-center flex items-center justify-center ${gateClass}`}>
+      <p className="text-sm text-[var(--muted)]">Checking session…</p>
+    </div>
+  ) : !user ? (
+    <div className={`card p-8 text-center flex flex-col items-center justify-center ${gateClass}`}>
+      <div className="w-14 h-14 rounded-2xl bg-[#5865F2] text-white flex items-center justify-center text-2xl mb-4 shadow-[0_10px_30px_-10px_rgba(88,101,242,0.7)]">
+        <i className="fa-brands fa-discord" />
+      </div>
+      <h2 className="font-display text-xl font-bold mb-2">Sign in to chat with {ai.name}</h2>
+      <p className="text-sm text-[var(--muted)] mb-6 max-w-sm">
+        {ai.name} is a member perk — log in with Discord to start chatting.
+      </p>
+      <Link href="/login" className="btn-primary justify-center">
+        <i className="fa-brands fa-discord" />
+        Log in with Discord
+      </Link>
+    </div>
+  ) : !hasAccess ? (
+    <div className={`card p-8 text-center flex flex-col items-center justify-center ${gateClass}`}>
+      <div className="w-14 h-14 rounded-2xl bg-[var(--accent-dim)] border border-[var(--border-strong)] text-[var(--accent)] flex items-center justify-center text-2xl mb-4">
+        <i className="fa-solid fa-lock" />
+      </div>
+      <h2 className="font-display text-xl font-bold mb-2">Not verified yet</h2>
+      <p className="text-sm text-[var(--muted)] max-w-sm">
+        Verify you&apos;re in the official Discord server to unlock the AI assistant,
+        Gallery posting, and Server Control.
+      </p>
+      <Link href="/settings" className="btn-primary justify-center mt-6">
+        <i className="fa-solid fa-user-check" />
+        Verify in Settings
+      </Link>
+    </div>
+  ) : (
+    <div
+      className={`card flex flex-col overflow-hidden ${
+        embedded
+          ? "h-[26rem]"
+          : "h-[calc(100dvh-14rem)] min-h-[26rem] lg:h-auto lg:flex-1 lg:min-h-0"
+      }`}
+    >
+      {/* Slim console toolbar (full variant) — identity lives in the rail. */}
+      {!embedded ? (
+        <div className="flex-shrink-0 flex items-center justify-between gap-3 pl-5 pr-4 py-3 border-b border-[var(--border)]">
+          <p className="text-xs font-bold uppercase tracking-wider text-[var(--muted-2)] flex items-center gap-2">
+            <i className="fa-solid fa-comments text-[var(--accent)]" aria-hidden="true" />
+            Conversation
           </p>
-          <Link href="/login" className="btn-primary justify-center">
-            <i className="fa-brands fa-discord" />
-            Log in with Discord
-          </Link>
+          <button className="btn-ghost py-1.5! px-3!" onClick={clear} aria-label="New chat">
+            <i className="fa-solid fa-rotate-right" />
+            <span className="hidden sm:inline">New chat</span>
+          </button>
         </div>
-      ) : !hasAccess ? (
-        <div className="card p-8 text-center flex flex-col items-center justify-center min-h-[26rem]">
-          <div className="w-14 h-14 rounded-2xl bg-[var(--accent-dim)] border border-[var(--border-strong)] text-[var(--accent)] flex items-center justify-center text-2xl mb-4">
-            <i className="fa-solid fa-lock" />
-          </div>
-          <h2 className="font-display text-xl font-bold mb-2">Not verified yet</h2>
-          <p className="text-sm text-[var(--muted)] max-w-sm">
-            Verify you&apos;re in the official Discord server to unlock the AI assistant,
-            Gallery posting, and Server Control.
-          </p>
-          <Link href="/settings" className="btn-primary justify-center mt-6">
-            <i className="fa-solid fa-user-check" />
-            Verify in Settings
-          </Link>
-        </div>
-      ) : (
+      ) : null}
+
+      {/* Messages */}
       <div
-        className={`card flex flex-col overflow-hidden ${
-          embedded
-            ? "h-[26rem]"
-            : "h-[calc(100dvh-12rem)] lg:h-[calc(100dvh-14rem)] min-h-[26rem]"
-        }`}
+        ref={scrollRef}
+        onScroll={() => {
+          const el = scrollRef.current;
+          if (!el) return;
+          stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        }}
+        className="flex-1 min-h-0 overflow-y-auto"
+        id="chat-messages"
+        aria-live="polite"
       >
-        {/* Messages */}
-        <div
-          ref={scrollRef}
-          onScroll={() => {
-            const el = scrollRef.current;
-            if (!el) return;
-            stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-          }}
-          className="flex-1 min-h-0 overflow-y-auto"
-          id="chat-messages"
-          aria-live="polite"
-        >
-          <div className="px-4 sm:px-6 py-6 space-y-5">
-            {/* Welcome hero — only when fresh */}
-            {isEmpty && !typing ? (
-              <div className={`${embedded ? "pb-4" : "pb-6"} flex flex-col items-center text-center`}>
-                <div className={`relative ${embedded ? "mb-3" : "mb-4"}`}>
-                  <div className={`${embedded ? "w-14 h-14 text-2xl" : "w-20 h-20 text-3xl"} bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white rounded-2xl shadow-[0_14px_40px_-14px_var(--accent-glow)]`}>
-                    <i className="fa-solid fa-robot" />
-                  </div>
-                  <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-[var(--emerald)] border-2 border-[var(--card)] rounded-full shadow-[0_0_10px_var(--emerald-glow)]" />
-                </div>
-                <h2 className={`font-display font-bold ${embedded ? "text-lg" : "text-2xl"}`}>
-                  Hey{user?.username ? ` ${user.username}` : ""} — I&apos;m {ai.name}
-                </h2>
-                <p className={`text-sm text-[var(--muted)] mt-1.5 max-w-md ${embedded ? "px-2" : ""}`}>
-                  Your guide to {siteConfig.name}. I can pull live server data, look anything
-                  up on the site, and search the web for general Minecraft questions.
-                </p>
-                <div className="flex flex-wrap justify-center gap-1.5 mt-4 max-w-md">
-                  {CAPABILITIES.map((cap) => (
-                    <span key={cap.label} className="chat-cap-chip">
-                      <i className={`fa-solid ${cap.icon}`} aria-hidden="true" />
-                      {cap.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {messages.map((m) => (
-              <div key={m.id} className="group">
-                {m.role === "assistant" ? (
-                  <div className="flex gap-3">
-                    <div className="w-8 h-8 mt-1 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white text-xs flex-shrink-0 rounded-lg">
-                      <i className="fa-solid fa-robot" />
-                    </div>
-                    <div className="max-w-[88%] min-w-0">
-                      {/* Tool trace — what the assistant checked to answer */}
-                      {m.tools && m.tools.length > 0 && !(m.id === 0) ? (
-                        <div className="flex flex-wrap gap-1.5 mb-1.5">
-                          {m.tools.map((t, ti) => (
-                            <span key={`${t.name}-${ti}`} className="chat-tool-chip" title={t.name}>
-                              <i className={`fa-solid ${TOOL_ICONS[t.name] ?? "fa-gear"}`} aria-hidden="true" />
-                              {t.label}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-                      <div
-                        className={`chat-bubble-ai px-4 py-3 ${
-                          m.error ? "border-[var(--redstone)]/40! bg-[var(--redstone)]/5!" : ""
-                        }`}
-                      >
-                        <div className="chat-md text-[15px] leading-relaxed text-[var(--fg-2)]">
-                          {renderText(m.text)}
-                        </div>
-                        {m.error && m.retry ? (
-                          <button
-                            className="mt-2 text-xs font-semibold text-[var(--redstone)] hover:text-[var(--fg)] transition inline-flex items-center gap-1.5"
-                            onClick={() => void send(m.retry)}
-                          >
-                            <i className="fa-solid fa-rotate-right" />
-                            Retry
-                          </button>
-                        ) : null}
-                      </div>
-                      {m.stats ? (
-                        <div className="text-[10px] text-[var(--muted-2)] mt-0.5 px-1">
-                          {m.stats}
-                        </div>
-                      ) : null}
-                      <div className="flex items-center gap-3 mt-1.5 px-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
-                        <span className="text-[11px] text-[var(--muted-2)]">{m.time}</span>
-                        <button
-                          className="text-[11px] text-[var(--muted)] hover:text-[var(--accent)] transition"
-                          onClick={() => void copyMessage(m.text)}
-                        >
-                          <i className="fa-regular fa-copy mr-1" />
-                          Copy
-                        </button>
-                        {canRegenerate && m.id === lastMsg?.id ? (
-                          <button
-                            className="text-[11px] text-[var(--muted)] hover:text-[var(--accent)] transition"
-                            onClick={regenerate}
-                          >
-                            <i className="fa-solid fa-rotate-right mr-1" />
-                            Regenerate
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex gap-3 justify-end">
-                    <div className="max-w-[88%]">
-                      <div className="chat-bubble-user px-4 py-3">
-                        <div className="text-[15px] leading-relaxed text-[var(--fg)] whitespace-pre-wrap">
-                          {m.text}
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-end gap-3 mt-1.5 px-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
-                        <span className="text-[11px] text-[var(--muted-2)]">{m.time}</span>
-                        <button
-                          className="text-[11px] text-[var(--muted)] hover:text-[var(--accent)] transition"
-                          onClick={() => void copyMessage(m.text)}
-                        >
-                          <i className="fa-regular fa-copy mr-1" />
-                          Copy
-                        </button>
-                      </div>
-                    </div>
-                    <Avatar
-                      name={user?.username ?? "You"}
-                      src={user?.avatarUrl}
-                      size="sm"
-                      className="w-8! h-8! mt-1 flex-shrink-0"
-                    />
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {/* Live activity — 3-dot indicator until the first event, then
-                real tool chips while the agent works. Hides once the reply
-                text itself is streaming (unless tools ran, which keep
-                spinning as a "still generating" affordance). */}
-            {typing && (dots || activeTools.length > 0) ? (
-              <div className="flex gap-3">
-                <div className="w-8 h-8 mt-1 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white text-xs flex-shrink-0 rounded-lg">
+        <div className="px-4 sm:px-6 py-6 space-y-5">
+          {/* Welcome hero — only when fresh. Compact prompt pills cover
+              touch/small screens where the sidebar rail isn't rendered. */}
+          {isEmpty && !typing ? (
+            <div className={`${embedded ? "pb-4" : "pb-6"} flex flex-col items-center text-center`}>
+              <div className={`relative ${embedded ? "mb-3" : "mb-4"}`}>
+                <div className={`${embedded ? "w-14 h-14 text-2xl" : "w-20 h-20 text-3xl"} bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white rounded-2xl shadow-[0_14px_40px_-14px_var(--accent-glow)]`}>
                   <i className="fa-solid fa-robot" />
                 </div>
-                <div className="chat-bubble-ai px-4 py-3 flex items-center gap-2 flex-wrap">
-                  {activeTools.length === 0 ? (
-                    <>
-                      <span className="text-[12px] text-[var(--fg-2)] italic">Thinking</span>
-                      <span className="typing-dot" />
-                      <span className="typing-dot" />
-                      <span className="typing-dot" />
-                    </>
-                  ) : (
-                    activeTools.map((t, i) => (
-                      <span key={`${t.name}-${i}`} className="chat-tool-chip live">
-                        <i className={`fa-solid ${TOOL_ICONS[t.name] ?? "fa-gear"} fa-spin`} aria-hidden="true" />
-                        {t.label}…
-                      </span>
-                    ))
-                  )}
-                </div>
+                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-[var(--emerald)] border-2 border-[var(--card)] rounded-full shadow-[0_0_10px_var(--emerald-glow)]" />
               </div>
-            ) : null}
-          </div>
-        </div>
-
-        {/* Suggestion cards — only when fresh. Two columns even on phones:
-            a 6-card stack would crowd out the message area on short screens. */}
-        {isEmpty && !typing ? (
-          <div className="flex-shrink-0 px-4 sm:px-6 pb-5">
-            <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
-              {SUGGESTIONS.map((s) => (
-                <button
-                  key={s.title}
-                  className="card px-4 py-3.5 flex items-center gap-3 text-left hover:border-[var(--accent)] transition"
-                  onClick={() => void send(s.text)}
-                >
-                  <span className="w-9 h-9 rounded-lg bg-[var(--accent-dim)] border border-[var(--border)] text-[var(--accent)] flex items-center justify-center flex-shrink-0">
-                    <i className={`fa-solid ${s.icon} text-sm`} />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-semibold text-[var(--fg)] truncate">{s.title}</span>
-                    <span className="block text-xs text-[var(--muted)] truncate">{s.hint}</span>
-                  </span>
-                  <i className="fa-solid fa-arrow-right ml-auto text-[10px] text-[var(--muted-2)]" aria-hidden="true" />
-                </button>
-              ))}
+              <h2 className={`font-display font-bold ${embedded ? "text-lg" : "text-2xl"}`}>
+                Hey{user?.username ? ` ${user.username}` : ""} — I&apos;m {ai.name}
+              </h2>
+              <p className={`text-sm text-[var(--muted)] mt-1.5 max-w-md ${embedded ? "px-2" : ""}`}>
+                Your guide to {siteConfig.name}. I pull live server data, look
+                anything up on the site, and search the web for general
+                Minecraft questions.
+              </p>
+              <div className="flex flex-wrap justify-center gap-1.5 mt-4 max-w-md lg:hidden">
+                {SUGGESTIONS.map((s) => (
+                  <button
+                    key={s.title}
+                    type="button"
+                    className="chat-cap-chip hover:border-[var(--accent)] transition disabled:opacity-50"
+                    onClick={() => void send(s.text)}
+                    disabled={typing}
+                  >
+                    <i className={`fa-solid ${s.icon}`} aria-hidden="true" />
+                    {s.title}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        ) : null}
+          ) : null}
 
-        {/* Input bar */}
-        <div className="flex-shrink-0 border-t border-[var(--border)] px-4 sm:px-6 py-4">
-          <div className="flex items-end gap-2.5">
-            <textarea
-              ref={inputRef}
-              rows={1}
-              value={input}
-              onChange={(e) => {
-                setInput(e.target.value);
-                e.target.style.height = "auto";
-                e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
-              }}
-              onKeyDown={(e) => {
-                // isComposing: Enter that CONFIRMS an IME conversion (CJK
-                // input) must send nothing — the user is still typing.
-                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  void send();
-                }
-              }}
-              placeholder={`Ask ${ai.name} anything…`}
-              className="flex-1 bg-[var(--bg-2)] border border-[var(--border)] rounded-xl px-4 py-3 outline-none resize-none text-[15px] leading-relaxed placeholder:text-[var(--muted-2)] max-h-40 transition focus:border-[var(--accent)]"
-            />
-            {typing ? (
-              <button
-                onClick={stop}
-                className="w-11 h-11 flex items-center justify-center rounded-xl bg-[var(--redstone)]/15 text-[var(--redstone)] hover:bg-[var(--redstone)]/25 transition flex-shrink-0"
-                aria-label="Stop generating"
-              >
-                <i className="fa-solid fa-stop text-sm" />
-              </button>
-            ) : (
-              <button
-                onClick={() => void send()}
-                disabled={!input.trim()}
-                className="w-11 h-11 flex items-center justify-center rounded-xl bg-[var(--accent)] text-white hover:bg-[var(--accent-bright)] transition disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
-                aria-label="Send"
-              >
-                <i className="fa-solid fa-paper-plane text-sm" />
-              </button>
-            )}
-          </div>
-          <p className="text-center text-xs text-[var(--muted-2)] mt-2.5">
-            {ai.name} can make mistakes — double-check important info. <span className="hidden sm:inline">Press <kbd className="chat-kbd">/</kbd> to focus, <kbd className="chat-kbd">Shift+Enter</kbd> for a new line.</span>
-          </p>
+          {messages.map((m) => (
+            <div key={m.id} className="group">
+              {m.role === "assistant" ? (
+                <div className="flex gap-3">
+                  <div className="w-8 h-8 mt-1 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white text-xs flex-shrink-0 rounded-lg">
+                    <i className="fa-solid fa-robot" />
+                  </div>
+                  <div className="max-w-[88%] min-w-0">
+                    {/* Tool trace — what the assistant checked to answer */}
+                    {m.tools && m.tools.length > 0 && !(m.id === 0) ? (
+                      <div className="flex flex-wrap gap-1.5 mb-1.5">
+                        {m.tools.map((t, ti) => (
+                          <span key={`${t.name}-${ti}`} className="chat-tool-chip" title={t.name}>
+                            <i className={`fa-solid ${TOOL_ICONS[t.name] ?? "fa-gear"}`} aria-hidden="true" />
+                            {t.label}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div
+                      className={`chat-bubble-ai px-4 py-3 ${
+                        m.error ? "border-[var(--redstone)]/40! bg-[var(--redstone)]/5!" : ""
+                      }`}
+                    >
+                      <div className="chat-md text-[15px] leading-relaxed text-[var(--fg-2)]">
+                        {renderText(m.text)}
+                      </div>
+                      {m.error && m.retry ? (
+                        <button
+                          className="mt-2 text-xs font-semibold text-[var(--redstone)] hover:text-[var(--fg)] transition inline-flex items-center gap-1.5"
+                          onClick={() => void send(m.retry)}
+                        >
+                          <i className="fa-solid fa-rotate-right" />
+                          Retry
+                        </button>
+                      ) : null}
+                    </div>
+                    {m.stats ? (
+                      <div className="text-[10px] text-[var(--muted-2)] mt-0.5 px-1">
+                        {m.stats}
+                      </div>
+                    ) : null}
+                    <div className="flex items-center gap-3 mt-1.5 px-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                      <span className="text-[11px] text-[var(--muted-2)]">{m.time}</span>
+                      <button
+                        className="text-[11px] text-[var(--muted)] hover:text-[var(--accent)] transition"
+                        onClick={() => void copyMessage(m.text)}
+                      >
+                        <i className="fa-regular fa-copy mr-1" />
+                        Copy
+                      </button>
+                      {canRegenerate && m.id === lastMsg?.id ? (
+                        <button
+                          className="text-[11px] text-[var(--muted)] hover:text-[var(--accent)] transition"
+                          onClick={regenerate}
+                        >
+                          <i className="fa-solid fa-rotate-right mr-1" />
+                          Regenerate
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-3 justify-end">
+                  <div className="max-w-[88%]">
+                    <div className="chat-bubble-user px-4 py-3">
+                      <div className="text-[15px] leading-relaxed text-[var(--fg)] whitespace-pre-wrap">
+                        {m.text}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-end gap-3 mt-1.5 px-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                      <span className="text-[11px] text-[var(--muted-2)]">{m.time}</span>
+                      <button
+                        className="text-[11px] text-[var(--muted)] hover:text-[var(--accent)] transition"
+                        onClick={() => void copyMessage(m.text)}
+                      >
+                        <i className="fa-regular fa-copy mr-1" />
+                        Copy
+                      </button>
+                    </div>
+                  </div>
+                  <Avatar
+                    name={user?.username ?? "You"}
+                    src={user?.avatarUrl}
+                    size="sm"
+                    className="w-8! h-8! mt-1 flex-shrink-0"
+                  />
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* Live activity — 3-dot indicator until the first event, then
+              real tool chips while the agent works. Hides once the reply
+              text itself is streaming (unless tools ran, which keep
+              spinning as a "still generating" affordance). */}
+          {typing && (dots || activeTools.length > 0) ? (
+            <div className="flex gap-3">
+              <div className="w-8 h-8 mt-1 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white text-xs flex-shrink-0 rounded-lg">
+                <i className="fa-solid fa-robot" />
+              </div>
+              <div className="chat-bubble-ai px-4 py-3 flex items-center gap-2 flex-wrap">
+                {activeTools.length === 0 ? (
+                  <>
+                    <span className="text-[12px] text-[var(--fg-2)] italic">Thinking</span>
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                  </>
+                ) : (
+                  activeTools.map((t, i) => (
+                    <span key={`${t.name}-${i}`} className="chat-tool-chip live">
+                      <i className={`fa-solid ${TOOL_ICONS[t.name] ?? "fa-gear"} fa-spin`} aria-hidden="true" />
+                      {t.label}…
+                    </span>
+                  ))
+                )}
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
+
+      {/* Composer — unified pill container: textarea grows inside, action
+          button docked bottom-right. */}
+      <div className="flex-shrink-0 border-t border-[var(--border)] p-4 sm:p-5">
+        <div className="flex items-end gap-2 rounded-2xl border border-[var(--border)] bg-[var(--bg-2)] p-2 transition focus-within:border-[var(--accent)]">
+          <textarea
+            ref={inputRef}
+            rows={1}
+            value={input}
+            onChange={(e) => {
+              setInput(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
+            }}
+            onKeyDown={(e) => {
+              // isComposing: Enter that CONFIRMS an IME conversion (CJK
+              // input) must send nothing — the user is still typing.
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                void send();
+              }
+            }}
+            placeholder={`Ask ${ai.name} anything…`}
+            aria-label="Chat message"
+            className="flex-1 bg-transparent outline-none resize-none px-3 py-2 text-[15px] leading-relaxed placeholder:text-[var(--muted-2)] max-h-40"
+          />
+          {typing ? (
+            <button
+              onClick={stop}
+              className="w-10 h-10 mb-0.5 mr-0.5 flex items-center justify-center rounded-xl bg-[var(--redstone)]/15 text-[var(--redstone)] hover:bg-[var(--redstone)]/25 transition flex-shrink-0"
+              aria-label="Stop generating"
+            >
+              <i className="fa-solid fa-stop text-sm" />
+            </button>
+          ) : (
+            <button
+              onClick={() => void send()}
+              disabled={!input.trim()}
+              className="w-10 h-10 mb-0.5 mr-0.5 flex items-center justify-center rounded-xl bg-[var(--accent)] text-white hover:bg-[var(--accent-bright)] transition disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+              aria-label="Send"
+            >
+              <i className="fa-solid fa-paper-plane text-sm" />
+            </button>
+          )}
+        </div>
+        <p className="text-center text-xs text-[var(--muted-2)] mt-2.5">
+          {ai.name} can make mistakes ·{" "}
+          <span className="hidden sm:inline">
+            <kbd className="chat-kbd">/</kbd> to focus · <kbd className="chat-kbd">Shift+Enter</kbd>{" "}
+            for a new line
+          </span>
+        </p>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className={`w-full flex flex-col min-h-0 ${embedded ? "" : "flex-1"}`}>
+      {/* Compact header — embedded keeps its own identity strip; the full
+          page gets its title from the page shell and identity from the
+          sidebar rail. */}
+      {embedded ? (
+        <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <div className="w-10 h-10 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white rounded-xl">
+                <i className="fa-solid fa-robot text-lg" />
+              </div>
+              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[var(--emerald)] border-2 border-[var(--bg)] rounded-full" />
+            </div>
+            <div>
+              <h2 className="font-display text-lg font-bold">{ai.name}</h2>
+              <div className="text-xs text-[var(--emerald)] flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 bg-[var(--emerald)] rounded-full" />
+                Online · knows the server live
+              </div>
+            </div>
+          </div>
+          <button className="btn-ghost py-2! px-3!" onClick={clear} aria-label="New chat">
+            <i className="fa-solid fa-rotate-right" />
+            <span className="hidden sm:inline">New chat</span>
+          </button>
+        </div>
+      ) : null}
+
+      {embedded ? (
+        consoleBody
+      ) : (
+        /* Full variant: two-pane app layout — sticky rail + console. */
+        <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-5 lg:h-[calc(100dvh-16rem)] lg:min-h-[30rem]">
+          {rail}
+          <section className="flex-1 min-w-0 flex flex-col min-h-0">{consoleBody}</section>
+        </div>
       )}
     </div>
   );

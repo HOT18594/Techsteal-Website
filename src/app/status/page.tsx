@@ -5,7 +5,7 @@ import { siteConfig } from "@/lib/site";
 import { fallbackStatus } from "@/lib/fallback-data";
 import type { ServerStatus } from "@/types";
 import { useToast } from "@/components/Toast";
-import { CopyIpButton } from "@/components/CopyIpButton";
+import { useCopyAddress } from "@/components/CopyIpButton";
 import { SubPage } from "@/components/SubPage";
 import { useApi } from "@/lib/use-api";
 import { useSession } from "@/lib/use-session";
@@ -64,6 +64,26 @@ export default function StatusPage() {
     setRefreshing(false);
   };
 
+  // "Updated Xs ago" ticker — both timestamps start null so the server and
+  // the first client frame render nothing (no hydration mismatch), then the
+  // effect stamps them client-side only.
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    setUpdatedAt(Date.now());
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 5_000);
+    return () => clearInterval(id);
+  }, []);
+  useEffect(() => {
+    setUpdatedAt(Date.now());
+  }, [STATUS]);
+  const updatedLabel = (() => {
+    if (updatedAt === null || now === null) return null;
+    const ageS = Math.max(0, Math.round((now - updatedAt) / 1000));
+    return ageS < 8 ? "Updated just now" : `Updated ${ageS}s ago`;
+  })();
+
   const statusLive = STATUS.source === "live";
   const style = styleFor(STATUS);
   const online = Boolean(STATUS.online);
@@ -75,6 +95,7 @@ export default function StatusPage() {
   );
   const software = STATUS.software ?? siteConfig.software;
   const version = STATUS.version ?? siteConfig.version;
+  const capacityPct = max > 0 ? Math.min(100, Math.round((players / max) * 100)) : 0;
 
   // ------------------------------------------------------------------
   // Server control (start/stop via Exaroton) — capability from /api/
@@ -142,6 +163,19 @@ export default function StatusPage() {
   const canStop =
     statusLive && (STATUS.state === undefined ? online : ["online"].includes(STATUS.state));
 
+  const { copied, copy } = useCopyAddress();
+
+  const heroLabel = statusLive
+    ? STATUS.stateLabel ?? (online ? "Online" : "Offline")
+    : "Status unavailable";
+
+  const rosterEmpty = (() => {
+    if (!statusLive)
+      return { icon: "fa-satellite-dish", text: "Status data unavailable right now." };
+    if (!online) return { icon: "fa-bed", text: "Nobody here — the server is down." };
+    return { icon: "fa-leaf", text: "The realm is quiet right now." };
+  })();
+
   return (
     <SubPage>
       <div className="w-full">
@@ -155,6 +189,11 @@ export default function StatusPage() {
             <h1 className="page-title">Server Status</h1>
           </div>
           <div className="flex items-center gap-3">
+            {/* Single source of truth for freshness — the hero below is the
+                one authoritative state display, so no duplicate pill here. */}
+            <span className="text-xs text-[var(--muted-2)] whitespace-nowrap hidden sm:block">
+              {updatedLabel}
+            </span>
             <button
               className="btn-ghost btn-sm"
               onClick={() => void refresh()}
@@ -165,22 +204,26 @@ export default function StatusPage() {
               <i className={`fa-solid fa-rotate-right ${refreshing ? "fa-spin" : ""}`} />
               <span className="hidden sm:inline">Refresh</span>
             </button>
-            <div className={`status-pill ${online ? "" : "offline"}`}>
-              <span className={`pulse-dot ${online ? "" : "muted"}`} />
-              <span>{statusLoading && !statusLive ? "Checking…" : online ? "Online" : statusLive ? STATUS.stateLabel ?? "Offline" : "Unavailable"}</span>
-            </div>
           </div>
         </div>
 
-        {/* Hero state banner */}
+        {/* Hero — THE authoritative state display: big label + MOTD on the
+            left, quick-glance metrics strip on the right, ambient glow
+            tinted by the current state color. */}
         <div className="card p-6 sm:p-8 relative overflow-hidden">
           <div
             className="absolute inset-x-0 top-0 h-[2px]"
             style={{ background: `linear-gradient(90deg, transparent, ${style.color}, transparent)` }}
             aria-hidden="true"
           />
-          <div className="flex flex-col lg:flex-row lg:items-center gap-6">
-            {/* State block */}
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background: `radial-gradient(560px 200px at 88% -30%, color-mix(in srgb, ${style.color} 14%, transparent), transparent 70%)`,
+            }}
+            aria-hidden="true"
+          />
+          <div className="relative flex flex-col xl:flex-row xl:items-center gap-7">
             <div className="flex items-center gap-5 flex-1 min-w-0">
               <span
                 className={`w-16 h-16 rounded-2xl border flex items-center justify-center text-2xl flex-shrink-0 ${
@@ -188,7 +231,9 @@ export default function StatusPage() {
                 }`}
                 style={{
                   color: style.color,
-                  borderColor: style.color.includes("var") ? `color-mix(in srgb, ${style.color} 45%, transparent)` : style.glow,
+                  borderColor: style.color.includes("var")
+                    ? `color-mix(in srgb, ${style.color} 45%, transparent)`
+                    : style.glow,
                   background: `color-mix(in srgb, ${style.color} 10%, transparent)`,
                   boxShadow: `0 0 26px -8px ${style.glow}`,
                 }}
@@ -199,7 +244,7 @@ export default function StatusPage() {
               <div className="min-w-0">
                 <div className="flex items-baseline gap-3 flex-wrap">
                   <span className="font-display text-3xl font-bold" style={{ color: style.color }}>
-                    {statusLive ? (STATUS.stateLabel ?? (online ? "Online" : "Offline")) : "Status unavailable"}
+                    {heroLabel}
                   </span>
                   {STATUS.serverName ? (
                     <span className="text-sm text-[var(--muted)]">{STATUS.serverName}</span>
@@ -210,268 +255,229 @@ export default function StatusPage() {
                     ? "Can't reach the status services right now — try refreshing."
                     : STATUS.motd ?? (online ? "The realm is live — jump in!" : "The realm sleeps.")}
                 </p>
+                {transitional && statusLive ? (
+                  <p className="text-xs text-[var(--diamond)] mt-2 flex items-center gap-2">
+                    <i className="fa-solid fa-spinner fa-spin" aria-hidden="true" />
+                    Tracking the transition — this page updates itself.
+                  </p>
+                ) : null}
               </div>
             </div>
 
-            {/* Software chips */}
-            <div className="flex flex-wrap gap-2 flex-shrink-0">
-              {[
-                { icon: "fa-cube", text: `${software}` },
-                { icon: "fa-code-branch", text: `${version}` },
-                { icon: "fa-location-dot", text: siteConfig.location },
-              ].map((chip) => (
-                <span
-                  key={chip.text}
-                  className="inline-flex items-center gap-2 text-xs font-semibold border border-[var(--border)] bg-[var(--bg-2)] rounded-lg px-3 py-2 text-[var(--fg-2)]"
-                >
-                  <i className={`fa-solid ${chip.icon} text-[var(--accent-bright)]`} />
-                  {chip.text}
+            {/* Quick-glance metric strip */}
+            <div className="status-metrics flex-shrink-0 py-1 border-t border-[var(--border-strong)] pt-4 xl:border-0 xl:pt-0 flex-wrap gap-y-3">
+              <div className="status-metric">
+                <span className="status-metric-label">Players</span>
+                <span className="status-metric-value" style={{ color: online ? "var(--emerald)" : undefined }}>
+                  {statusLive ? `${players}/${max}` : "—"}
                 </span>
-              ))}
+              </div>
+              <div className="status-metric">
+                <span className="status-metric-label">Version</span>
+                <span className="status-metric-value">{version}</span>
+              </div>
+              <div className="status-metric">
+                <span className="status-metric-label">Software</span>
+                <span className="status-metric-value">{software}</span>
+              </div>
+              <div className="status-metric">
+                <span className="status-metric-label">Region</span>
+                <span className="status-metric-value">{siteConfig.location}</span>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Stat cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-5 mt-6 stagger">
-          {/* Players */}
-          <div className="card stat-card p-5 flex flex-col">
-            <div className="stat-icon">
-              <i className="fa-solid fa-users" />
-            </div>
-            <div className="mt-4 flex items-baseline gap-1.5">
-              <span className="stat-number">{players}</span>
-              <span className="font-display text-lg text-[var(--muted-2)]">/{max}</span>
-            </div>
-            <div className="mt-1 text-xs text-[var(--muted)] uppercase tracking-wider">
-              players online
-            </div>
-            <div className="mt-3 min-h-[2rem]">
-              <span className="text-xs text-[var(--muted-2)]">
-                {statusLive
-                  ? online
-                    ? "Live from the server panel."
-                    : "The panel is reachable; the server is down."
-                  : "Status data unavailable right now."}
-              </span>
-            </div>
-          </div>
+        {/* Main dashboard grid — activity/control left, connection right */}
+        <div className="grid lg:grid-cols-5 gap-6 mt-6 items-start">
+          {/* ------------------------------------------------ left ---- */}
+          <div className="lg:col-span-3 flex flex-col gap-6">
+            {/* Who's in game */}
+            <div className="card p-6">
+              <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+                <h2 className="font-display text-xl font-bold flex items-center gap-2">
+                  <i className="fa-solid fa-user-group text-[var(--accent)]" />
+                  Who&apos;s in game
+                </h2>
+                <span
+                  className="text-xs font-bold px-2.5 py-1 rounded-full border"
+                  style={{
+                    color: statusLive ? (online ? "var(--emerald)" : "var(--muted)") : "var(--muted)",
+                    borderColor:
+                      statusLive && online
+                        ? "color-mix(in srgb, var(--emerald) 40%, transparent)"
+                        : "var(--border)",
+                    background:
+                      statusLive && online ? "rgba(34,197,94,0.08)" : "transparent",
+                  }}
+                >
+                  {statusLoading && !statusLive
+                    ? "Checking…"
+                    : statusLive
+                      ? `${playerList.length}/${max} online`
+                      : "Unknown"}
+                </span>
+              </div>
 
-          {/* Connection readiness */}
-          <div className="card stat-card p-5 flex flex-col">
-            <div
-              className="stat-icon"
-              style={{ color: "var(--diamond)", borderColor: "rgba(56,211,240,0.4)", background: "rgba(56,211,240,0.08)" }}
-            >
-              <i className="fa-solid fa-plug-circle-check" />
-            </div>
-            <div className="mt-4">
-              <span className="stat-number text-xl! leading-tight block">
-                {online ? "Joinable" : statusLive ? STATUS.stateLabel ?? "Not joinable" : "Unknown"}
-              </span>
-            </div>
-            <div className="mt-1 text-xs text-[var(--muted)] uppercase tracking-wider">
-              connection state
-            </div>
-            <div className="mt-3 text-xs text-[var(--muted-2)]">
-              {online
-                ? `Point your client at ${siteConfig.address}`
-                : transitional
-                  ? "Hang tight — the server is mid-transition."
-                  : "Start the server below to open the gates."}
-            </div>
-          </div>
+              {/* Capacity meter */}
+              <div className="capacity-bar" role="img" aria-label={`${players} of ${max} player slots in use`}>
+                <span style={{ width: `${capacityPct}%` }} />
+              </div>
+              <div className="flex justify-between text-[11px] text-[var(--muted-2)] mt-1.5 mb-4">
+                <span>{players} playing</span>
+                <span>{Math.max(max - players, 0)} slots free</span>
+              </div>
 
-          {/* In-game roster */}
-          <div className="card stat-card p-5 flex flex-col">
-            <div
-              className="stat-icon"
-              style={{ color: "var(--emerald)", borderColor: "var(--emerald-glow)", background: "rgba(34,197,94,0.08)" }}
-            >
-              <i className="fa-solid fa-user-group" />
-            </div>
-            <div className="mt-4">
-              <span className="stat-number text-xl! leading-tight block">In-game now</span>
-            </div>
-            <div className="mt-1 text-xs text-[var(--muted)] uppercase tracking-wider">
-              {statusLive
-                ? `${playerList.length} ${playerList.length === 1 ? "player" : "players"} on the server`
-                : "Roster unavailable"}
-            </div>
-            <div className="mt-3 min-h-[2rem]">
-              {online && playerList.length > 0 ? (
-                <div className="space-y-1.5">
+              {statusLive && online && playerList.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
                   {playerList.map((name) => (
-                    <span key={name} className="flex items-center gap-2 text-xs text-[var(--fg-2)]">
+                    <span key={name} className="player-chip">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={minotarUrl(name)}
-                        alt=""
-                        loading="lazy"
-                        width={18}
-                        height={18}
-                        className="rounded-[3px] image-render-pixel"
-                      />
-                      <span className="truncate">{name}</span>
+                      <img src={minotarUrl(name)} alt="" loading="lazy" width={22} height={22} />
+                      <span className="truncate max-w-[140px]">{name}</span>
                     </span>
                   ))}
                 </div>
               ) : (
-                <span className="text-xs text-[var(--muted-2)]">
-                  {statusLive
-                    ? online
-                      ? "The realm is quiet right now."
-                      : "Nobody here — the server is down."
-                    : "Status data unavailable right now."}
-                </span>
+                <div className="text-sm text-[var(--muted-2)] py-7 text-center border border-dashed border-[var(--border)] rounded-xl">
+                  <i className={`fa-solid ${rosterEmpty.icon} text-2xl mb-2 block opacity-60`} />
+                  {rosterEmpty.text}
+                </div>
               )}
             </div>
-          </div>
 
-          {/* Software */}
-          <div className="card stat-card p-5 flex flex-col">
-            <div className="stat-icon">
-              <i className="fa-solid fa-server" />
-            </div>
-            <div className="mt-4 flex items-baseline gap-1.5">
-              <span className="stat-number text-xl! leading-tight">{software}</span>
-            </div>
-            <div className="mt-1 text-xs text-[var(--muted)] uppercase tracking-wider">
-              {version}
-            </div>
-            <div className="mt-3 text-xs text-[var(--muted-2)]">
-              {statusLive ? "Read straight from the panel." : `Default — usually ${siteConfig.software}.`}
-            </div>
-          </div>
-        </div>
-
-        {/* Connection info */}
-        <div className="grid lg:grid-cols-3 gap-6 mt-10">
-          <div className="lg:col-span-2 card p-6">
-            <h2 className="font-display text-xl font-bold mb-5 flex items-center gap-2">
-              <i className="fa-solid fa-server text-[var(--accent)]" />
-              Connection
-            </h2>
-            <div className="space-y-2">
-              {[
-                ["Address", siteConfig.address, "code"],
-                ["Version", `${version} · ${software}`, "text"],
-                ["Difficulty", siteConfig.difficulty, "text"],
-                ["Whitelist", siteConfig.whitelist, "emerald"],
-                ["Location", siteConfig.location, "text"],
-              ].map(([label, value, kind]) => (
-                <div key={label as string} className="flex justify-between items-center gap-4 pb-2 border-b border-[var(--border)] last:border-b-0 last:pb-0">
-                  <span className="text-sm text-[var(--muted)] flex-shrink-0">{label}</span>
-                  <span className="min-w-0 text-right break-all">
-                    {kind === "code" ? (
-                      <code className="text-sm text-[var(--accent)] font-display">{value}</code>
-                    ) : kind === "emerald" ? (
-                      <span className="text-sm text-[var(--emerald)]">{value}</span>
-                    ) : (
-                      <span className="text-sm">{value}</span>
-                    )}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div className="mt-5">
-              <CopyIpButton />
-            </div>
-          </div>
-
-          {/* Pointer to the full how-to-join steps — one source of truth
-              (this used to duplicate /join with a different step count). */}
-          <div className="card p-6 flex flex-col">
-            <h2 className="font-display text-xl font-bold mb-5 flex items-center gap-2">
-              <i className="fa-solid fa-compass text-[var(--accent)]" />
-              New here?
-            </h2>
-            <p className="text-sm text-[var(--muted)] mb-5 flex-1">
-              The full step-by-step guide to joining the server — versions,
-              whitelist and all.
-            </p>
-            <Link href="/join" className="btn-secondary justify-center">
-              <i className="fa-solid fa-arrow-right" />
-              How to Join
-            </Link>
-          </div>
-        </div>
-
-        {/* Server Control — start/stop the Minecraft server (verified members) */}
-        {control && control.configured && (
-          <div className="card p-6 mt-10">
-            <h2 className="font-display text-xl font-bold mb-1 flex items-center gap-2">
-              <i className="fa-solid fa-power-off text-[var(--accent)]" />
-              Server Control
-            </h2>
-            <p className="text-sm text-[var(--muted)] mb-5">
-              Start or stop the Minecraft server via the hosting panel. Requires Discord verification.
-            </p>
-            {control.allowed ? (
-              <>
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    className="btn-primary"
-                    onClick={() => void runControl("start")}
-                    disabled={controlBusy !== null || !canStart}
-                  >
-                    {controlBusy === "start" ? (
-                      <i className="fa-solid fa-spinner fa-spin" />
-                    ) : (
-                      <i className="fa-solid fa-play" />
-                    )}
-                    Start Server
-                  </button>
-                  <button
-                    className="btn-secondary"
-                    onClick={() => void runControl("stop")}
-                    disabled={controlBusy !== null || !canStop}
-                  >
-                    {controlBusy === "stop" ? (
-                      <i className="fa-solid fa-spinner fa-spin" />
-                    ) : (
-                      <i className="fa-solid fa-stop" />
-                    )}
-                    Stop Server
-                  </button>
-                  <span className="text-xs text-[var(--muted-2)]">
-                    {transitional
-                      ? "Transition in progress — this page updates itself."
-                      : online
-                        ? "Server is online — stop it to save credits."
-                        : "The server is offline right now."}
-                  </span>
-                </div>
-                {transitional ? (
-                  <p className="text-xs text-[var(--diamond)] mt-3 flex items-center gap-2">
-                    <i className="fa-solid fa-spinner fa-spin" />
-                    Tracking the transition — the state above flips automatically.
-                  </p>
-                ) : null}
-              </>
-            ) : user ? (
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                <p className="text-sm text-[var(--muted)]">
-                  Verify you&apos;re in the official Discord server to control the server.
+            {/* Server Control — start/stop via Exaroton (verified members).
+                Promoted next to the roster: it's the page's action center. */}
+            {control && control.configured && (
+              <div className="card p-6">
+                <h2 className="font-display text-xl font-bold mb-1 flex items-center gap-2">
+                  <i className="fa-solid fa-power-off text-[var(--accent)]" />
+                  Server Control
+                </h2>
+                <p className="text-sm text-[var(--muted)] mb-5">
+                  Start or stop the Minecraft server via the hosting panel.
                 </p>
-                <Link href="/settings" className="btn-primary sm:ml-auto shrink-0 justify-center">
-                  <i className="fa-solid fa-user-check" />
-                  Verify in Settings
-                </Link>
-              </div>
-            ) : (
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                <p className="text-sm text-[var(--muted)]">
-                  Sign in with Discord to control the server.
-                </p>
-                <Link href="/login" className="btn-primary sm:ml-auto shrink-0 justify-center">
-                  <i className="fa-brands fa-discord" />
-                  Log in with Discord
-                </Link>
+                {control.allowed ? (
+                  <>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        className="btn-primary"
+                        onClick={() => void runControl("start")}
+                        disabled={controlBusy !== null || !canStart}
+                      >
+                        {controlBusy === "start" ? (
+                          <i className="fa-solid fa-spinner fa-spin" />
+                        ) : (
+                          <i className="fa-solid fa-play" />
+                        )}
+                        Start Server
+                      </button>
+                      <button
+                        className="btn-secondary"
+                        onClick={() => void runControl("stop")}
+                        disabled={controlBusy !== null || !canStop}
+                      >
+                        {controlBusy === "stop" ? (
+                          <i className="fa-solid fa-spinner fa-spin" />
+                        ) : (
+                          <i className="fa-solid fa-stop" />
+                        )}
+                        Stop Server
+                      </button>
+                      <span className="text-xs text-[var(--muted-2)]">
+                        {transitional
+                          ? "Transition in progress."
+                          : online
+                            ? "Server is online — stop it to save credits."
+                            : "The server is offline right now."}
+                      </span>
+                    </div>
+                  </>
+                ) : user ? (
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <p className="text-sm text-[var(--muted)]">
+                      Verify you&apos;re in the official Discord server to control the server.
+                    </p>
+                    <Link href="/settings" className="btn-primary sm:ml-auto shrink-0 justify-center">
+                      <i className="fa-solid fa-user-check" />
+                      Verify in Settings
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <p className="text-sm text-[var(--muted)]">
+                      Sign in with Discord to control the server.
+                    </p>
+                    <Link href="/login" className="btn-primary sm:ml-auto shrink-0 justify-center">
+                      <i className="fa-brands fa-discord" />
+                      Log in with Discord
+                    </Link>
+                  </div>
+                )}
               </div>
             )}
           </div>
-        )}
+
+          {/* ----------------------------------------------- right ---- */}
+          <div className="lg:col-span-2 flex flex-col gap-6">
+            {/* Connection — everything needed to actually join */}
+            <div className="card p-6">
+              <h2 className="font-display text-xl font-bold mb-5 flex items-center gap-2">
+                <i className="fa-solid fa-server text-[var(--accent)]" />
+                Connection
+              </h2>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center gap-3 pb-2 border-b border-[var(--border)]">
+                  <span className="text-sm text-[var(--muted)] flex-shrink-0">Address</span>
+                  <span className="min-w-0 flex items-center gap-2">
+                    <code className="text-sm text-[var(--accent)] font-display break-all">
+                      {siteConfig.address}
+                    </code>
+                    <button
+                      onClick={() => void copy()}
+                      className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition"
+                      aria-label="Copy server address"
+                      title="Copy address"
+                    >
+                      <i className={`fa-solid ${copied ? "fa-check text-[var(--emerald)]" : "fa-copy"}`} />
+                    </button>
+                  </span>
+                </div>
+                {[
+                  ["Version", `${version} · ${software}`, "text"],
+                  ["Difficulty", siteConfig.difficulty, "text"],
+                  ["Whitelist", siteConfig.whitelist, "emerald"],
+                  ["Location", siteConfig.location, "text"],
+                ].map(([label, value, kind]) => (
+                  <div key={label as string} className="flex justify-between items-center gap-4 pb-2 border-b border-[var(--border)] last:border-b-0 last:pb-0">
+                    <span className="text-sm text-[var(--muted)] flex-shrink-0">{label}</span>
+                    <span className="min-w-0 text-right break-all">
+                      {kind === "emerald" ? (
+                        <span className="text-sm text-[var(--emerald)]">{value}</span>
+                      ) : (
+                        <span className="text-sm">{value}</span>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <Link href="/join" className="btn-secondary w-full justify-center mt-5">
+                <i className="fa-solid fa-compass" />
+                New here? Full join guide
+              </Link>
+            </div>
+
+            {/* Data provenance footnote */}
+            <div className="card p-4 flex items-start gap-3 text-xs text-[var(--muted-2)] leading-relaxed">
+              <i className={`fa-solid mt-0.5 ${statusLive ? "fa-satellite-dish text-[var(--emerald)]" : "fa-triangle-exclamation text-[#ffd166]"}`} />
+              <span>
+                {statusLive
+                  ? "Live from the Exaroton hosting panel — refreshes itself every 30s automatically."
+                  : "The panel can't be reached right now, so values above fall back to defaults."}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
     </SubPage>
   );

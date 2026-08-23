@@ -2256,3 +2256,75 @@ html.custom-cursor.cursor-on-text .cursor-ring {
 .thin-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* ---------- Status page dashboard ---------- */
+.status-metrics {
+  display: flex;
+  align-items: center;
+}
+.status-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 clamp(14px, 2vw, 22px);
+}
+.status-metric:first-child {
+  padding-left: 0;
+}
+.status-metric:last-child {
+  padding-right: 0;
+}
+.status-metric + .status-metric {
+  border-left: 1px solid var(--border-strong);
+}
+.status-metric-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+.status-metric-value {
+  font-family: var(--font-grotesk), sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.capacity-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  overflow: hidden;
+}
+.capacity-bar > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--emerald));
+  box-shadow: 0 0 14px -2px var(--emerald-glow);
+  transition: width 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.player-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 5px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg-2);
+}
+.player-chip img {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  image-rendering: pixelated;
+}
