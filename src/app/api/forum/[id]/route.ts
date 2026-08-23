@@ -3,7 +3,7 @@ import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { forumReplies, forumThreads } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
-import { findAccount, isAdminUser } from "@/lib/accounts";
+import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, isAdminUser } from "@/lib/accounts";
 import { isRateLimited } from "@/lib/rate-limit";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { serializePoll } from "@/lib/polls";
@@ -127,21 +127,27 @@ export async function POST(
     return NextResponse.json({ error: "Invalid thread id" }, { status: 400 });
   }
 
-  if (isRateLimited(`reply:${user.id}`, 10, 60_000)) {
-    return NextResponse.json(
-      { error: "You're replying too fast — wait a moment." },
-      { status: 429 }
-    );
-  }
-
-  // A deleted/de-powered account (cookie still valid) must not keep replying.
-  const account = getDb()
-    ? await findAccount(user.id).catch(() => null)
-    : undefined;
-  if (getDb() && (!account || account.banned)) {
+  // Live-account gate: removed account → 403, DB outage → 503.
+  const gate = await accountGate(user.id);
+  if (gate.status === "missing" || gate.status === "banned") {
     return NextResponse.json(
       { error: "Your account no longer exists on this server." },
       { status: 403 }
+    );
+  }
+  if (gate.status === "db_error") {
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
+  const account = gate.status === "ok" ? gate.account : null;
+
+  // Spam guard for members — admins are exempt from rate limits.
+  if (
+    (account?.role ?? user.role) !== "admin" &&
+    isRateLimited(`reply:${user.id}`, 10, 60_000)
+  ) {
+    return NextResponse.json(
+      { error: "You're replying too fast — wait a moment." },
+      { status: 429 }
     );
   }
 

@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { forumPolls, forumPollVotes } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
-import { findAccount } from "@/lib/accounts";
+import { accountGate, ACCOUNT_DB_ERROR_MESSAGE } from "@/lib/accounts";
 import { isRateLimited } from "@/lib/rate-limit";
 import { serializePoll } from "@/lib/polls";
 
@@ -28,7 +28,22 @@ export async function POST(
     return NextResponse.json({ error: "Invalid thread id" }, { status: 400 });
   }
 
-  if (isRateLimited(`vote:${user.id}`, 20, 60_000)) {
+  // Live-account gate: removed account → 403, DB outage → 503.
+  const gate = await accountGate(user.id);
+  if (gate.status === "missing" || gate.status === "banned") {
+    return NextResponse.json(
+      { error: "Your account no longer exists on this server." },
+      { status: 403 }
+    );
+  }
+  if (gate.status === "db_error") {
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
+  // Members are rate limited on vote churn; admins are exempt.
+  if (
+    (gate.status !== "ok" || gate.account.role !== "admin") &&
+    isRateLimited(`vote:${user.id}`, 20, 60_000)
+  ) {
     return NextResponse.json({ error: "Too many votes — slow down." }, { status: 429 });
   }
 
@@ -41,14 +56,6 @@ export async function POST(
   const db = getDb();
   if (!db) {
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
-  }
-
-  const account = await findAccount(user.id).catch(() => null);
-  if (!account || account.banned) {
-    return NextResponse.json(
-      { error: "Your account no longer exists on this server." },
-      { status: 403 }
-    );
   }
 
   const [poll] = await db
@@ -99,12 +106,15 @@ export async function DELETE(
 
   // Same banned-account gate as POST — a removed user's unexpired cookie
   // must not keep mutating poll state until the JWT expires.
-  const account = await findAccount(user.id).catch(() => null);
-  if (!account || account.banned) {
+  const delGate = await accountGate(user.id);
+  if (delGate.status === "missing" || delGate.status === "banned") {
     return NextResponse.json(
       { error: "Your account no longer exists on this server." },
       { status: 403 }
     );
+  }
+  if (delGate.status === "db_error") {
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
 
   const [poll] = await db

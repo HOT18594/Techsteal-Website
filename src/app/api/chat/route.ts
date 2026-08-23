@@ -1,8 +1,7 @@
 import { NextRequest } from "next/server";
 import { streamChatReply, type ChatTurn } from "@/lib/ai";
 import { getSessionUser } from "@/lib/auth";
-import { findAccount, canUseAiAssistant } from "@/lib/accounts";
-import { getDb } from "@/lib/db";
+import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, canUseAiAssistant } from "@/lib/accounts";
 import { isRateLimited } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
@@ -43,23 +42,30 @@ const TEXT_HEADERS = {
     );
   }
 
-  // Every message runs web searches + LLM calls, so a hammering client
-  // burns the AI budget. 10 messages/minute per user is plenty for chat.
-  if (isRateLimited(`chat:${user.id}`, 10, 60_000)) {
+  // Live-account gate runs BEFORE the rate limiter: it distinguishes a
+  // removed account (403) from a database outage (503 — during the pooler
+  // incident this was reported as "Your account no longer exists").
+  const gate = await accountGate(user.id);
+  if (gate.status === "missing" || gate.status === "banned") {
+    return new Response(
+      "Your account no longer exists on this server.",
+      { headers: TEXT_HEADERS, status: 403 }
+    );
+  }
+  if (gate.status === "db_error") {
+    return new Response(ACCOUNT_DB_ERROR_MESSAGE, { headers: TEXT_HEADERS, status: 503 });
+  }
+  const account = gate.status === "ok" ? gate.account : null;
+
+  // Every message runs searches + LLM calls, so a hammering client burns
+  // the AI budget — 10 messages/minute per member. Admins are exempt.
+  if ((account?.role ?? user.role) !== "admin" && isRateLimited(`chat:${user.id}`, 10, 60_000)) {
     return new Response(
       "You're sending messages a bit fast — give me a minute to catch up! ⏳",
       { headers: TEXT_HEADERS, status: 429 }
     );
   }
 
-  const account = await findAccount(user.id).catch(() => null);
-  if ((!account || account.banned) && getDb()) {
-    // The account was deleted after login — the cookie must not keep working.
-    return new Response(
-      "Your account no longer exists on this server.",
-      { headers: TEXT_HEADERS, status: 403 }
-    );
-  }
   const allowed = account
     ? canUseAiAssistant(account)
     : user.role === "admin" || user.permissions.includes("ai_access");

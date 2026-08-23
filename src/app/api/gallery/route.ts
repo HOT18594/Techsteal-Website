@@ -4,7 +4,7 @@ import { getDb } from "@/lib/db";
 import { galleryComments, galleryItems } from "@/lib/schema";
 import { fallbackGallery } from "@/lib/fallback-data";
 import { getSessionUser } from "@/lib/auth";
-import { canPostToGallery, findAccount } from "@/lib/accounts";
+import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, canPostToGallery } from "@/lib/accounts";
 import { isRateLimited } from "@/lib/rate-limit";
 import { GALLERY_CATEGORIES } from "@/lib/storage";
 import { publicRow } from "@/lib/public-row";
@@ -58,23 +58,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "You must be signed in to post." }, { status: 401 });
   }
 
-  if (isRateLimited(`gallerypost:${user.id}`, 5, 60_000)) {
-    return NextResponse.json(
-      { error: "You're posting too fast — wait a moment." },
-      { status: 429 }
-    );
-  }
-
-  const db = getDb();
-  if (!db) {
-    return NextResponse.json({ error: "Database not configured" }, { status: 503 });
-  }
-
-  const account = await findAccount(user.id).catch(() => null);
-  if (!account || account.banned) {
+  // Live-account gate: removed account → 403, DB outage → 503.
+  const gate = await accountGate(user.id);
+  if (gate.status === "missing" || gate.status === "banned") {
     return NextResponse.json(
       { error: "Your account no longer exists on this server." },
       { status: 403 }
+    );
+  }
+  if (gate.status === "db_error") {
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
+  if (gate.status === "unconfigured") {
+    return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+  }
+  const account = gate.account;
+  // Spam guard for members — admins are exempt from rate limits.
+  if (account.role !== "admin" && isRateLimited(`gallerypost:${user.id}`, 5, 60_000)) {
+    return NextResponse.json(
+      { error: "You're posting too fast — wait a moment." },
+      { status: 429 }
     );
   }
   if (!canPostToGallery(account)) {

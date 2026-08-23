@@ -46,6 +46,41 @@ export async function findAccount(id: string): Promise<Account | null> {
   return rows[0] ? rowToAccount(rows[0]) : null;
 }
 
+export type AccountGate =
+  | { status: "ok"; account: Account }
+  | { status: "unconfigured" }
+  | { status: "missing" }
+  | { status: "banned" }
+  | { status: "db_error" };
+
+/**
+ * Live-account gate for write routes, distinguishing the failure modes
+ * that `.catch(() => null)` used to collapse into one:
+ *   missing/banned → a REAL 403 (the account was removed after login),
+ *   db_error       → must be a 503. During a pooler outage every lookup
+ *                    failed and members were told "Your account no longer
+ *                    exists on this server" — a lie that locked them out
+ *                    of chat, posting and uploads site-wide.
+ *   unconfigured   → site running without a database (fallback mode);
+ *                    routes proceed on the session cookie's claims.
+ */
+export async function accountGate(id: string): Promise<AccountGate> {
+  if (!getDb()) return { status: "unconfigured" };
+  try {
+    const account = await findAccount(id);
+    if (!account) return { status: "missing" };
+    if (account.banned) return { status: "banned" };
+    return { status: "ok", account };
+  } catch (err) {
+    console.error("accountGate: lookup failed", err);
+    return { status: "db_error" };
+  }
+}
+
+/** The 503 body for db_error — shared by every gated route. */
+export const ACCOUNT_DB_ERROR_MESSAGE =
+  "The member database is unreachable right now — give it a moment and try again.";
+
 export async function addAccount(input: {
   id: string;
   username: string;

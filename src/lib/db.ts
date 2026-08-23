@@ -27,18 +27,37 @@ export type Db = PostgresJsDatabase<typeof schema>;
 // while the old one keeps its sockets open — until the pooler maxes out.
 const g = globalThis as unknown as { __techstealDb?: Db };
 
+/**
+ * Route session-pooler URLs (port 5432) to Supabase's TRANSACTION pooler
+ * (port 6543). The session pooler caps the whole project at ~15 server
+ * sessions; a handful of warm serverless instances (each holding a small
+ * pool) plus local dev exhausted it, and every DB call across the site
+ * failed with EMAXCONNSESSION. The transaction pooler multiplexes many
+ * clients over a few server sessions — it's what Supabase recommends for
+ * serverless. prepare:false (below) keeps it compatible.
+ */
+function toTransactionPooler(url: string): string {
+  try {
+    const u = new URL(url);
+    if (u.hostname.endsWith(".pooler.supabase.com") && u.port !== "6543") {
+      u.port = "6543";
+      return u.toString();
+    }
+    return url;
+  } catch {
+    return url;
+  }
+}
+
 export function createDb(url = process.env.DATABASE_URL): Db {
   if (!url) throw new Error("DATABASE_URL is not set");
   if (g.__techstealDb) return g.__techstealDb;
-  // Pool sizing is about Supabase's SESSION pooler (port 5432), which caps
-  // each user at ~15 server sessions. Every warm serverless instance holds
-  // its pool open, so a big `max` here gets the whole site
-  // EMAXCONNSESSION errors once a few instances are warm. Keep it small
-  // and release idle sockets quickly.
-  const client = postgres(url, {
+  const client = postgres(toTransactionPooler(url), {
+    // Required for the transaction pooler: it doesn't support session-level
+    // prepared statements.
     prepare: false,
     max: 3,
-    idle_timeout: 20, // seconds — free the pooler slot when an instance goes quiet
+    idle_timeout: 20, // seconds — release the slot when an instance goes quiet
     max_lifetime: 60 * 5, // seconds — never hold a slot longer than 5 min
     connect_timeout: 10,
   });

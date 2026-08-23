@@ -4,7 +4,7 @@ import { getDb } from "@/lib/db";
 import { forumPolls, forumPollVotes, forumReplies, forumThreads } from "@/lib/schema";
 import { fallbackThreads } from "@/lib/fallback-data";
 import { getSessionUser } from "@/lib/auth";
-import { findAccount, isAdminUser } from "@/lib/accounts";
+import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, isAdminUser } from "@/lib/accounts";
 import { isRateLimited } from "@/lib/rate-limit";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { parsePollInput, pollOptionRows } from "@/lib/polls";
@@ -155,26 +155,30 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "You must be signed in to post." }, { status: 401 });
   }
 
-  if (isRateLimited(`forum:${user.id}`, 5, 60_000)) {
-    return NextResponse.json(
-      { error: "You're posting too fast — wait a moment." },
-      { status: 429 }
-    );
-  }
-
-  // A deleted/de-powered account (cookie still valid) must not keep posting.
-  const db = getDb();
-  const account = db ? await findAccount(user.id).catch(() => null) : undefined;
-  if (db && (!account || account.banned)) {
+  // Live-account gate first: removed account → 403, DB outage → 503 (never
+  // the old false "account no longer exists" during connection trouble).
+  const gate = await accountGate(user.id);
+  if (gate.status === "missing" || gate.status === "banned") {
     return NextResponse.json(
       { error: "Your account no longer exists on this server." },
       { status: 403 }
     );
   }
-  if (!db) {
+  if (gate.status === "db_error") {
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
+  if (gate.status === "unconfigured") {
     return NextResponse.json(
       { error: "Posting needs the database — it isn't configured yet." },
       { status: 503 }
+    );
+  }
+  const account = gate.account;
+  // Spam guard for members — admins are exempt from rate limits.
+  if (account.role !== "admin" && isRateLimited(`forum:${user.id}`, 5, 60_000)) {
+    return NextResponse.json(
+      { error: "You're posting too fast — wait a moment." },
+      { status: 429 }
     );
   }
 
@@ -213,7 +217,7 @@ export async function POST(request: NextRequest) {
   const username = account?.username ?? user.username;
   const now = new Date();
 
-  const created = await db.transaction(async (tx) => {
+  const created = await getDb()!.transaction(async (tx) => {
     const [thread] = await tx
       .insert(forumThreads)
       .values({

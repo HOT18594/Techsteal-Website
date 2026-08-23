@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
 import { getSessionUser } from "@/lib/auth";
-import { findAccount } from "@/lib/accounts";
+import { accountGate, ACCOUNT_DB_ERROR_MESSAGE } from "@/lib/accounts";
 import { isRateLimited } from "@/lib/rate-limit";
 import { ALLOWED_MIME, MAX_BYTES, sniffImageMime, uploadImage } from "@/lib/storage";
 
@@ -16,15 +15,20 @@ export async function POST(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "You must be signed in to upload." }, { status: 401 });
   }
-  if (isRateLimited(`upload:${user.id}`, 10, 60_000)) {
-    return NextResponse.json({ error: "Slow down — too many uploads." }, { status: 429 });
+  // Live-account gate: removed account → 403, DB outage → 503.
+  const gate = await accountGate(user.id);
+  if (gate.status === "missing" || gate.status === "banned") {
+    return NextResponse.json({ error: "Your account no longer exists on this server." }, { status: 403 });
   }
-  if (!getDb()) {
+  if (gate.status === "db_error") {
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
+  if (gate.status === "unconfigured") {
     return NextResponse.json({ error: "Database not configured." }, { status: 503 });
   }
-  const account = await findAccount(user.id).catch(() => null);
-  if (!account || account.banned) {
-    return NextResponse.json({ error: "Your account no longer exists on this server." }, { status: 403 });
+  // Spam guard for members — admins are exempt from rate limits.
+  if (gate.account.role !== "admin" && isRateLimited(`upload:${user.id}`, 10, 60_000)) {
+    return NextResponse.json({ error: "Slow down — too many uploads." }, { status: 429 });
   }
 
   let form: FormData;
