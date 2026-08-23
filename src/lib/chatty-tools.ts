@@ -11,6 +11,7 @@ import { getDb } from "./db";
 import { forumReplies, forumThreads, galleryItems, profiles, ruleSections, timelineEvents } from "./schema";
 import { getLiveStatus } from "./live-status";
 import { formatSearchResults, webSearch } from "./web-search";
+import { formatModrinthResults, searchModrinth } from "./modrinth";
 
 export interface ChattyToolDef {
   type: "function";
@@ -123,9 +124,24 @@ export const CHATTY_TOOLS: ChattyToolDef[] = [
   {
     type: "function",
     function: {
+      name: "search_mods",
+      description:
+        "Search Minecraft mods, modpacks, shaders and resource packs on Modrinth (the main mod repository) — live title, author, description, download counts, supported versions and link. Use this FIRST for ANY question about a specific mod or modpack, or to recommend mods.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Mod name or keywords." },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "web_search",
       description:
-        "Search the public web (DuckDuckGo + Wikipedia) for general Minecraft knowledge — mechanics, crafting, mods, updates. NEVER use this for server-specific facts.",
+        "Search the public web (DuckDuckGo + Minecraft Wiki + Wikipedia) for general Minecraft knowledge — mechanics, crafting, updates, and NEWS about mods that search_mods couldn't find (unreleased/announced mods). NEVER use this for server-specific facts.",
       parameters: {
         type: "object",
         properties: { query: { type: "string", description: "The search query." } },
@@ -147,6 +163,7 @@ export const TOOL_LABELS: Record<string, string> = {
   search_forum: "Searching the forum",
   read_forum_thread: "Reading a thread",
   get_site_stats: "Counting site stats",
+  search_mods: "Searching mods",
   web_search: "Searching the web",
 };
 
@@ -365,6 +382,20 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
         ok: true,
         label,
         content: `Site stats: ${memberCount.n} registered members, ${threadCount.n} forum threads, ${replyCount.n} forum replies, ${buildCount.n} gallery builds, ${eventCount.n} history events.`,
+      };
+    }
+
+    case "search_mods": {
+      const label = "Searching mods";
+      const q = typeof args.query === "string" ? args.query.trim().slice(0, 100) : "";
+      if (!q) return { ok: false, label, content: "A mod name or keywords are required." };
+      const hits = await searchModrinth(q);
+      return {
+        ok: true,
+        label,
+        content: hits.length
+          ? cap(formatModrinthResults(hits))
+          : `Nothing matching "${q}" on Modrinth — it may be unreleased or renamed. If you need news/announcements, try ONE web_search; otherwise say you couldn't find it.`,
       };
     }
 

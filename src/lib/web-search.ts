@@ -9,6 +9,8 @@
 // answer current questions (season recipes, mods, wiki topics, etc.)
 // instead of guessing.
 
+import { keywordQuery } from "./query-words";
+
 export interface SearchResult {
   title: string;
   url: string;
@@ -35,38 +37,82 @@ async function fetchJson(url: string): Promise<unknown | null> {
   }
 }
 
-/** DuckDuckGo Instant Answer — returns one result when an answer exists. */
-async function searchDuckDuckGo(query: string): Promise<SearchResult[]> {
+/** Words ignored when judging whether a result is actually relevant. */
+const RELEVANCE_STOPWORDS = new Set([
+  "minecraft", "the", "a", "an", "of", "for", "and", "or", "to", "in", "on",
+  "what", "how", "best", "good", "new", "list", "wiki", "mod", "mods",
+]);
+
+/** DDG's index entries are noisy — only keep ones that share a real
+ *  keyword with the query (title or URL). Without this, a query like
+ *  "create aeronautics minecraft" pulls in total irrelevancies. */
+function isRelevant(result: { title: string; url: string }, query: string): boolean {
+  const tokens = query
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 4 && !RELEVANCE_STOPWORDS.has(w));
+  if (tokens.length === 0) return true;
+  const haystack = `${result.title} ${result.url}`.toLowerCase();
+  return tokens.some((t) => haystack.includes(t));
+}
+
+/** DuckDuckGo Instant Answer — the abstract/answer when one exists, plus
+ *  RelatedTopics (DDG's index entries), split so callers can merge the
+ *  noisy related list after the cleaner wiki sources. */
+async function searchDuckDuckGo(
+  query: string
+): Promise<{ primary: SearchResult[]; related: SearchResult[] }> {
   const data = await fetchJson(
     `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
   );
-  if (!data || typeof data !== "object") return [];
+  if (!data || typeof data !== "object") return { primary: [], related: [] };
   const d = data as {
     AbstractText?: string;
     AbstractURL?: string;
     Heading?: string;
     Answer?: string;
     AnswerType?: string;
+    RelatedTopics?: Array<{
+      Text?: string;
+      FirstURL?: string;
+      Topics?: Array<{ Text?: string; FirstURL?: string }>;
+    }>;
   };
+  const primary: SearchResult[] = [];
   if (d.AbstractText) {
-    return [
-      {
-        title: d.Heading || query,
-        url: d.AbstractURL || "https://duckduckgo.com",
-        snippet: d.AbstractText.slice(0, 500),
-      },
-    ];
+    primary.push({
+      title: d.Heading || query,
+      url: d.AbstractURL || "https://duckduckgo.com",
+      snippet: d.AbstractText.slice(0, 500),
+    });
+  } else if (d.Answer) {
+    primary.push({
+      title: d.AnswerType || query,
+      url: "https://duckduckgo.com",
+      snippet: d.Answer.slice(0, 500),
+    });
   }
-  if (d.Answer) {
-    return [
-      {
-        title: d.AnswerType || query,
-        url: "https://duckduckgo.com",
-        snippet: d.Answer.slice(0, 500),
-      },
-    ];
+  // RelatedTopics may be flat entries or {Name, Topics: [...]} groups.
+  const related: SearchResult[] = [];
+  const flat = (d.RelatedTopics ?? []).flatMap((rt) =>
+    Array.isArray(rt.Topics) && rt.Topics.length > 0 ? rt.Topics : rt.Text && rt.FirstURL ? [rt] : []
+  );
+  for (const t of flat) {
+    if (!t.Text || !t.FirstURL) continue;
+    // duckduckgo.com/... URLs in RelatedTopics are disambiguation stubs
+    // ("Create (song)", "Create (TV network)") — not real destinations.
+    if (t.FirstURL.startsWith("https://duckduckgo.com/")) continue;
+    const candidate = {
+      title: (t.Text.split(" - ")[0] || t.FirstURL).slice(0, 120),
+      url: t.FirstURL,
+      snippet: t.Text.slice(0, 400),
+    };
+    if (!isRelevant(candidate, query)) continue;
+    related.push(candidate);
+    if (related.length >= 3) break;
   }
-  return [];
+  return { primary, related };
 }
 
 /** Wikipedia search — top matching articles with their intro snippets. */
@@ -127,19 +173,32 @@ async function searchMinecraftWiki(query: string): Promise<SearchResult[]> {
 export async function webSearch(query: string): Promise<SearchResult[]> {
   const trimmed = query.trim().slice(0, 200);
   if (!trimmed) return [];
+  // All sources here are keyword-based and choke on full sentences
+  // ("how to find ancient debris" returns junk from both wikis) — search
+  // with the extracted keywords.
+  const q = keywordQuery(trimmed) || trimmed;
 
   const [ddg, mcwiki, wiki] = await Promise.all([
-    searchDuckDuckGo(trimmed).catch(() => [] as SearchResult[]),
-    searchMinecraftWiki(trimmed).catch(() => [] as SearchResult[]),
-    searchWikipedia(trimmed).catch(() => [] as SearchResult[]),
+    searchDuckDuckGo(q).catch(() => ({ primary: [], related: [] })),
+    searchMinecraftWiki(q).catch(() => [] as SearchResult[]),
+    searchWikipedia(q).catch(() => [] as SearchResult[]),
   ]);
 
-  // Dedupe by url, prefer DuckDuckGo's instant answer first, then the
-  // Minecraft Wiki, then Wikipedia.
+  // Dedupe by url. Priority: DDG's instant answer, then the Minecraft Wiki
+  // (clean, on-topic), then DDG's filtered index entries, then Wikipedia.
+  // Wiki full-text search matches loose common words (querying "create
+  // aeronautics" surfaces Kirsten Dunst of all things), so relevance-filter
+  // everything except DDG's trusted instant answer — junk context is worse
+  // than none.
+  const ranked = [
+    ...ddg.primary.map((r) => ({ r, trusted: true })),
+    ...[...mcwiki, ...ddg.related, ...wiki].map((r) => ({ r, trusted: false })),
+  ];
   const seen = new Set<string>();
   const merged: SearchResult[] = [];
-  for (const r of [...ddg, ...mcwiki, ...wiki]) {
+  for (const { r, trusted } of ranked) {
     if (!r.snippet || seen.has(r.url)) continue;
+    if (!trusted && !isRelevant(r, q)) continue;
     seen.add(r.url);
     merged.push(r);
     if (merged.length >= 5) break;

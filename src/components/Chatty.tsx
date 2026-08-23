@@ -63,6 +63,7 @@ const TOOL_ICONS: Record<string, string> = {
   search_forum: "fa-comments",
   read_forum_thread: "fa-comment-dots",
   get_site_stats: "fa-chart-simple",
+  search_mods: "fa-puzzle-piece",
   web_search: "fa-globe",
 };
 

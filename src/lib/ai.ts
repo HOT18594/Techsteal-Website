@@ -20,6 +20,7 @@ import { getDb } from "./db";
 import { forumThreads, galleryItems, profiles, ruleSections, timelineEvents } from "./schema";
 import { CHATTY_TOOLS, executeChattyTool, toolLabel } from "./chatty-tools";
 import { formatSearchResults, webSearch } from "./web-search";
+import { formatModrinthResults, searchModrinth, type ModrinthHit } from "./modrinth";
 
 const NOT_CONFIGURED = (message: string) =>
   `The AI assistant isn't connected yet — set AI_API_KEY in your environment to enable live answers. (You asked: "${message}")`;
@@ -128,7 +129,8 @@ function buildSystemPrompt(opts: {
     `- search_gallery — find builds by title/builder/category`,
     `- search_forum + read_forum_thread — find and read discussions`,
     `- get_site_stats — member/thread/build/event counts`,
-    `- web_search — general Minecraft knowledge only (mechanics, crafting, mods, updates). NEVER for server-specific facts. LIMITED to 2 searches per answer — if the first results are thin, say so and answer from your own knowledge instead of searching again.`,
+    `- search_mods — Modrinth, the mod repository: LIVE data on specific mods/modpacks/shaders (author, description, downloads, versions, link). For ANY question about a specific mod or modpack, call search_mods FIRST.`,
+    `- web_search — general Minecraft knowledge only (mechanics, crafting, updates), or NEWS about a mod search_mods couldn't find (unreleased/announced). NEVER for server-specific facts. LIMITED to 2 searches per answer — if the first results are thin, say so and answer from your own knowledge instead of searching again.`,
     `Rules of thumb: greeting/FAQ you already know → answer directly. Anything about current players, specific members/builds/threads, counts, or anything the snapshot doesn't fully cover → call the matching tool first, then answer from the result. You may chain tools (search_forum → read_forum_thread). Don't call tools you don't need.`,
     ``,
     `=== TRUTH HIERARCHY (always follow in this order) ===`,
@@ -153,6 +155,7 @@ function buildSystemPrompt(opts: {
     `- Edition: Java Edition ${c.version}`,
     `- Difficulty: ${c.difficulty} · Whitelist: ${c.whitelist} · Region: ${c.location}`,
     `- Software: ${c.software} · Season: ${c.season} · Max players: ${c.maxPlayers}`,
+    `- Software type: ${c.software} is a vanilla-compatible server — Forge/Fabric/NeoForge MODS (e.g. Create) cannot be installed on it. If a player asks about adding mods to THIS server, explain that gently and point them to the Rules page / Discord; for what mods ARE and which to try in singleplayer, use search_mods.`,
     `- Server stats: ${c.stats.tps} TPS · ${c.stats.uptimeDays} days uptime · world ${c.stats.worldSize} GB`,
     ``,
     `=== HOW TO JOIN (if asked, give exactly these steps) ===`,
@@ -437,10 +440,17 @@ export async function streamChatReply(
   if (!apiKey) return messageStream(NOT_CONFIGURED(message));
 
   const isServerQuestion = SERVER_QUESTION_HINTS.test(message);
-  const [results, snapshot] = await Promise.all([
-    // Free web search pre-attached for general questions (saves a tool round);
-    // server questions get tools instead.
-    isServerQuestion ? Promise.resolve([]) : webSearch(message),
+  // Mod questions pre-attach live Modrinth data — the model answers from
+  // real repository context instead of the (often empty) web results that
+  // made it say "I'm not certain" before.
+  const isModQuestion =
+    /\b(mods?|modpacks?|shaders?|resource\s*packs?|datapacks?)\b/i.test(message);
+  const [results, modHits, snapshot] = await Promise.all([
+    // Free web search pre-attached for general questions (saves a tool
+    // round); pure server questions get tools instead. Mod questions keep
+    // web results too — news complements the Modrinth data.
+    isServerQuestion && !isModQuestion ? Promise.resolve([]) : webSearch(message),
+    isModQuestion ? searchModrinth(message) : Promise.resolve([] as ModrinthHit[]),
     buildKnowledgeSnapshot(),
   ]);
   const system = buildSystemPrompt({ user, knowledge: snapshot.text, hasDb: snapshot.hasDb });
@@ -460,7 +470,16 @@ export async function streamChatReply(
   const userContent = [
     `Player's question: "${message}"`,
     ``,
-    `Question type: ${isServerQuestion ? "SERVER-SPECIFIC (use tools / knowledge — never guess)" : "GENERAL MINECRAFT (web results below or the web_search tool; still cite the server where relevant)"}.`,
+    `Question type: ${
+      isModQuestion
+        ? "MINECRAFT MOD/MODPACK — ground the answer in the Modrinth data below, or call search_mods for more"
+        : isServerQuestion
+          ? "SERVER-SPECIFIC (use tools / knowledge — never guess)"
+          : "GENERAL MINECRAFT (web results below or the web_search tool; still cite the server where relevant)"
+    }.`,
+    ...(modHits.length > 0
+      ? [``, `Modrinth results (live mod repository data):`, formatModrinthResults(modHits)]
+      : []),
     ...(results.length > 0
       ? [``, `Web search results (general Minecraft knowledge only):`, formatSearchResults(results)]
       : []),
