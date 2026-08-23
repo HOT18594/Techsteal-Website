@@ -94,6 +94,9 @@ export async function uploadImage(
       "x-upsert": "true",
     },
     body: Uint8Array.from(buffer),
+    // A stalled Supabase must not hold the upload route open until the
+    // platform timeout — fail with a clean message instead.
+    signal: AbortSignal.timeout(15_000),
   });
 
   if (!res.ok) {

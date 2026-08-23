@@ -5,6 +5,7 @@ import { forumReplies, forumThreads } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
 import { findAccount } from "@/lib/accounts";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
+import { publicRow } from "@/lib/public-row";
 
 export const dynamic = "force-dynamic";
 
@@ -81,7 +82,7 @@ export async function POST(
     const avatars = await resolveAuthorAvatars([updated]);
     const info = avatarInfoFor(avatars, updated);
     return NextResponse.json({
-      reply: { ...updated, avatarUrl: info?.avatarUrl ?? null },
+      reply: { ...publicRow(updated), avatarUrl: info?.avatarUrl ?? null },
       // Derived from the DB's final state — true if the user's id is in it.
       liked: (updated.likedBy ?? []).includes(user.id),
     });
@@ -113,7 +114,7 @@ export async function POST(
   }
 
   return NextResponse.json({
-    thread: { ...updated, hasPoll: undefined },
+    thread: { ...publicRow(updated), hasPoll: undefined },
     liked: (updated.likedBy ?? []).includes(user.id),
   });
 }

@@ -240,7 +240,7 @@ export function PollViewer({
               type="button"
               disabled={!clickable}
               onClick={() => void vote(opt.id)}
-              className={`poll-option ${mine ? "mine" : ""} ${showResults ? "has-results" : ""}`}
+              className={`poll-option ${mine ? "mine" : ""}`}
               aria-label={`Vote: ${opt.text}${showResults ? ` — ${count} of ${total} votes` : ""}`}
             >
               <span className="poll-option-label">

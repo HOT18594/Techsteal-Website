@@ -7,6 +7,7 @@ import { getSessionUser } from "@/lib/auth";
 import { canPostToGallery, findAccount } from "@/lib/accounts";
 import { isRateLimited } from "@/lib/rate-limit";
 import { GALLERY_CATEGORIES } from "@/lib/storage";
+import { publicRow } from "@/lib/public-row";
 
 export const dynamic = "force-dynamic";
 
@@ -24,16 +25,22 @@ function isOurStorageUrl(url: string): boolean {
 export async function GET() {
   const db = getDb();
   if (!db) return NextResponse.json(fallbackGallery);
-  const [rows, commentCounts] = await Promise.all([
+  const [rows, commentCounts, viewer] = await Promise.all([
     db.select().from(galleryItems).orderBy(desc(galleryItems.featured), desc(galleryItems.id)),
     db
       .select({ itemId: galleryComments.itemId, n: count() })
       .from(galleryComments)
       .groupBy(galleryComments.itemId),
+    getSessionUser(),
   ]);
   const counts = new Map(commentCounts.map((c) => [c.itemId, c.n]));
   return NextResponse.json(
-    rows.map((row) => ({ ...row, commentCount: counts.get(row.id) ?? 0 }))
+    rows.map((row) => ({
+      ...publicRow(row),
+      // Per-viewer like state — raw liker ids stay server-side.
+      liked: viewer ? ((row.likedBy ?? []) as string[]).includes(viewer.id) : false,
+      commentCount: counts.get(row.id) ?? 0,
+    }))
   );
 }
 
@@ -122,5 +129,5 @@ export async function POST(request: NextRequest) {
     })
     .returning();
 
-  return NextResponse.json({ ...created, commentCount: 0 }, { status: 201 });
+  return NextResponse.json({ ...publicRow(created), liked: false, commentCount: 0 }, { status: 201 });
 }

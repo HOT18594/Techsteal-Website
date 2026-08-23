@@ -8,6 +8,7 @@ import { findAccount, isAdminUser } from "@/lib/accounts";
 import { isRateLimited } from "@/lib/rate-limit";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { parsePollInput, pollOptionRows } from "@/lib/polls";
+import { publicRow } from "@/lib/public-row";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,8 @@ type ThreadRow = typeof forumThreads.$inferSelect;
 function serializeThread(row: ThreadRow, avatarUrl: string | null, hasPoll: boolean, color: string) {
   // `color` is the resolved per-account tile color so the list renders the
   // same avatar a thread's detail page does (rows store only a default).
-  return { ...row, avatarUrl, hasPoll, color };
+  // likedBy (account ids) stays server-side.
+  return { ...publicRow(row), avatarUrl, hasPoll, color };
 }
 
 // List threads — pinned first, then by the requested sort. Supports
@@ -59,18 +61,24 @@ export async function GET(request: NextRequest) {
   const category = params.get("category");
   const unanswered = params.get("unanswered") === "1";
 
-  const filters = [];
+  // Base filters apply to both the list and the sidebar category counts —
+  // otherwise a search would show "All 2" next to global per-category
+  // totals, making a category click look like it ADDS threads.
+  const baseFilters = [];
   if (q) {
     const like = `%${escapeLike(q)}%`;
-    filters.push(
+    baseFilters.push(
       or(ilike(forumThreads.title, like), ilike(forumThreads.content, like), ilike(forumThreads.author, like))
     );
   }
+  if (unanswered) baseFilters.push(eq(forumThreads.replies, 0));
+
+  const filters = [...baseFilters];
   if (category && CATEGORIES.includes(category)) {
     filters.push(eq(forumThreads.category, category));
   }
-  if (unanswered) filters.push(eq(forumThreads.replies, 0));
   const where = filters.length > 0 ? and(...filters) : undefined;
+  const countWhere = baseFilters.length > 0 ? and(...baseFilters) : undefined;
 
   // Sorting: pinned always floats to the top; within that, the chosen order.
   const orderBy = [desc(forumThreads.pinned)];
@@ -92,6 +100,7 @@ export async function GET(request: NextRequest) {
     db
       .select({ category: forumThreads.category, n: count() })
       .from(forumThreads)
+      .where(countWhere)
       .groupBy(forumThreads.category),
   ]);
   const total = totals[0]?.n ?? 0;
@@ -235,7 +244,7 @@ export async function POST(request: NextRequest) {
   const info = avatarInfoFor(avatars, created);
   return NextResponse.json(
     {
-      ...created,
+      ...publicRow(created),
       avatarUrl: info?.avatarUrl ?? null,
       color: info?.color ?? created.color,
       hasPoll: pollInput !== null,
@@ -366,20 +375,24 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "Admins only." }, { status: 403 });
   }
 
-  const rows = await db.delete(forumThreads).where(eq(forumThreads.id, id)).returning();
-  if (rows.length === 0) {
+  // Atomic cascade: thread, replies, poll and votes go together — a
+  // mid-failure must not orphan replies/polls pointing at a dead thread.
+  const rows = await db.transaction(async (tx) => {
+    const deleted = await tx.delete(forumThreads).where(eq(forumThreads.id, id)).returning();
+    if (deleted.length === 0) return null;
+    await tx.delete(forumReplies).where(eq(forumReplies.threadId, id));
+    const polls = await tx
+      .select({ id: forumPolls.id })
+      .from(forumPolls)
+      .where(eq(forumPolls.threadId, id));
+    for (const p of polls) {
+      await tx.delete(forumPollVotes).where(eq(forumPollVotes.pollId, p.id));
+    }
+    await tx.delete(forumPolls).where(eq(forumPolls.threadId, id));
+    return deleted;
+  });
+  if (!rows) {
     return NextResponse.json({ error: "Thread not found" }, { status: 404 });
-  }
-  // Clean up replies and any poll + votes.
-  await db.delete(forumReplies).where(eq(forumReplies.threadId, id));
-  const [poll] = await db
-    .select({ id: forumPolls.id })
-    .from(forumPolls)
-    .where(eq(forumPolls.threadId, id))
-    .limit(1);
-  if (poll) {
-    await db.delete(forumPollVotes).where(eq(forumPollVotes.pollId, poll.id));
-    await db.delete(forumPolls).where(eq(forumPolls.id, poll.id));
   }
   return NextResponse.json({ ok: true });
 }

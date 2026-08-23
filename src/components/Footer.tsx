@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { siteConfig } from "@/lib/site";
+import { CopyrightYear } from "@/components/CopyrightYear";
 
 const NAVIGATE = [
   { href: "/", label: "Home" },
@@ -47,18 +48,24 @@ export function Footer() {
               A private Minecraft community — status, builds, history, and
               rules in one place.
             </p>
-            <div className="flex gap-3">
-              {SOCIALS.map((s) => (
-                <a
-                  key={s.key}
-                  href={siteConfig.socials[s.key]}
-                  className="w-10 h-10 flex items-center justify-center border border-[var(--border)] hover:border-[var(--accent)] hover:text-[var(--accent)] hover:shadow-[0_0_18px_-6px_var(--accent-glow)] transition rounded-lg"
-                  aria-label={s.label}
-                >
-                  <i className={s.icon} />
-                </a>
-              ))}
-            </div>
+            {/* Only socials with a real URL render — placeholder "#" links
+                would just dead-click to the top of the page. */}
+            {SOCIALS.filter((s) => siteConfig.socials[s.key] && siteConfig.socials[s.key] !== "#").length > 0 ? (
+              <div className="flex gap-3">
+                {SOCIALS.filter((s) => siteConfig.socials[s.key] && siteConfig.socials[s.key] !== "#").map((s) => (
+                  <a
+                    key={s.key}
+                    href={siteConfig.socials[s.key]}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-10 h-10 flex items-center justify-center border border-[var(--border)] hover:border-[var(--accent)] hover:text-[var(--accent)] hover:shadow-[0_0_18px_-6px_var(--accent-glow)] transition rounded-lg"
+                    aria-label={s.label}
+                  >
+                    <i className={s.icon} />
+                  </a>
+                ))}
+              </div>
+            ) : null}
           </div>
 
           <div>
@@ -98,7 +105,7 @@ export function Footer() {
 
         <div className="pt-8 border-t border-[var(--border)] flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="text-xs text-[var(--muted-2)]">
-            © {new Date().getFullYear()} {siteConfig.name} · Not affiliated with Mojang or Microsoft
+            © <CopyrightYear /> {siteConfig.name} · Not affiliated with Mojang or Microsoft
           </div>
           <div className="text-xs text-[var(--muted-2)] flex items-center gap-3 flex-wrap justify-center">
             <span className="text-[var(--fg-2)]">{siteConfig.season}</span>

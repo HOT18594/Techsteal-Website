@@ -39,6 +39,10 @@ export interface ForumThread {
   locked?: boolean;
   /** Thread-level likes. */
   likes?: number;
+  /** Whether the CURRENT viewer has liked it (server-computed per session;
+   * raw liker ids stay server-side). */
+  liked?: boolean;
+  /** @deprecated server responses no longer include liker account ids. */
   likedBy?: string[];
   /** Set when the post was edited; shown as an "edited" marker. */
   editedAt?: string | null;
@@ -79,7 +83,9 @@ export interface ForumReply {
   avatarUrl?: string | null;
   /** Number of likes. */
   likes?: number;
-  /** Account ids that liked this reply. */
+  /** Whether the CURRENT viewer has liked it (server-computed per session). */
+  liked?: boolean;
+  /** @deprecated server responses no longer include liker account ids. */
   likedBy?: string[];
   /** Admin-pinned comment — shows first with a pin badge. */
   pinned?: boolean;
@@ -103,7 +109,9 @@ export interface GalleryItem {
   description?: string;
   /** All images of the post (cover first). `image` mirrors the cover. */
   images?: string[];
-  /** Account ids that liked this post. */
+  /** Whether the CURRENT viewer has liked this post (server-computed). */
+  liked?: boolean;
+  /** @deprecated server responses no longer include liker account ids. */
   likedBy?: string[];
   /** Admin-pinned posts float to the top with a badge. */
   featured?: boolean;

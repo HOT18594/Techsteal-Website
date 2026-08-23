@@ -294,7 +294,9 @@ export default function StatusPage() {
               <span className="stat-number text-xl! leading-tight block">In-game now</span>
             </div>
             <div className="mt-1 text-xs text-[var(--muted)] uppercase tracking-wider">
-              {playerList.length} {playerList.length === 1 ? "player" : "players"} on the server
+              {statusLive
+                ? `${playerList.length} ${playerList.length === 1 ? "player" : "players"} on the server`
+                : "Roster unavailable"}
             </div>
             <div className="mt-3 min-h-[2rem]">
               {online && playerList.length > 0 ? (

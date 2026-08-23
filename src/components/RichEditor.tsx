@@ -8,6 +8,7 @@
 
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type ChangeEvent,
@@ -109,8 +110,23 @@ export function RichEditor({
   const fileRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<"write" | "preview">("write");
   const [uploading, setUploading] = useState(0); // uploads in flight
+  // Ref counter for the in-flight cap — state reads inside async callbacks
+  // are stale closures and let the cap slip.
+  const uploadingCount = useRef(0);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  // An embed that finished while Preview was open (textarea unmounted) —
+  // inserted as soon as Write mode remounts the textarea.
+  const queuedInsert = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (mode !== "write" || queuedInsert.current === null) return;
+    const snippet = queuedInsert.current;
+    queuedInsert.current = null;
+    requestAnimationFrame(() => insertAtCursor(snippet));
+    // insertAtCursor identity is stable (useCallback on applyEdit).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   /** Apply an edit to the textarea value, preserving/restoring selection. */
   const applyEdit = useCallback(
@@ -188,7 +204,7 @@ export function RichEditor({
 
   const uploadFile = useCallback(
     async (file: File) => {
-      if (disabled || uploading >= 4) return;
+      if (disabled || uploadingCount.current >= 4) return;
       if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type)) {
         onUploadError?.("Only JPG, PNG, WebP and GIF images can be embedded.");
         return;
@@ -201,22 +217,33 @@ export function RichEditor({
         );
         return;
       }
-      setUploading((n) => n + 1);
+      uploadingCount.current += 1;
+      setUploading(uploadingCount.current);
       setUploadPct(0);
       try {
         // Downscale/compress in the browser first — screenshots straight out
         // of Minecraft are often 3–8 MB PNGs for no visual benefit.
         const compressed = await compressImage(file, 1920, 0.85);
         const url = await xhrUpload(compressed, setUploadPct);
-        insertAtCursor(`\n![${compressed.name.replace(/[^\w.-]/g, "").slice(0, 60) || "image"}](${url})\n`);
+        const snippet = `\n![${compressed.name.replace(/[^\w.-]/g, "").slice(0, 60) || "image"}](${url})\n`;
+        if (taRef.current) {
+          insertAtCursor(snippet);
+        } else {
+          // Preview tab is open (no textarea): queue the embed and flip back
+          // to Write — previously this uploaded the file and silently
+          // dropped it.
+          queuedInsert.current = snippet;
+          setMode("write");
+        }
       } catch (e) {
         onUploadError?.(e instanceof Error ? e.message : "Upload failed — try again.");
       } finally {
-        setUploadPct(null);
-        setUploading((n) => Math.max(0, n - 1));
+        uploadingCount.current = Math.max(0, uploadingCount.current - 1);
+        setUploading(uploadingCount.current);
+        if (uploadingCount.current === 0) setUploadPct(null);
       }
     },
-    [disabled, insertAtCursor, onUploadError, uploading]
+    [disabled, insertAtCursor, onUploadError]
   );
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {

@@ -54,16 +54,22 @@ export async function exarotonAction(
 // Live status — powers the Status page and the /api/status route.
 // ---------------------------------------------------------------------------
 
-/** Exaroton numeric status codes → our state names. */
+/** Exaroton numeric status codes → our state names. Matches the official
+ * enum (ServerStatus in exaroton's own SDKs): 0 OFFLINE, 1 ONLINE,
+ * 2 STARTING, 3 STOPPING, 4 RESTARTING, 5 SAVING, 6 LOADING, 7 CRASHED,
+ * 8 PENDING, 9 TRANSFERRING, 10 PREPARING. */
 const STATE_BY_CODE: Record<number, { state: ServerStatus["state"]; label: string }> = {
   0: { state: "offline", label: "Offline" },
   1: { state: "online", label: "Online" },
-  2: { state: "loading", label: "Loading…" },
-  3: { state: "starting", label: "Starting…" },
-  4: { state: "stopping", label: "Stopping…" },
-  5: { state: "restarting", label: "Restarting…" },
-  6: { state: "crashed", label: "Crashed" },
-  10: { state: "pending", label: "Pending" },
+  2: { state: "starting", label: "Starting…" },
+  3: { state: "stopping", label: "Stopping…" },
+  4: { state: "restarting", label: "Restarting…" },
+  5: { state: "loading", label: "Saving…" },
+  6: { state: "loading", label: "Loading…" },
+  7: { state: "crashed", label: "Crashed" },
+  8: { state: "pending", label: "Pending…" },
+  9: { state: "pending", label: "Transferring…" },
+  10: { state: "starting", label: "Preparing…" },
 };
 
 interface ExarotonServerResponse {

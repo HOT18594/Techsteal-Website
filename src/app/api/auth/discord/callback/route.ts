@@ -6,13 +6,13 @@ import {
   exchangeCodeForToken,
   fetchDiscordUser,
 } from "@/lib/discord";
+import { safeNextPath } from "@/lib/safe-next";
 
 export const dynamic = "force-dynamic";
 
 const STATE_COOKIE = "discord_oauth_state";
 const NEXT_COOKIE = "login_next";
 
-/** Only allow same-site relative targets — never redirect off-site. */
 function safeNextCookie(cookies: string): string | null {
   const raw = cookies
     .split(";")
@@ -22,14 +22,11 @@ function safeNextCookie(cookies: string): string | null {
   if (!raw) return null;
   // Malformed escapes ("%zz") throw URIError — a crafted cookie must not
   // crash the callback, just fall back to the home page.
-  let decoded: string;
   try {
-    decoded = decodeURIComponent(raw);
+    return safeNextPath(decodeURIComponent(raw));
   } catch {
     return null;
   }
-  if (!decoded.startsWith("/") || decoded.startsWith("//")) return null;
-  return decoded;
 }
 
 // Callback after Discord's consent screen: verify the state cookie,

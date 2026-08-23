@@ -39,7 +39,7 @@ export async function GET(request: Request) {
   try {
     const res = await fetch(
       `https://api.mojang.com/users/profiles/minecraft/${encodeURIComponent(username)}`,
-      { cache: "no-store" }
+      { cache: "no-store", signal: AbortSignal.timeout(8_000) }
     );
     if (res.status === 204 || res.status === 404) {
       return NextResponse.json({ error: "That Minecraft username doesn't exist." }, { status: 404 });

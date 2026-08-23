@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -13,6 +14,8 @@ import {
 // NOTE: `createdAt` is only used for ordering. Every other field is edited
 // in place, so content changes in the DB show up on the site immediately.
 
+/** @deprecated Unused demo table — the member roster reads `profiles`
+ * (and fallback data). Kept so no migration drops data; do not seed. */
 export const members = pgTable("members", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -47,33 +50,43 @@ export const forumThreads = pgTable("forum_threads", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const forumReplies = pgTable("forum_replies", {
-  id: serial("id").primaryKey(),
-  threadId: integer("thread_id").notNull(),
-  content: text("content").notNull(),
-  author: text("author").notNull(),
-  authorId: text("author_id").notNull().default(""),
-  avatar: text("avatar").notNull().default("R"),
-  color: text("color").notNull().default("avatar-2"),
-  likes: integer("likes").notNull().default(0),
-  likedBy: jsonb("liked_by").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
-  pinned: boolean("pinned").notNull().default(false),
-  editedAt: timestamp("edited_at"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
+export const forumReplies = pgTable(
+  "forum_replies",
+  {
+    id: serial("id").primaryKey(),
+    threadId: integer("thread_id").notNull(),
+    content: text("content").notNull(),
+    author: text("author").notNull(),
+    authorId: text("author_id").notNull().default(""),
+    avatar: text("avatar").notNull().default("R"),
+    color: text("color").notNull().default("avatar-2"),
+    likes: integer("likes").notNull().default(0),
+    likedBy: jsonb("liked_by").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    pinned: boolean("pinned").notNull().default(false),
+    editedAt: timestamp("edited_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  // Thread detail loads and the delete cascade filter on threadId constantly.
+  (t) => [index("forum_replies_thread_id_idx").on(t.threadId)]
+);
 
 // Polls attach 1:1 to a thread. Only admins create them (enforced in the
 // API, not the schema — the schema just stores). `options` carries the
 // choice list; votes live in forumPollVotes so one-account-one-vote is a
 // UNIQUE constraint instead of a hoped-for race-free jsonb update.
-export const forumPolls = pgTable("forum_polls", {
-  id: serial("id").primaryKey(),
-  threadId: integer("thread_id").notNull(),
-  question: text("question").notNull(),
-  options: jsonb("options").$type<Array<{ id: string; text: string }>>().notNull().default([]),
-  endsAt: timestamp("ends_at").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-});
+export const forumPolls = pgTable(
+  "forum_polls",
+  {
+    id: serial("id").primaryKey(),
+    threadId: integer("thread_id").notNull(),
+    question: text("question").notNull(),
+    options: jsonb("options").$type<Array<{ id: string; text: string }>>().notNull().default([]),
+    endsAt: timestamp("ends_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  // serializePoll looks a poll up by its thread on every thread-detail GET.
+  (t) => [index("forum_polls_thread_id_idx").on(t.threadId)]
+);
 
 export const forumPollVotes = pgTable(
   "forum_poll_votes",
@@ -107,14 +120,19 @@ export const galleryItems = pgTable("gallery_items", {
 });
 
 // Comments on gallery posts — same shape/pattern as forum replies.
-export const galleryComments = pgTable("gallery_comments", {
-  id: serial("id").primaryKey(),
-  itemId: integer("item_id").notNull(),
-  content: text("content").notNull(),
-  author: text("author").notNull(),
-  authorId: text("author_id").notNull().default(""),
-  createdAt: timestamp("created_at").defaultNow(),
-});
+export const galleryComments = pgTable(
+  "gallery_comments",
+  {
+    id: serial("id").primaryKey(),
+    itemId: integer("item_id").notNull(),
+    content: text("content").notNull(),
+    author: text("author").notNull(),
+    authorId: text("author_id").notNull().default(""),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  // Detail loads, comment counts and the delete cascade filter on itemId.
+  (t) => [index("gallery_comments_item_id_idx").on(t.itemId)]
+);
 
 export const timelineEvents = pgTable("timeline_events", {
   id: serial("id").primaryKey(),

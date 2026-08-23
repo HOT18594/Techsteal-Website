@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { galleryItems } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
 import { findAccount } from "@/lib/accounts";
+import { publicRow } from "@/lib/public-row";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +63,7 @@ export async function POST(
   }
 
   return NextResponse.json({
-    item: updated,
+    item: publicRow(updated),
     liked: (updated.likedBy ?? []).includes(user.id),
   });
 }

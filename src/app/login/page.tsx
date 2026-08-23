@@ -6,6 +6,7 @@ import { siteConfig } from "@/lib/site";
 import { useToast } from "@/components/Toast";
 import { SubPage } from "@/components/SubPage";
 import { useSession } from "@/lib/use-session";
+import { safeNextPath } from "@/lib/safe-next";
 
 export default function LoginPage() {
   return (
@@ -22,16 +23,16 @@ function LoginContent() {
   const { user, loading: sessionLoading } = useSession();
 
   // Where to land after login (gated CTAs pass ?next=/their/page). Only
-  // same-site relative paths are honored.
-  const rawNext = searchParams.get("next");
-  const nextParam = rawNext?.startsWith("/") && !rawNext.startsWith("//") ? rawNext : null;
+  // same-site relative paths are honored (same validator the API enforces).
+  const nextParam = safeNextPath(searchParams.get("next"));
 
-  // Already logged in? Go straight to the right page.
+  // Already logged in? Go straight to where they were heading — admins
+  // default to their panel, but an explicit ?next= still wins.
   useEffect(() => {
     if (!sessionLoading && user) {
-      router.replace(user.role === "admin" ? "/admin" : "/");
+      router.replace(nextParam ?? (user.role === "admin" ? "/admin" : "/"));
     }
-  }, [user, sessionLoading, router]);
+  }, [user, sessionLoading, router, nextParam]);
 
   // Show a toast if the Discord callback bounced us back with an error.
   useEffect(() => {

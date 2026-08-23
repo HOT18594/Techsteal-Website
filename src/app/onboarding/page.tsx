@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { siteConfig } from "@/lib/site";
@@ -41,9 +41,13 @@ function OnboardingContent() {
     if (!sessionLoading && !user) router.replace("/login");
   }, [user, sessionLoading, router]);
 
-  // Auto-check Discord membership when reaching step 2.
+  // Auto-check Discord membership on FIRST entry to step 2 only. Re-running
+  // it on every Back→Continue pass re-toasted "Not in the server yet" as an
+  // error at users who had already chosen Skip.
+  const discordAutoChecked = useRef(false);
   useEffect(() => {
-    if (step !== 1) return;
+    if (step !== 1 || discordAutoChecked.current) return;
+    discordAutoChecked.current = true;
     void checkDiscord();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step]);

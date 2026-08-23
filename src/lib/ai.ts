@@ -33,14 +33,24 @@ const RATE_LIMITED_MESSAGE =
 /** Max model round-trips (a round = completion → maybe tool calls → results). */
 const MAX_ROUNDS = 4;
 
+/** Wall-clock budget for the whole agent run. /api/chat sets
+ * `maxDuration = 60` — blowing past it gets the stream killed mid-reply,
+ * so later tool rounds are skipped and a final answer is forced instead. */
+const TOTAL_BUDGET_MS = 45_000;
+
 /**
  * Heuristic that flags a question as server-specific (rules, members,
  * builds, history, status, how-to-join) vs general Minecraft. Drives the
  * "question type" hint in the user message so the model leans on tools
  * and the knowledge base instead of guessing for server questions.
+ *
+ * Stems like "rul"/"hac" must NOT carry a trailing \b — that boundary can
+ * never sit mid-word, so "what are the rules?" / "is hacking allowed" used
+ * to test false and get misrouted to web search. Short standalone tokens
+ * ("ip") keep their trailing boundary so they don't match inside other words.
  */
 const SERVER_QUESTION_HINTS =
-  /\b(rul|hac|cheat|grief|raid|spawn|member|staff|admin|build|gallery|history|timeline|era|season|whitelist|join|address|ip|status|online|player|forum|discord|server|techsteal|how do i join|can i)\b/i;
+  /\b(rul|hac|cheat|grief|raid|spawn|member|staff|admin|build|gallery|history|timeline|era|season|whitelist|join|address|status|online|player|forum|discord|server|techsteal|how do i join|can i)|\b(ip)\b/i;
 
 /** What the assistant knows about the logged-in user it's talking to. */
 export interface ChatUserContext {
@@ -297,6 +307,7 @@ async function completionRound(opts: {
   messages: unknown[];
   withTools: boolean;
   signal?: AbortSignal;
+  timeoutMs?: number;
   emit: (ev: Record<string, string>) => void;
 }): Promise<{ toolCalls: { id: string; name: string; args: string }[] } | null> {
   const res = await fetch(`${opts.baseUrl}/chat/completions`, {
@@ -317,8 +328,8 @@ async function completionRound(opts: {
     // A hung upstream must not hold the request open until the platform
     // kills it. Combine with the caller's abort signal (client Stop/leave).
     signal: opts.signal
-      ? AbortSignal.any([opts.signal, AbortSignal.timeout(25_000)])
-      : AbortSignal.timeout(25_000),
+      ? AbortSignal.any([opts.signal, AbortSignal.timeout(opts.timeoutMs ?? 25_000)])
+      : AbortSignal.timeout(opts.timeoutMs ?? 25_000),
   });
 
   if (!res.ok || !res.body) {
@@ -465,10 +476,11 @@ export async function streamChatReply(
      */
     const attemptRound = async (
       m: string,
-      withTools: boolean
+      withTools: boolean,
+      timeoutMs?: number
     ): Promise<{ toolCalls: { id: string; name: string; args: string }[] } | null> => {
       const run = () =>
-        completionRound({ baseUrl, model: m, apiKey, messages, withTools, signal, emit });
+        completionRound({ baseUrl, model: m, apiKey, messages, withTools, signal, timeoutMs, emit });
       try {
         return await run();
       } catch (err) {
@@ -484,13 +496,15 @@ export async function streamChatReply(
 
     let round: { toolCalls: { id: string; name: string; args: string }[] } | null = null;
     let lastError: unknown = null;
-    let toolsAllowed = true;
+    // Track tool rejection PER MODEL: the primary model 400-ing on `tools`
+    // says nothing about the fallback model's capabilities.
+    const rejectsTools = new Set<string>();
     let activeModel = model;
 
     // Model cascade: primary (tools → no-tools) then fallback (tools → no-tools).
     for (const m of [model, fallbackModel]) {
       for (const withTools of [true, false]) {
-        if (!toolsAllowed && withTools) continue;
+        if (withTools && rejectsTools.has(m)) continue;
         try {
           round = await attemptRound(m, withTools);
           lastError = null;
@@ -501,7 +515,7 @@ export async function streamChatReply(
           const status = (err as { status?: number }).status;
           if (withTools && (status === 400 || status === 404)) {
             // Most likely "tools not supported" — retry this model without them.
-            toolsAllowed = false;
+            rejectsTools.add(m);
             continue;
           }
           break; // auth/config/5xx — try the next model in the cascade
@@ -525,7 +539,12 @@ export async function streamChatReply(
     // Tool loop: execute calls, append results, run another round. Every
     // tool emits a live activity event the client shows as a chip.
     let roundNum = 1;
-    while (round.toolCalls.length > 0 && roundNum < MAX_ROUNDS) {
+    const startedAt = Date.now();
+    while (
+      round.toolCalls.length > 0 &&
+      roundNum < MAX_ROUNDS &&
+      Date.now() - startedAt < TOTAL_BUDGET_MS
+    ) {
       // Record what the assistant "said" this round (its tool calls), then
       // answer each one. Content streamed before a tool call reads as
       // "Let me check…" — that's fine, it flows into the tool chips.
@@ -549,9 +568,21 @@ export async function streamChatReply(
         });
       }
 
-      round = await attemptRound(activeModel, toolsAllowed);
+      round = await attemptRound(activeModel, !rejectsTools.has(activeModel));
       if (round === null) return; // aborted or the follow-up failed
       roundNum++;
+    }
+
+    // Round cap / wall-clock budget reached while the model still wanted
+    // tools: run one final no-tools completion so the pending calls aren't
+    // silently dropped and the user always gets a textual answer.
+    if (round.toolCalls.length > 0) {
+      const remaining = TOTAL_BUDGET_MS + 10_000 - (Date.now() - startedAt);
+      await attemptRound(
+        activeModel,
+        false,
+        Math.min(25_000, Math.max(5_000, remaining))
+      );
     }
   });
 }

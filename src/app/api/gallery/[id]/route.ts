@@ -6,6 +6,7 @@ import { getSessionUser } from "@/lib/auth";
 import { findAccount, isAdminUser } from "@/lib/accounts";
 import { isRateLimited } from "@/lib/rate-limit";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
+import { publicRow } from "@/lib/public-row";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,13 @@ function countView(itemId: number, viewer: string): boolean {
   if (VIEW_SEEN.size > 5000) {
     for (const [k, ts] of VIEW_SEEN) {
       if (now - ts > VIEW_TTL) VIEW_SEEN.delete(k);
+    }
+    // Still over cap (flood of unique viewers within one TTL window):
+    // hard-evict oldest-inserted keys — bounded memory beats perfect counts.
+    while (VIEW_SEEN.size > 4500) {
+      const oldest = VIEW_SEEN.keys().next();
+      if (oldest.done) break;
+      VIEW_SEEN.delete(oldest.value);
     }
   }
   const key = `${itemId}:${viewer}`;
@@ -77,8 +85,9 @@ export async function GET(
   // One avatar lookup covers the poster and every commenter.
   const avatars = await resolveAuthorAvatars([item, ...comments]);
   const builderInfo = avatarInfoFor(avatars, item);
-  const itemOut: typeof item & { builderAvatar: string | null } = {
-    ...item,
+  const itemOut = {
+    ...publicRow(item),
+    liked: user ? ((item.likedBy ?? []) as string[]).includes(user.id) : false,
     builderAvatar: builderInfo?.avatarUrl ?? null,
   };
   const enriched = comments.map((c) => {
@@ -209,8 +218,11 @@ export async function DELETE(
   if (!isOwner && !(await isAdminUser())) {
     return NextResponse.json({ error: "Admins only." }, { status: 403 });
   }
-  await db.delete(galleryComments).where(eq(galleryComments.itemId, itemId));
-  await db.delete(galleryItems).where(eq(galleryItems.id, itemId));
+  // Atomic cascade: a mid-failure must not orphan comments on a deleted post.
+  await db.transaction(async (tx) => {
+    await tx.delete(galleryComments).where(eq(galleryComments.itemId, itemId));
+    await tx.delete(galleryItems).where(eq(galleryItems.id, itemId));
+  });
   return NextResponse.json({ ok: true });
 }
 
@@ -241,5 +253,5 @@ export async function PATCH(
   if (rows.length === 0) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  return NextResponse.json(rows[0]);
+  return NextResponse.json(publicRow(rows[0]));
 }

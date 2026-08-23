@@ -7,6 +7,7 @@ import { findAccount, isAdminUser } from "@/lib/accounts";
 import { isRateLimited } from "@/lib/rate-limit";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { serializePoll } from "@/lib/polls";
+import { publicRow } from "@/lib/public-row";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,13 @@ function countView(threadId: number, viewer: string): boolean {
     // Drop stale entries so the map can't grow forever.
     for (const [k, ts] of VIEW_SEEN) {
       if (now - ts > VIEW_TTL) VIEW_SEEN.delete(k);
+    }
+    // Still over cap (flood of unique viewers within one TTL window):
+    // hard-evict oldest-inserted keys — bounded memory beats perfect counts.
+    while (VIEW_SEEN.size > 4500) {
+      const oldest = VIEW_SEEN.keys().next();
+      if (oldest.done) break;
+      VIEW_SEEN.delete(oldest.value);
     }
   }
   const key = `${threadId}:${viewer}`;
@@ -92,9 +100,13 @@ export async function GET(
 
   const poll = await serializePoll(db, threadId, user?.id ?? null).catch(() => null);
 
+  // `liked` is derived per viewer; raw liker ids stay server-side.
+  const likedOf = (row: { likedBy?: unknown }) =>
+    user ? ((row.likedBy as string[] | null) ?? []).includes(user.id) : false;
+
   return NextResponse.json({
-    thread: { ...thread, ...enrich(thread), hasPoll: poll !== null },
-    replies: replies.map((r) => ({ ...r, ...enrich(r) })),
+    thread: { ...publicRow(thread), ...enrich(thread), liked: likedOf(thread), hasPoll: poll !== null },
+    replies: replies.map((r) => ({ ...publicRow(r), ...enrich(r), liked: likedOf(r) })),
     poll,
   });
 }
@@ -163,32 +175,38 @@ export async function POST(
   }
 
   const username = account?.username ?? user.username;
-  const [reply] = await db
-    .insert(forumReplies)
-    .values({
-      threadId,
-      content,
-      author: username,
-      authorId: user.id,
-      avatar: username.slice(0, 1).toUpperCase(),
-      color: "avatar-2",
-    })
-    .returning();
+  // Reply insert + thread counter bump must commit together — otherwise a
+  // failure between them permanently drifts the replies count.
+  const reply = await db.transaction(async (tx) => {
+    const [inserted] = await tx
+      .insert(forumReplies)
+      .values({
+        threadId,
+        content,
+        author: username,
+        authorId: user.id,
+        avatar: username.slice(0, 1).toUpperCase(),
+        color: "avatar-2",
+      })
+      .returning();
 
-  // Atomic increment — a plain `replies + 1` read from `threads[0]` would
-  // lose a count when two replies land at once (both read 5, both write 6).
-  // `last` mirrors the same moment as the new reply's timestamp.
-  await db
-    .update(forumThreads)
-    .set({ replies: sql`${forumThreads.replies} + 1`, last: new Date().toISOString() })
-    .where(eq(forumThreads.id, threadId));
+    // Atomic increment — a plain `replies + 1` read from `threads[0]` would
+    // lose a count when two replies land at once (both read 5, both write 6).
+    // `last` mirrors the same moment as the new reply's timestamp.
+    await tx
+      .update(forumThreads)
+      .set({ replies: sql`${forumThreads.replies} + 1`, last: new Date().toISOString() })
+      .where(eq(forumThreads.id, threadId));
+
+    return inserted;
+  });
 
   const avatars = await resolveAuthorAvatars([reply]);
   const info = avatarInfoFor(avatars, reply);
   // `color` resolved like GET returns, so the optimistic client append
-  // renders the same tile a reload would.
+  // renders the same tile a reload would. A fresh reply starts unliked.
   return NextResponse.json(
-    { ...reply, avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? reply.color },
+    { ...publicRow(reply), avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? reply.color, liked: false },
     { status: 201 }
   );
 }
@@ -232,7 +250,9 @@ export async function PATCH(
 
   const avatars = await resolveAuthorAvatars([rows[0]]);
   const info = avatarInfoFor(avatars, rows[0]);
-  return NextResponse.json({ ...rows[0], avatarUrl: info?.avatarUrl ?? null });
+  const viewer = await getSessionUser();
+  const liked = viewer ? ((rows[0].likedBy ?? []) as string[]).includes(viewer.id) : false;
+  return NextResponse.json({ ...publicRow(rows[0]), avatarUrl: info?.avatarUrl ?? null, liked });
 }
 
 // Edit a reply. The author can edit their own; admins can edit any.
@@ -293,7 +313,8 @@ export async function PUT(
   }
   const avatars = await resolveAuthorAvatars([rows[0]]);
   const info = avatarInfoFor(avatars, rows[0]);
-  return NextResponse.json({ ...rows[0], avatarUrl: info?.avatarUrl ?? null });
+  const liked = ((rows[0].likedBy ?? []) as string[]).includes(user.id);
+  return NextResponse.json({ ...publicRow(rows[0]), avatarUrl: info?.avatarUrl ?? null, liked });
 }
 
 // Delete a reply. Admins can delete any reply in this thread; members can

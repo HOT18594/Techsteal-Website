@@ -133,8 +133,11 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
   // Autoscroll only while the reader is already at (or near) the bottom —
   // streaming tokens must not yank the view away from earlier messages.
   const stickToBottom = useRef(true);
-  // Panel-scoped keyboard shortcut: "/" focuses the input (ignore while typing)
+  // Panel-scoped keyboard shortcut: "/" focuses the input (ignore while
+  // typing). Only bound when the chat UI itself is shown — signed-out /
+  // unverified visitors keep "/" for their browser (e.g. quick find).
   useEffect(() => {
+    if (!user || !hasAccess) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "/" || typing) return;
       const t = e.target as HTMLElement;
@@ -144,7 +147,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [typing]);
+  }, [typing, user, hasAccess]);
 
   // Load persisted history once, after mount — the initializer above must
   // NOT read localStorage, or SSR and client render different first frames
@@ -207,17 +210,18 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
 
   // Auto-ask a prefill question when navigated to with ?ask=... — only
   // after history has loaded, only if the chat is still the welcome state,
-  // and only for members with AI access.
+  // and only for members with AI access. The prefill is evaluated exactly
+  // once: otherwise "New chat" emptying the list would re-fire a stale
+  // question the user never typed.
   useEffect(() => {
     if (!hydrated || autoAsked.current) return;
-    if (messages.length > 1) return; // already has a real conversation
     if (!hasAccess) return;
     const params = new URLSearchParams(window.location.search);
     const ask = params.get("ask");
-    if (ask) {
-      autoAsked.current = true;
-      void send(ask);
-    }
+    if (!ask) return;
+    autoAsked.current = true;
+    if (messages.length > 1) return; // already has a real conversation
+    void send(ask);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, messages.length, hasAccess]);
 
@@ -257,6 +261,11 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
     const t0 = Date.now();
     let firstTokenAt: number | null = null;
     let chars = 0;
+    // tok/s counts only time actually streaming text — wall-clock spans
+    // across tool rounds would report misleadingly slow rates.
+    let genMs = 0;
+    let lastTextAt: number | null = null;
+    const TEXT_GAP_CAP_MS = 5_000; // ignore long pauses (tool execution)
 
     // Appends/updates the streaming assistant bubble (with live tool trace).
     let assistantId: number | null = null;
@@ -302,6 +311,44 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
       let acc = "";
       let buffer = "";
       let failed = false;
+
+      // One decoded NDJSON line → state updates. Shared by the read loop
+      // and the final tail flush below.
+      const handleLine = (trimmed: string) => {
+        if (!trimmed) return;
+        let ev: StreamEvent | null = null;
+        try {
+          ev = JSON.parse(trimmed) as StreamEvent;
+        } catch {
+          ev = null;
+        }
+        if (ev && ev.t === "text" && ev.v) {
+          if (firstTokenAt === null) firstTokenAt = Date.now();
+          setDots(false); // first word arrived — drop the 3-dot indicator
+          acc += ev.v;
+          chars += ev.v.length;
+          const now2 = Date.now();
+          if (lastTextAt !== null) {
+            genMs += Math.min(now2 - lastTextAt, TEXT_GAP_CAP_MS);
+          }
+          lastTextAt = now2;
+          updateAssistant(acc);
+        } else if (ev && ev.t === "tool" && ev.name) {
+          const trace = { name: ev.name, label: ev.label ?? "Working…" };
+          activeToolsRef.current = [...activeToolsRef.current, trace];
+          setActiveTools(activeToolsRef.current);
+          setDots(false); // real activity to show instead of dots
+        } else if (ev && ev.t === "error" && ev.v) {
+          failed = true;
+          updateAssistant(acc ? `${acc}\n\n${ev.v}` : ev.v, true, text);
+        } else if (!ev) {
+          // Not JSON — treat as plain text (defensive; older servers).
+          acc += trimmed + "\n";
+          chars += trimmed.length;
+          updateAssistant(acc);
+        }
+      };
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -313,36 +360,17 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
         for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          let ev: StreamEvent | null = null;
-          try {
-            ev = JSON.parse(trimmed) as StreamEvent;
-          } catch {
-            ev = null;
-          }
-          if (ev && ev.t === "text" && ev.v) {
-            if (firstTokenAt === null) firstTokenAt = Date.now();
-            setDots(false); // first word arrived — drop the 3-dot indicator
-            acc += ev.v;
-            chars += ev.v.length;
-            updateAssistant(acc);
-          } else if (ev && ev.t === "tool" && ev.name) {
-            const trace = { name: ev.name, label: ev.label ?? "Working…" };
-            activeToolsRef.current = [...activeToolsRef.current, trace];
-            setActiveTools(activeToolsRef.current);
-            setDots(false); // real activity to show instead of dots
-          } else if (ev && ev.t === "error" && ev.v) {
-            failed = true;
-            updateAssistant(acc ? `${acc}\n\n${ev.v}` : ev.v, true, text);
-          } else if (!ev) {
-            // Not JSON — treat as plain text (defensive; older servers).
-            acc += trimmed + "\n";
-            chars += trimmed.length;
-            updateAssistant(acc);
-          }
+          handleLine(line.trim());
         }
       }
+      // Flush the decoder and drain any final line that arrived without a
+      // trailing newline (stream cut off mid-line by a timeout/proxy) so a
+      // complete last event isn't silently dropped.
+      buffer += decoder.decode();
+      for (const line of buffer.split("\n")) {
+        handleLine(line.trim());
+      }
+      buffer = "";
       if (gen !== genRef.current) return;
       if (!failed) {
         updateAssistant(acc.trim() || "Hmm, I didn't quite catch that — could you rephrase?");
@@ -351,7 +379,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
       // Done streaming — stamp diagnostics onto the reply.
       if (!failed && firstTokenAt !== null) {
         const ttftSec = (firstTokenAt - t0) / 1000;
-        const genDuration = (Date.now() - firstTokenAt) / 1000;
+        const genDuration = genMs / 1000;
         const estTokens = chars / 4; // ~4 chars per token for English text
         const tps = genDuration > 0 ? estTokens / genDuration : 0;
         if (assistantId !== null) {

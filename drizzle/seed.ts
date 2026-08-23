@@ -2,10 +2,12 @@ import { config } from "dotenv";
 import { createDb } from "../src/lib/db";
 import { seedData } from "../src/lib/fallback-data";
 import {
+  forumPolls,
+  forumPollVotes,
   forumReplies,
   forumThreads,
+  galleryComments,
   galleryItems,
-  members,
   ruleSections,
   timelineEvents,
 } from "../src/lib/schema";
@@ -19,19 +21,21 @@ async function main() {
   console.log("Clearing existing rows…");
   await db.delete(ruleSections);
   await db.delete(timelineEvents);
+  // Comments reference gallery items, so they go first.
+  await db.delete(galleryComments);
   await db.delete(galleryItems);
-  // Replies first — they reference threads, so they must be cleared before
-  // (or together with) the threads to avoid orphaned rows.
+  // Poll votes → polls → replies → threads: children before parents, or
+  // re-seeding would orphan polls/votes pointing at deleted thread ids.
+  await db.delete(forumPollVotes);
+  await db.delete(forumPolls);
   await db.delete(forumReplies);
   await db.delete(forumThreads);
-  await db.delete(members);
 
   console.log("Seeding placeholder content…");
 
   // Only insert collections that actually have rows — Drizzle's
   // .values() rejects empty arrays.
   const inserts = [
-    ["members", members, seedData.members],
     ["forum threads", forumThreads, seedData.threads],
     ["gallery items", galleryItems, seedData.gallery],
     ["timeline events", timelineEvents, seedData.timeline],

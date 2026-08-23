@@ -287,6 +287,14 @@ export default function GalleryPage() {
       });
       if (res.ok) {
         show("Posted", "Your build is now in the gallery.");
+        // Reset the composer and release the blob previews immediately —
+        // leaving them pending leaked object URLs until the next open.
+        setPending((prev) => {
+          for (const p of prev) URL.revokeObjectURL(p.preview);
+          return [];
+        });
+        setTitle("");
+        setDescription("");
         setModalOpen(false);
         void refetch();
       } else if (res.status === 401) {
@@ -317,18 +325,18 @@ export default function GalleryPage() {
     }
     if (busyLike !== null) return;
     setBusyLike(g.id ?? 0);
-    const liked = (g.likedBy ?? []).includes(user.id);
+    const liked = g.liked === true;
     setItemsLocal(g.id ?? 0, {
-      likedBy: liked ? (g.likedBy ?? []).filter((x) => x !== user.id) : [...(g.likedBy ?? []), user.id],
+      liked: !liked,
       likes: (g.likes ?? 0) + (liked ? -1 : 1),
     });
     try {
       const res = await fetch(`/api/gallery/${g.id}/like`, { method: "POST" });
       if (!res.ok) throw new Error("like failed");
       const data = (await res.json()) as { item: GalleryItem; liked: boolean };
-      setItemsLocal(g.id ?? 0, { likes: data.item.likes, likedBy: data.item.likedBy });
+      setItemsLocal(g.id ?? 0, { likes: data.item.likes, liked: data.liked });
     } catch {
-      setItemsLocal(g.id ?? 0, { likedBy: g.likedBy ?? [], likes: g.likes ?? 0 });
+      setItemsLocal(g.id ?? 0, { liked: g.liked ?? false, likes: g.likes ?? 0 });
       show("Couldn't like", "The server rejected the request.", "error");
     } finally {
       setBusyLike(null);
@@ -563,7 +571,7 @@ export default function GalleryPage() {
           /* Console-style thumbnail grid */
           <div className="gallery-grid stagger">
             {visible.map((g, i) => {
-              const liked = user ? (g.likedBy ?? []).includes(user.id) : false;
+              const liked = g.liked === true && Boolean(user);
               const imgs = imagesOf(g);
               return (
                 <div key={g.id ?? `${i}-${g.title}`} className="relative group/gallery">
@@ -616,7 +624,7 @@ export default function GalleryPage() {
                         : "border-white/20 text-white/90 bg-black/50 hover:border-[var(--redstone)] hover:text-[var(--redstone)]"
                     }`}
                     onClick={() => void toggleLike(g)}
-                    disabled={busyLike === g.id}
+                    disabled={busyLike !== null}
                     aria-label={liked ? `Unlike ${g.title}` : `Like ${g.title}`}
                   >
                     <i className={`${liked ? "fa-solid" : "fa-regular"} fa-heart`} />
@@ -852,14 +860,14 @@ export default function GalleryPage() {
                 <div className="flex items-center gap-2 mt-4 flex-wrap">
                   <button
                     className={`inline-flex items-center gap-1.5 text-xs font-semibold rounded-lg border px-3 py-2 transition disabled:opacity-40 ${
-                      user && (currentItem.likedBy ?? []).includes(user.id)
+                      currentItem.liked === true && user
                         ? "border-[var(--redstone)] text-[var(--redstone)] bg-[var(--redstone)]/10"
                         : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)]"
                     }`}
                     onClick={() => void toggleLike(currentItem)}
-                    disabled={busyLike === currentItem.id}
+                    disabled={busyLike !== null}
                   >
-                    <i className={`${user && (currentItem.likedBy ?? []).includes(user.id) ? "fa-solid" : "fa-regular"} fa-heart`} />
+                    <i className={`${currentItem.liked === true && user ? "fa-solid" : "fa-regular"} fa-heart`} />
                     {currentItem.likes} {currentItem.likes === 1 ? "like" : "likes"}
                   </button>
                   {isAdmin ? (

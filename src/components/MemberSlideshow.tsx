@@ -24,6 +24,21 @@ export function MemberSlideshow({ members }: { members: Member[] }) {
   const [paused, setPaused] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Dot clicks pause rotation; touch taps never fire mouseleave, so the
+  // pause must self-expire instead of waiting for a hover that won't come.
+  const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const pauseTemporarily = () => {
+    setPaused(true);
+    if (resumeTimer.current) clearTimeout(resumeTimer.current);
+    resumeTimer.current = setTimeout(() => setPaused(false), 6_000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (resumeTimer.current) clearTimeout(resumeTimer.current);
+    };
+  }, []);
 
   // Start/stop the whole thing based on whether the tile is on screen.
   useEffect(() => {
@@ -128,8 +143,8 @@ export function MemberSlideshow({ members }: { members: Member[] }) {
                 i === safeIndex ? "w-4 bg-[var(--accent)]" : "w-1.5 bg-[var(--muted-2)]/60 hover:bg-[var(--muted-2)]"
               }`}
               onClick={() => {
-                setPaused(true);
                 setIndex(i);
+                pauseTemporarily();
               }}
               aria-label={`Show ${s.name}`}
               aria-current={i === safeIndex}

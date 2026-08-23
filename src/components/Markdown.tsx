@@ -34,6 +34,7 @@ function safeUrl(url: string): string | null {
 type InlineScan =
   | { kind: "text"; len: number }
   | { kind: "bold" | "italic" | "strike" | "spoiler" | "code"; len: number }
+  | { kind: "bolditalic"; len: number }
   | { kind: "link"; len: number; url: string; text: string }
   | { kind: "image"; len: number; url: string; alt: string }
   | { kind: "autolink"; len: number; url: string };
@@ -66,6 +67,15 @@ function scanInline(src: string, i: number): InlineScan {
       return { kind: "link", len: m[0].length, url: m[2], text: m[1] };
     }
     return { kind: "text", len: 1 };
+  }
+
+  // Bold+italic ***…*** — checked before plain ** so BOTH delimiters are
+  // consumed; otherwise ***text*** renders bold "*text" plus a stray "*".
+  if (rest.startsWith("***")) {
+    const close = src.indexOf("***", i + 3);
+    if (close > i + 3 && close + 3 <= src.length) {
+      return { kind: "bolditalic", len: close - i + 3 };
+    }
   }
 
   // Bold **…** / spoiler ||…|| / strike ~~…~~ — all "wrap until delimiter".
@@ -146,6 +156,17 @@ function inlineNodes(src: string, keyPrefix: string, depth = 0): ReactNode[] {
       case "bold": {
         const inner = src.slice(i + 2, i + tok.len - 2);
         push(<strong>{inlineNodes(inner, `${keyPrefix}-b${key}`, depth + 1)}</strong>, tok.len, "b");
+        break;
+      }
+      case "bolditalic": {
+        const inner = src.slice(i + 3, i + tok.len - 3);
+        push(
+          <strong>
+            <em>{inlineNodes(inner, `${keyPrefix}-bi${key}`, depth + 1)}</em>
+          </strong>,
+          tok.len,
+          "bi"
+        );
         break;
       }
       case "italic": {
@@ -236,10 +257,18 @@ function Spoiler({ children }: { children: ReactNode }) {
 
 const IMAGE_ONLY = /^!\[([^\]]*)\]\((\S+?)(?:\s+"[^"]*")?\)\s*$/;
 
+/** Max blockquote nesting depth — quotes-in-quotes recurse through
+ * parseBlocks, and a pathological ">>>>>>…" line must not recurse per char. */
+const MAX_QUOTE_DEPTH = 8;
+
 export function Markdown({ text }: { text: string }) {
   const src = (text ?? "").replace(/\r\n/g, "\n").trim();
   if (!src) return null;
+  return <div className="md-body">{parseBlocks(src, "md")}</div>;
+}
 
+/** Parse one markdown document (or quote body) into block-level nodes. */
+function parseBlocks(src: string, keyPrefix: string, depth = 0): ReactNode[] {
   const lines = src.split("\n");
   const blocks: ReactNode[] = [];
   let i = 0;
@@ -252,7 +281,7 @@ export function Markdown({ text }: { text: string }) {
     const img = IMAGE_ONLY.exec(joined);
     if (img && safeUrl(img[2])) {
       blocks.push(
-        <figure key={`f${key++}`} className="md-figure">
+        <figure key={`${keyPrefix}-f${key++}`} className="md-figure">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={img[2]} alt={img[1]} title={img[1] || undefined} loading="lazy" decoding="async" />
           {img[1] ? <figcaption>{img[1]}</figcaption> : null}
@@ -261,8 +290,8 @@ export function Markdown({ text }: { text: string }) {
       return;
     }
     blocks.push(
-      <p key={`p${key++}`} className="md-p">
-        {inlineNodes(joined, `p${key}`)}
+      <p key={`${keyPrefix}-p${key++}`} className="md-p">
+        {inlineNodes(joined, `${keyPrefix}-p${key}`)}
       </p>
     );
   };
@@ -284,7 +313,7 @@ export function Markdown({ text }: { text: string }) {
       }
       i++; // closing fence (or EOF)
       blocks.push(
-        <div key={`code${key++}`} className="md-codeblock">
+        <div key={`${keyPrefix}-code${key++}`} className="md-codeblock">
           {lang ? <span className="md-codeblock-lang">{lang}</span> : null}
           <pre>
             <code>{body.join("\n")}</code>
@@ -302,8 +331,8 @@ export function Markdown({ text }: { text: string }) {
       const level = heading[1].length;
       const Tag = (level === 1 ? "h3" : level === 2 ? "h4" : "h5") as "h3" | "h4" | "h5";
       blocks.push(
-        <Tag key={`h${key++}`} className={`md-heading md-heading-${level}`}>
-          {inlineNodes(heading[2], `h${key}`)}
+        <Tag key={`${keyPrefix}-h${key++}`} className={`md-heading md-heading-${level}`}>
+          {inlineNodes(heading[2], `${keyPrefix}-h${key}`)}
         </Tag>
       );
       i++;
@@ -314,12 +343,14 @@ export function Markdown({ text }: { text: string }) {
     if (/^\s*(---+|\*\*\*+|___+)\s*$/.test(line)) {
       flushParagraph(para);
       para = [];
-      blocks.push(<hr key={`hr${key++}`} className="md-hr" />);
+      blocks.push(<hr key={`${keyPrefix}-hr${key++}`} className="md-hr" />);
       i++;
       continue;
     }
 
-    // Blockquote (consecutive > lines merge).
+    // Blockquote (consecutive > lines merge). The stripped body is parsed
+    // as full markdown — lists, headings and code inside quotes render as
+    // such instead of leaking literal markers.
     if (line.startsWith(">")) {
       flushParagraph(para);
       para = [];
@@ -329,8 +360,10 @@ export function Markdown({ text }: { text: string }) {
         i++;
       }
       blocks.push(
-        <blockquote key={`q${key++}`} className="md-quote">
-          {inlineNodes(quote.join("\n"), `q${key}`)}
+        <blockquote key={`${keyPrefix}-q${key++}`} className="md-quote">
+          {depth < MAX_QUOTE_DEPTH
+            ? parseBlocks(quote.join("\n"), `${keyPrefix}-q${key}`, depth + 1)
+            : inlineNodes(quote.join("\n"), `${keyPrefix}-q${key}d`)}
         </blockquote>
       );
       continue;
@@ -346,9 +379,9 @@ export function Markdown({ text }: { text: string }) {
         i++;
       }
       blocks.push(
-        <ul key={`ul${key++}`} className="md-list">
+        <ul key={`${keyPrefix}-ul${key++}`} className="md-list">
           {items.map((item, n) => (
-            <li key={n}>{inlineNodes(item, `ul${key}-${n}`)}</li>
+            <li key={n}>{inlineNodes(item, `${keyPrefix}-ul${key}-${n}`)}</li>
           ))}
         </ul>
       );
@@ -365,9 +398,9 @@ export function Markdown({ text }: { text: string }) {
         i++;
       }
       blocks.push(
-        <ol key={`ol${key++}`} className="md-list md-list-ordered">
+        <ol key={`${keyPrefix}-ol${key++}`} className="md-list md-list-ordered">
           {items.map((item, n) => (
-            <li key={n}>{inlineNodes(item, `ol${key}-${n}`)}</li>
+            <li key={n}>{inlineNodes(item, `${keyPrefix}-ol${key}-${n}`)}</li>
           ))}
         </ol>
       );
@@ -387,5 +420,5 @@ export function Markdown({ text }: { text: string }) {
   }
   flushParagraph(para);
 
-  return <div className="md-body">{blocks}</div>;
+  return blocks;
 }

@@ -26,7 +26,13 @@ export async function getServerStatus(): Promise<ServerStatus> {
   const url = `https://api.mcsrvstat.us/3/${host}${port ? `?port=${port}` : ""}`;
 
   try {
-    const res = await fetch(url, { cache: "no-store" });
+    // Must time out: live-status single-flights the promise it returns, so
+    // one hung mcsrvstat call would stall every /api/status, /api/members
+    // and Chatty status lookup for its whole cache window.
+    const res = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(8_000),
+    });
     if (!res.ok) throw new Error(`mcsrvstat.us returned ${res.status}`);
     const data = (await res.json()) as McsrResponse;
 

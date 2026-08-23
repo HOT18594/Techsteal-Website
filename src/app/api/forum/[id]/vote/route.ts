@@ -96,6 +96,17 @@ export async function DELETE(
   if (!db) {
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
+
+  // Same banned-account gate as POST — a removed user's unexpired cookie
+  // must not keep mutating poll state until the JWT expires.
+  const account = await findAccount(user.id).catch(() => null);
+  if (!account || account.banned) {
+    return NextResponse.json(
+      { error: "Your account no longer exists on this server." },
+      { status: 403 }
+    );
+  }
+
   const [poll] = await db
     .select()
     .from(forumPolls)

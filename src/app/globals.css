@@ -83,10 +83,6 @@
   --redstone: #f43f5e;
   --redstone-glow: rgba(244, 63, 94, 0.35);
   --diamond: #38d3f0;
-
-  /* Scroll/parallax state (set by ScrollFx) */
-  --scroll-y: 0px;
-  --scroll-v: 0;
 }
 
 * {
@@ -669,25 +665,6 @@ body.scrolled .site-nav {
   .page-title {
     font-size: 2.75rem;
   }
-}
-
-/* ---------- Section label (home) ---------- */
-.section-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-}
-.section-label::before {
-  content: "";
-  width: 32px;
-  height: 2px;
-  background: var(--accent);
-  border-radius: 2px;
 }
 
 /* ---------- Cards — bold dashboard panels ---------- */
@@ -1361,40 +1338,6 @@ body.scrolled .site-nav {
     opacity: 1;
   }
 }
-.gallery-item .label-grad {
-  background: linear-gradient(135deg, rgba(63, 124, 255, 0.95), rgba(47, 99, 232, 0.6));
-  padding: 2px 8px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: #ffffff;
-  text-transform: uppercase;
-  display: inline-block;
-  align-self: flex-start;
-  border-radius: 5px;
-  box-shadow: 0 0 16px -4px var(--accent-glow);
-}
-
-/* ---------- Accordion ---------- */
-.accordion-trigger {
-  cursor: pointer;
-  user-select: none;
-}
-.accordion-content {
-  max-height: 0;
-  overflow: hidden;
-  transition: max-height 0.4s ease;
-}
-.accordion-item.open .accordion-content {
-  max-height: 800px;
-}
-.accordion-item.open .accordion-icon {
-  transform: rotate(45deg);
-  color: var(--accent);
-}
-.accordion-icon {
-  transition: transform 0.3s, color 0.3s;
-}
 
 /* ---------- Member cards ---------- */
 .member-card {
@@ -1510,10 +1453,6 @@ body.scrolled .site-nav {
   font-size: 3rem;
   color: var(--accent);
   opacity: 0.6;
-}
-.asset-placeholder-text {
-  font-size: 1rem;
-  font-weight: 500;
 }
 .asset-placeholder-hint {
   font-size: 0.875rem;
@@ -1642,20 +1581,6 @@ body.scrolled .site-nav {
   .group:focus-within .group-focus-within\:opacity-100 {
     opacity: 1;
   }
-}
-
-/* ---------- Pixelated divider (optional) ---------- */
-.pixel-divider {
-  height: 2px;
-  background-image: linear-gradient(
-    90deg,
-    var(--accent) 0,
-    var(--accent) 4px,
-    transparent 4px,
-    transparent 8px
-  );
-  background-size: 8px 2px;
-  width: 80px;
 }
 
 /* ============================================================

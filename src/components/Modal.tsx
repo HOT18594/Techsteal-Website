@@ -5,7 +5,13 @@
 // will-change make any position:fixed descendant size itself against the
 // content column instead of the viewport (modals ended up pinned between
 // navbar and footer). Portaling to document.body escapes that ancestor.
+//
+// Also owns dialog focus: moves focus in on open, traps Tab inside the
+// card, closes on Escape, and restores focus to the trigger on close —
+// aria-modal promises all of that, and screen-reader users were previously
+// tabbing straight through the backdrop into the page behind.
 
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { MouseEvent, ReactNode } from "react";
 
@@ -19,7 +25,58 @@ interface ModalProps {
   children: ReactNode;
 }
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export function Modal({ label, onClose, cardClassName = "", children }: ModalProps) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Latest-ref so a parent re-render (new inline onClose identity) doesn't
+  // re-run the effect and yank focus away from mid-typing users.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    const card = cardRef.current;
+    if (!card) return;
+    const trigger = document.activeElement as HTMLElement | null;
+    card.focus();
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const focusables = Array.from(card.querySelectorAll<HTMLElement>(FOCUSABLE));
+      if (focusables.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || active === card)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      // Give focus back to what opened the dialog — but only when focus is
+      // still ours to move (inside the unmounting dialog, or lost to body).
+      const active = document.activeElement;
+      if ((card.contains(active) || active === document.body) && trigger?.focus) {
+        trigger.focus();
+      }
+    };
+  }, []);
+
   // Client-only by construction (all callers gate on client state), but
   // guard anyway so an SSR pass never touches `document`.
   if (typeof document === "undefined") return null;
@@ -37,8 +94,11 @@ export function Modal({ label, onClose, cardClassName = "", children }: ModalPro
       aria-label={label}
     >
       <div
+        ref={cardRef}
+        tabIndex={-1}
         className={`card ${cardClassName}`}
         onClick={(e) => e.stopPropagation()}
+        style={{ outline: "none" }}
       >
         {children}
       </div>

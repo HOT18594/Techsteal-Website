@@ -84,9 +84,23 @@ export function PollAnnouncement() {
     setPoll(null);
   }, [poll]);
 
+  // Single source of truth for whether the announcement is actually shown.
+  // The scroll-lock effect below must key off this too — previously it only
+  // checked `poll`, so a fetched-but-hidden poll (already voted/dismissed,
+  // guarded during render AFTER hooks) locked body scroll with nothing
+  // rendered to close it.
+  const visible =
+    ready && !loading && !!user && !!poll &&
+    // Already voted in this poll BEFORE this page load → not an
+    // announcement for them anymore. (Votes cast inside this popup keep it
+    // open via `engaged` so the user sees the results.)
+    !(poll !== null && poll.myVote && !engaged.has(poll.id)) &&
+    // Dismissed earlier → stays dismissed until a NEW poll starts.
+    !(poll !== null && dismissedIds().has(String(poll.id)));
+
   // Escape closes the announcement; lock body scroll while it's up.
   useEffect(() => {
-    if (!poll) return;
+    if (!visible || !poll) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
@@ -97,16 +111,9 @@ export function PollAnnouncement() {
       document.body.style.overflow = prevOverflow;
       document.removeEventListener("keydown", onKey);
     };
-  }, [poll, close]);
+  }, [visible, poll, close]);
 
-  if (!ready || loading || !user || !poll) return null;
-
-  // Already voted in this poll BEFORE this page load → not an announcement
-  // for them anymore. (Votes cast inside this popup keep it open via
-  // `engaged` so the user sees the results.)
-  if (poll.myVote && !engaged.has(poll.id)) return null;
-  // Dismissed earlier → stays dismissed until a NEW poll starts.
-  if (dismissedIds().has(String(poll.id))) return null;
+  if (!visible || !poll) return null;
 
   const castVote = async (optionId: string) => {
     const res = await fetch(`/api/forum/${poll.threadId}/vote`, {

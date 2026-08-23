@@ -156,17 +156,11 @@ export default function ThreadPage() {
     }
     if (busyLike !== null) return;
     setBusyLike(reply.id ?? 0);
-    const liked = (reply.likedBy ?? []).includes(user.id);
+    const liked = reply.liked === true;
     setReplies((prev) =>
       prev.map((r) =>
         r.id === reply.id
-          ? {
-              ...r,
-              likedBy: liked
-                ? (r.likedBy ?? []).filter((x) => x !== user.id)
-                : [...(r.likedBy ?? []), user.id],
-              likes: (r.likes ?? 0) + (liked ? -1 : 1),
-            }
+          ? { ...r, liked: !liked, likes: (r.likes ?? 0) + (liked ? -1 : 1) }
           : r
       )
     );
@@ -177,12 +171,12 @@ export default function ThreadPage() {
         body: JSON.stringify({ replyId: reply.id }),
       });
       if (!res.ok) throw new Error(`like failed (${res.status})`);
-      const data = (await res.json()) as { reply: ForumReply };
-      setReplies((prev) => prev.map((r) => (r.id === reply.id ? data.reply : r)));
+      const data = await res.json() as { reply: ForumReply; liked: boolean };
+      setReplies((prev) => prev.map((r) => (r.id === reply.id ? { ...data.reply, liked: data.liked } : r)));
     } catch {
       setReplies((prev) =>
         prev.map((r) =>
-          r.id === reply.id ? { ...r, likedBy: reply.likedBy ?? [], likes: reply.likes ?? 0 } : r
+          r.id === reply.id ? { ...r, liked: reply.liked ?? false, likes: reply.likes ?? 0 } : r
         )
       );
       show("Couldn't like", "The server rejected the request.", "error");
@@ -198,17 +192,9 @@ export default function ThreadPage() {
     }
     if (!thread || busyLike !== null) return;
     setBusyLike("thread");
-    const liked = (thread.likedBy ?? []).includes(user.id);
+    const liked = thread.liked === true;
     setThread((t) =>
-      t
-        ? {
-            ...t,
-            likedBy: liked
-              ? (t.likedBy ?? []).filter((x) => x !== user.id)
-              : [...(t.likedBy ?? []), user.id],
-            likes: (t.likes ?? 0) + (liked ? -1 : 1),
-          }
-        : t
+      t ? { ...t, liked: !liked, likes: (t.likes ?? 0) + (liked ? -1 : 1) } : t
     );
     try {
       const res = await fetch(`/api/forum/${id}/like`, {
@@ -217,18 +203,18 @@ export default function ThreadPage() {
         body: JSON.stringify({}),
       });
       if (!res.ok) throw new Error(`like failed (${res.status})`);
-      const data = (await res.json()) as { thread: ForumThread };
+      const data = await res.json() as { thread: ForumThread; liked: boolean };
       setThread((t) =>
         t
           ? {
               ...t,
               likes: data.thread.likes,
-              likedBy: data.thread.likedBy,
+              liked: data.liked,
             }
           : t
       );
     } catch {
-      setThread((t) => (t ? { ...t, likedBy: thread.likedBy ?? [], likes: thread.likes ?? 0 } : t));
+      setThread((t) => (t ? { ...t, liked: thread.liked ?? false, likes: thread.likes ?? 0 } : t));
       show("Couldn't like", "The server rejected the request.", "error");
     } finally {
       setBusyLike(null);
@@ -393,7 +379,7 @@ export default function ThreadPage() {
     }
   };
 
-  const likedThread = thread && user ? (thread.likedBy ?? []).includes(user.id) : false;
+  const likedThread = thread?.liked === true && Boolean(user);
   const canEditThread =
     thread && user && (isAdmin || (thread.authorId === user.id && thread.authorId !== ""));
   const locked = Boolean(thread?.locked);
@@ -585,7 +571,7 @@ export default function ThreadPage() {
               ) : (
                 <div className="card overflow-hidden">
                   {replies.map((r, i) => {
-                    const liked = (r.likedBy ?? []).includes(user?.id ?? "");
+                    const liked = r.liked === true && Boolean(user);
                     const canEdit =
                       user && (isAdmin || (r.authorId === user.id && r.authorId !== ""));
                     const isEditing = editing?.kind === "reply" && editing.id === r.id;
@@ -685,7 +671,7 @@ export default function ThreadPage() {
                                       : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)]"
                                   }`}
                                   onClick={() => void toggleLikeReply(r)}
-                                  disabled={busyLike === r.id}
+                                  disabled={busyLike !== null}
                                   aria-label={liked ? "Unlike comment" : "Like comment"}
                                 >
                                   <i className={`${liked ? "fa-solid" : "fa-regular"} fa-heart`} />
