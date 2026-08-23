@@ -158,6 +158,11 @@ function cap(s: string, max = 1800): string {
   return s.length > max ? s.slice(0, max) + " …(truncated)" : s;
 }
 
+/** Escape LIKE wildcards so user input can't match everything. */
+function escapeLike(q: string): string {
+  return q.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
 async function runTool(name: string, args: Record<string, unknown>): Promise<ChattyToolResult> {
   switch (name) {
     case "get_server_status": {
@@ -196,7 +201,10 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
         .from(profiles)
         .where(
           q
-            ? or(ilike(profiles.username, `%${q}%`), ilike(profiles.minecraftUsername, `%${q}%`))
+            ? or(
+                ilike(profiles.username, `%${escapeLike(q)}%`),
+                ilike(profiles.minecraftUsername, `%${escapeLike(q)}%`)
+              )
             : undefined
         )
         .orderBy(profiles.username)
@@ -262,7 +270,11 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
         .from(galleryItems)
         .where(
           q
-            ? or(ilike(galleryItems.title, `%${q}%`), ilike(galleryItems.builder, `%${q}%`), ilike(galleryItems.category, `%${q}%`))
+            ? or(
+                ilike(galleryItems.title, `%${escapeLike(q)}%`),
+                ilike(galleryItems.builder, `%${escapeLike(q)}%`),
+                ilike(galleryItems.category, `%${escapeLike(q)}%`)
+              )
             : undefined
         )
         .orderBy(desc(galleryItems.id))
@@ -287,7 +299,12 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
       const rows = await db
         .select()
         .from(forumThreads)
-        .where(or(ilike(forumThreads.title, `%${q}%`), ilike(forumThreads.content, `%${q}%`)))
+        .where(
+          or(
+            ilike(forumThreads.title, `%${escapeLike(q)}%`),
+            ilike(forumThreads.content, `%${escapeLike(q)}%`)
+          )
+        )
         .orderBy(desc(forumThreads.createdAt))
         .limit(8);
       if (rows.length === 0) return { ok: true, label, content: `No forum threads match "${q}".` };

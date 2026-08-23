@@ -63,13 +63,23 @@ export async function GET() {
         avatarUrl: minotarUrl(mcName),
         color: colorFor(row.id),
         status: online ? "online" : "offline",
-        joined: row.createdAt ?? "",
+        // `joined` is display text — format the stored ISO timestamp here so
+        // the UI never renders a raw "2026-08-20T15:22:33.000Z".
+        joined: formatJoined(row.createdAt),
         verified: row.discordVerified ?? false,
         minecraftUsername: mcName,
       };
     });
 
   return NextResponse.json(members);
+}
+
+/** "Aug 20, 2026" from an ISO timestamp; "" when absent/unparseable. */
+function formatJoined(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 const COLORS = [

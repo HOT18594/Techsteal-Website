@@ -39,7 +39,10 @@ export function ScrollFx() {
     let y = window.scrollY;
     let prev = y;
     let raf = 0;
-    const targets = new Set<HTMLElement>();
+    // Rebuilt from scratch on every collect — elements removed from the DOM
+    // (route changes, closed modals) must drop out instead of accumulating
+    // in the set (and their transforms) forever.
+    let targets = new Set<HTMLElement>();
 
     // ---- cinematic eased scrolling ---------------------------------------
     const WHEEL_SPEED = 0.92; // slight dampening — heavier, floatier feel
@@ -103,9 +106,20 @@ export function ScrollFx() {
     window.addEventListener("scroll", onScroll, { passive: true });
 
     const collect = () => {
-      document
-        .querySelectorAll<HTMLElement>("[data-parallax], [data-drift]")
-        .forEach((el) => targets.add(el));
+      targets = new Set(
+        document.querySelectorAll<HTMLElement>("[data-parallax], [data-drift]")
+      );
+    };
+
+    // DOM mutations arrive in bursts (streaming chat, list refetches) —
+    // coalesce them into one query per frame instead of one per mutation.
+    let collectRaf = 0;
+    const queueCollect = () => {
+      if (collectRaf !== 0) return;
+      collectRaf = requestAnimationFrame(() => {
+        collectRaf = 0;
+        collect();
+      });
     };
 
     const onFrame = () => {
@@ -161,12 +175,13 @@ export function ScrollFx() {
     // Catch parallax/decoration elements mounted later (e.g. after hydration).
     let mo: MutationObserver | null = null;
     if (typeof MutationObserver !== "undefined") {
-      mo = new MutationObserver(() => collect());
+      mo = new MutationObserver(queueCollect);
       mo.observe(document.body, { childList: true, subtree: true });
     }
 
     return () => {
       cancelAnimationFrame(raf);
+      if (collectRaf !== 0) cancelAnimationFrame(collectRaf);
       mo?.disconnect();
       window.removeEventListener("wheel", onWheel);
       window.removeEventListener("scroll", onScroll);

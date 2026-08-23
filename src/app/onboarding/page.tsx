@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -62,7 +62,7 @@ function OnboardingContent() {
       if (res.ok && data.profile?.role === "admin") {
         setAdminDone(true);
         await refresh();
-        show("Admin unlocked", "Welcome to the admin team. ðŸ”‘");
+        show("Admin unlocked", "Welcome to the admin team. 🔑");
       } else {
         show("Wrong code", "That admin code isn't right.", "error");
       }
@@ -124,9 +124,23 @@ function OnboardingContent() {
   const finish = async () => {
     if (finishing) return; // no double-submit
     setFinishing(true);
-    const patchBody: Record<string, unknown> = { onboarded: true };
-    if (mcUsername.trim()) patchBody.minecraftUsername = mcUsername.trim();
     try {
+      const name = mcUsername.trim();
+      // Same validation as Settings: a name must resolve on Mojang before
+      // it's persisted — a typo would otherwise mark onboarding done with
+      // an unresolvable username.
+      if (name) {
+        const res = await fetch(`/api/minecraft/skin?username=${encodeURIComponent(name)}`);
+        const data = (await res.json()) as { skin?: string; error?: string };
+        if (!res.ok || !data.skin) {
+          setMcError(data.error ?? "Couldn't find that username.");
+          setMcBusy(false);
+          setFinishing(false);
+          return;
+        }
+      }
+      const patchBody: Record<string, unknown> = { onboarded: true };
+      if (name) patchBody.minecraftUsername = name;
       const res = await fetch("/api/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -271,7 +285,7 @@ function OnboardingContent() {
               />
               <div className="text-sm">
                 {verifyState === "checking" ? "Checking membership…" : null}
-                {verifyState === "verified" ? "Verified — you're a member. âœ…" : null}
+                {verifyState === "verified" ? "Verified — you're a member. ✅" : null}
                 {verifyState === "not_configured"
                   ? "Verification isn't set up yet — you can skip for now."
                   : null}

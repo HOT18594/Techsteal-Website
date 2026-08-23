@@ -144,6 +144,9 @@ export default function GalleryPage() {
         setModalOpen(false);
         setViewing(null);
       }
+      // Arrow keys in a text field move the caret — never page the lightbox.
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       if (viewing && slides.length > 1 && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
         const dir = e.key === "ArrowRight" ? 1 : -1;
         const idx = slideIndex >= 0 ? slideIndex : 0;
@@ -449,6 +452,9 @@ export default function GalleryPage() {
   const listError = error && displayItems.length === 0;
   const okCount = pending.filter((p) => p.url).length;
   const stillUploading = pending.some((p) => !p.url && !p.error);
+  // A failed upload must not be silently dropped from the post — make the
+  // user remove it or re-pick it first.
+  const hasFailedUpload = pending.some((p) => Boolean(p.error));
 
   return (
     <SubPage>
@@ -747,9 +753,9 @@ export default function GalleryPage() {
                   <button
                     type="submit"
                     className="btn-primary w-full"
-                    disabled={submitting || !title.trim() || okCount === 0 || stillUploading}
+                    disabled={submitting || !title.trim() || okCount === 0 || stillUploading || hasFailedUpload}
                   >
-                    {submitting ? "Posting…" : stillUploading ? "Uploading…" : "Post Build"}
+                    {submitting ? "Posting…" : stillUploading ? "Uploading…" : hasFailedUpload ? "Remove failed images" : "Post Build"}
                   </button>
                   <button type="button" className="btn-secondary w-full" onClick={() => setModalOpen(false)}>
                     Cancel
@@ -960,13 +966,16 @@ export default function GalleryPage() {
   );
 }
 
-/** Upload with real progress events (fetch has none for request bodies). */
+/** Upload with real progress events (fetch has none for request bodies).
+ *  A hard timeout keeps a hung connection from spinning "Uploading…" forever. */
 function xhrUpload(url: string, file: File, onProgress: (pct: number) => void): Promise<string> {
   return new Promise((resolve, reject) => {
     const body = new FormData();
     body.set("image", file);
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url);
+    xhr.timeout = 60_000;
+    xhr.ontimeout = () => reject(new Error("Upload timed out — try again."));
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
     };

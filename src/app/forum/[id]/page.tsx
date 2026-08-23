@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Avatar } from "@/components/Avatar";
@@ -12,6 +12,7 @@ import { SubPage } from "@/components/SubPage";
 import { useSession } from "@/lib/use-session";
 import { timeAgo } from "@/lib/time";
 import { categoryClass } from "@/lib/forum-categories";
+import { ErrorState } from "@/components/EmptyState";
 import type { ForumPoll, ForumReply, ForumThread } from "@/types";
 
 /** Pinned comments first, then oldest. */
@@ -35,6 +36,7 @@ export default function ThreadPage() {
   const [poll, setPoll] = useState<ForumPoll | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   const [replyText, setReplyText] = useState("");
   const [replying, setReplying] = useState(false);
@@ -46,27 +48,35 @@ export default function ThreadPage() {
   const [editing, setEditing] = useState<{ kind: "thread" | "reply"; id: number; title?: string; content: string } | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
 
+  // Sequence-guarded load: navigating between two threads keeps this page
+  // mounted (only `id` changes), so a slow response for thread A must never
+  // land after thread B's and overwrite it.
+  const reqRef = useRef(0);
   const load = useCallback(async () => {
+    const reqId = ++reqRef.current;
     setLoading(true);
     setNotFound(false); // a previous failed load must not stick
+    setLoadError(false);
     try {
       const res = await fetch(`/api/forum/${id}`);
-      if (!res.ok) {
-        setNotFound(true);
+      if (res.status === 404) {
+        if (reqId === reqRef.current) setNotFound(true);
         return;
       }
+      if (!res.ok) throw new Error(`thread ${res.status}`);
       const data = (await res.json()) as {
         thread: ForumThread;
         replies: ForumReply[];
         poll: ForumPoll | null;
       };
+      if (reqId !== reqRef.current) return; // a newer load won
       setThread(data.thread);
       setReplies(sortReplies(data.replies));
       setPoll(data.poll);
     } catch {
-      setNotFound(true);
+      if (reqId === reqRef.current) setLoadError(true); // transient — offer retry
     } finally {
-      setLoading(false);
+      if (reqId === reqRef.current) setLoading(false);
     }
   }, [id]);
 
@@ -401,11 +411,13 @@ export default function ThreadPage() {
 
         {loading ? (
           <p className="text-sm text-[var(--muted)] text-center py-16">Loading thread…</p>
-        ) : notFound || !thread ? (
+        ) : notFound ? (
           <div className="text-sm text-[var(--muted)] py-16 text-center border border-dashed border-[var(--border)] rounded-xl">
             <i className="fa-solid fa-comment-slash text-3xl text-[var(--muted-2)] mb-4 block" />
             Thread not found or deleted.
           </div>
+        ) : loadError || !thread ? (
+          <ErrorState onRetry={() => void load()} what="thread" />
         ) : (
           <>
             {/* OP */}

@@ -15,6 +15,7 @@ import { useSession } from "@/lib/use-session";
 import { timeAgo } from "@/lib/time";
 import { markdownExcerpt } from "@/lib/excerpt";
 import { CATEGORY_LIST, categoryClass } from "@/lib/forum-categories";
+import { ErrorState } from "@/components/EmptyState";
 
 const SORTS = [
   { id: "new", label: "Latest" },
@@ -43,6 +44,7 @@ export default function ForumPage() {
   // ------------------------------------------------------------------
   const [list, setList] = useState<ListData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<(typeof SORTS)[number]["id"]>("new");
   const [categoryFilter, setCategoryFilter] = useState("All");
@@ -73,13 +75,20 @@ export default function ForumPage() {
       const data = (await res.json()) as ListData | ForumThread[];
       if (reqId !== reqRef.current) return;
       // No-DB mode returns a bare array (fallback content) — normalize it.
-      setList(
-        Array.isArray(data)
-          ? { threads: data, total: data.length, page: 1, perPage: data.length, hasMore: false, categoryCounts: {} }
-          : data
-      );
+      if (Array.isArray(data)) {
+        setList({ threads: data, total: data.length, page: 1, perPage: data.length, hasMore: false, categoryCounts: {} });
+      } else {
+        setList(data);
+        // The server clamps out-of-range pages (e.g. threads deleted while
+        // the user sits on page 5) — follow it so the pager stays truthful.
+        if (data.page !== page) setPage(data.page);
+      }
+      setLoadError(false);
     } catch {
-      if (reqId === reqRef.current) setList(null);
+      if (reqId === reqRef.current) {
+        setList(null);
+        setLoadError(true); // an outage must not read as "no threads yet"
+      }
     } finally {
       if (reqId === reqRef.current) setLoading(false);
     }
@@ -313,6 +322,8 @@ export default function ForumPage() {
             <div id="forum-threads" className="space-y-3 stagger">
               {loading && !list ? (
                 <p className="text-sm text-[var(--muted)] py-12 text-center">Loading threads…</p>
+              ) : loadError && !list ? (
+                <ErrorState onRetry={() => void load()} what="threads" />
               ) : threads.length === 0 ? (
                 <div className="text-sm text-[var(--muted)] py-12 text-center border border-dashed border-[var(--border)] rounded-xl">
                   <i className="fa-solid fa-comments text-3xl text-[var(--muted-2)] mb-3 block" />

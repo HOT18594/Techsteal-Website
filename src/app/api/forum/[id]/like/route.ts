@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { forumReplies, forumThreads } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
+import { findAccount } from "@/lib/accounts";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 
 export const dynamic = "force-dynamic";
@@ -26,17 +27,33 @@ export async function POST(
   }
 
   const body = await request.json().catch(() => ({}));
-  const replyId = body?.replyId !== undefined ? Number(body.replyId) : null;
+  // A present-but-invalid replyId must not silently become a thread like —
+  // reject it so a client bug can't toggle the wrong thing.
+  let replyId: number | null = null;
+  if (body?.replyId !== undefined && body?.replyId !== null) {
+    const parsed = typeof body.replyId === "number" ? body.replyId : Number(body.replyId);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      return NextResponse.json({ error: "Invalid replyId" }, { status: 400 });
+    }
+    replyId = parsed;
+  }
 
   const db = getDb();
   if (!db) {
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
 
+  // Same live-account gate as every other write route: a removed (banned)
+  // account's cookie may still be unexpired but must not keep voting.
+  const account = await findAccount(user.id).catch(() => null);
+  if (!account || account.banned) {
+    return NextResponse.json({ error: "Your account no longer exists on this server." }, { status: 403 });
+  }
+
   // Locking read + write inside a transaction: two simultaneous "like"
   // clicks used to both read the old likedBy, both append the id, and
   // one vote would silently vanish. `FOR UPDATE` serializes them.
-  if (Number.isInteger(replyId) && replyId !== null && replyId > 0) {
+  if (replyId !== null) {
     const updated = await db.transaction(async (tx) => {
       const locked = await tx
         .select()

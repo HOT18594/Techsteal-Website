@@ -30,9 +30,11 @@ export function Avatar({
   online,
 }: AvatarProps) {
   // A src that fails to load (deleted Discord PFP, minotar hiccup) drops
-  // to the placeholder instead of an empty tile.
-  const [broken, setBroken] = useState(false);
-  const showImage = Boolean(src) && !broken;
+  // to the placeholder instead of an empty tile. Track WHICH url failed so
+  // a changed src (e.g. a fresh Discord PFP) gets retried instead of being
+  // stuck on the fallback forever.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const showImage = Boolean(src) && failedSrc !== src;
 
   return (
     <span
@@ -42,7 +44,7 @@ export function Avatar({
       title={name}
     >
       {showImage ? (
-        <img src={src ?? ""} alt="" loading="lazy" onError={() => setBroken(true)} />
+        <img src={src ?? ""} alt="" loading="lazy" onError={() => setFailedSrc(src ?? null)} />
       ) : (
         <span className="avatar-fallback" aria-hidden="true">
           {/* Ghosted creeper-style pixel face (8×8, like a skin texture) */}

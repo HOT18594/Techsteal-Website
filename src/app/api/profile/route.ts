@@ -60,6 +60,11 @@ export async function PATCH(request: NextRequest) {
 
   const account: Account | null = await findAccount(user.id);
   if (!account) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  // A removed (banned) account's cookie may still be unexpired — it must
+  // not keep editing its profile or claiming the admin code.
+  if (account.banned) {
+    return NextResponse.json({ error: "This account has been removed." }, { status: 403 });
+  }
 
   // Admin code claim — exact match promotes to admin. Failures are explicit
   // (403, rate-limited) so onboarding can tell a wrong code apart from a

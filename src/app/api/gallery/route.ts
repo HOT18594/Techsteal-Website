@@ -50,22 +50,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "You must be signed in to post." }, { status: 401 });
   }
 
-  if (getDb()) {
-    const account = await findAccount(user.id).catch(() => null);
-    if (!account || account.banned) {
-      return NextResponse.json(
-        { error: "Your account no longer exists on this server." },
-        { status: 403 }
-      );
-    }
-    if (!canPostToGallery(account)) {
-      return NextResponse.json(
-        { error: "Only verified Discord members can post to the gallery." },
-        { status: 403 }
-      );
-    }
-  } else {
+  const db = getDb();
+  if (!db) {
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+  }
+
+  const account = await findAccount(user.id).catch(() => null);
+  if (!account || account.banned) {
+    return NextResponse.json(
+      { error: "Your account no longer exists on this server." },
+      { status: 403 }
+    );
+  }
+  if (!canPostToGallery(account)) {
+    return NextResponse.json(
+      { error: "Only verified Discord members can post to the gallery." },
+      { status: 403 }
+    );
   }
 
   const body = await request.json().catch(() => ({}));
@@ -99,7 +100,9 @@ export async function POST(request: NextRequest) {
     .insert(galleryItems)
     .values({
       title,
-      builder: user.username,
+      // Live account name, not the (up to 7-day-old) cookie — same rule as
+      // forum threads, so renamed users post under their current name.
+      builder: account?.username ?? user.username,
       authorId: user.id,
       category,
       description,

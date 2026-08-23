@@ -94,7 +94,10 @@ function scanInline(src: string, i: number): InlineScan {
   // Autolink bare http(s) URLs.
   if (rest.match(/^https?:\/\/\S/)) {
     const m = /^https?:\/\/[^\s<>()]+/.exec(rest)!;
-    return { kind: "autolink", len: m[0].length, url: m[0] };
+    // Sentence punctuation after a URL is prose, not part of it
+    // ("see https://example.com.") — leave it as text outside the link.
+    const url = m[0].replace(/[.,!?;:'"'…]+$/, "");
+    return { kind: "autolink", len: url.length, url };
   }
 
   return { kind: "text", len: 1 };

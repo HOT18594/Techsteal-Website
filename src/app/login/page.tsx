@@ -43,7 +43,10 @@ function LoginContent() {
       oauth_failed: "Discord didn't let us in. Try again.",
       banned: "This account was removed from the server by an admin.",
     };
-    show("Sign-in failed", messages[error] ?? "Something went wrong.", "error");
+    // Own-keys lookup only — `messages[error]` on a crafted value like
+    // "constructor" would resolve inherited members and crash the toast.
+    const message = Object.hasOwn(messages, error) ? messages[error] : undefined;
+    show("Sign-in failed", message ?? "Something went wrong.", "error");
   }, [searchParams, show]);
 
   return (

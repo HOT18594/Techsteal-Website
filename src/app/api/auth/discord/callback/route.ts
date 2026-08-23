@@ -20,7 +20,14 @@ function safeNextCookie(cookies: string): string | null {
     .find((c) => c.startsWith(`${NEXT_COOKIE}=`))
     ?.slice(NEXT_COOKIE.length + 1);
   if (!raw) return null;
-  const decoded = decodeURIComponent(raw);
+  // Malformed escapes ("%zz") throw URIError — a crafted cookie must not
+  // crash the callback, just fall back to the home page.
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
   if (!decoded.startsWith("/") || decoded.startsWith("//")) return null;
   return decoded;
 }

@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { galleryItems } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
+import { findAccount } from "@/lib/accounts";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,13 @@ export async function POST(
   const db = getDb();
   if (!db) {
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+  }
+
+  // Same live-account gate as every other write route: a removed (banned)
+  // account's cookie may still be unexpired but must not keep voting.
+  const account = await findAccount(user.id).catch(() => null);
+  if (!account || account.banned) {
+    return NextResponse.json({ error: "Your account no longer exists on this server." }, { status: 403 });
   }
 
   const updated = await db.transaction(async (tx) => {

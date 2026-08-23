@@ -48,7 +48,13 @@ function SettingsContent() {
     if (!user) return;
     let cancelled = false;
     fetch("/api/profile")
-      .then((r) => (r.ok ? r.json() : { profile: null }))
+      // A 500/503 must reach the catch (toast + keep the form) — mapping it
+      // to `{ profile: null }` here would blank the profile and flip every
+      // badge to "Setup incomplete" on a transient server error.
+      .then((r) => {
+        if (!r.ok) throw new Error(`profile ${r.status}`);
+        return r.json() as Promise<{ profile: Account | null }>;
+      })
       .then((data) => {
         if (cancelled) return;
         const p = data.profile as Account | null;

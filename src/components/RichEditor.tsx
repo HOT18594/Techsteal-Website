@@ -376,13 +376,16 @@ export function RichEditor({
   );
 }
 
-/** Upload with real progress events (fetch has none for request bodies). */
+/** Upload with real progress events (fetch has none for request bodies).
+ *  A hard timeout keeps a hung connection from spinning the progress bar forever. */
 function xhrUpload(file: File, onProgress: (pct: number) => void): Promise<string> {
   return new Promise((resolve, reject) => {
     const body = new FormData();
     body.set("image", file);
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/upload");
+    xhr.timeout = 60_000;
+    xhr.ontimeout = () => reject(new Error("Upload timed out — try again."));
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
     };

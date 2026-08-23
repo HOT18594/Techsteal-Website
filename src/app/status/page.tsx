@@ -29,6 +29,9 @@ const STATE_STYLE: Record<
 };
 
 function styleFor(status: ServerStatus) {
+  // Unavailable status gets the neutral "unknown" look — never a green
+  // online icon sitting next to "Status unavailable".
+  if (status.source !== "live") return STATE_STYLE.unknown;
   return STATE_STYLE[status.state ?? (status.online ? "online" : "offline")] ?? STATE_STYLE.unknown;
 }
 
@@ -130,12 +133,14 @@ export default function StatusPage() {
     }
   };
 
+  // Start/Stop are gated on LIVE status only. The placeholder fallback
+  // claims online:true, and acting on that could stop (or fail to start)
+  // a server whose real state we simply don't know right now.
   const canStart =
-    STATUS.state === undefined
-      ? !online
-      : ["offline", "crashed"].includes(STATUS.state);
+    statusLive &&
+    (STATUS.state === undefined ? !online : ["offline", "crashed"].includes(STATUS.state));
   const canStop =
-    STATUS.state === undefined ? online : ["online"].includes(STATUS.state);
+    statusLive && (STATUS.state === undefined ? online : ["online"].includes(STATUS.state));
 
   return (
     <SubPage>
