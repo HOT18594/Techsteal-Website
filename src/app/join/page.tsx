@@ -30,10 +30,6 @@ export default function JoinPage() {
       <div className="w-full">
         {/* Header */}
         <div className="page-header mb-8">
-          <p className="page-kicker">
-            <i className="fa-solid fa-compass" aria-hidden="true" />
-            Four steps to the server
-          </p>
           <h1 className="page-title">How to Join</h1>
         </div>
 

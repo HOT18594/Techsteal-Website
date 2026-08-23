@@ -1,8 +1,10 @@
 // Free, keyless web search for the AI assistant.
 //
-// Two sources, no API keys needed:
+// Three sources, no API keys needed:
 //   1. DuckDuckGo Instant Answers (official JSON endpoint).
-//   2. Wikipedia search + page summaries.
+//   2. Minecraft Wiki (MediaWiki API) — the authoritative source for mods,
+//      mechanics and versions; DDG/Wikipedia are near-useless for these.
+//   3. Wikipedia search + page summaries.
 // The chat route hands the combined snippets to the model so it can
 // answer current questions (season recipes, mods, wiki topics, etc.)
 // instead of guessing.
@@ -92,6 +94,32 @@ async function searchWikipedia(query: string): Promise<SearchResult[]> {
   return results;
 }
 
+/** Minecraft Wiki — same MediaWiki search API as Wikipedia. This is where
+ *  mod/modpack/mechanic answers actually live; failing soft is fine. */
+async function searchMinecraftWiki(query: string): Promise<SearchResult[]> {
+  const data = await fetchJson(
+    `https://minecraft.wiki/api.php?action=query&list=search&srsearch=${encodeURIComponent(
+      query
+    )}&format=json&srlimit=3&srprop=snippet`
+  );
+  if (!data || typeof data !== "object") return [];
+  const d = data as {
+    query?: { search?: Array<{ title: string; snippet: string }> };
+  };
+  const hits = d.query?.search ?? [];
+  const results: SearchResult[] = [];
+  for (const hit of hits.slice(0, 3)) {
+    const clean = hit.snippet.replace(/<[^>]+>/g, "");
+    const title = hit.title;
+    results.push({
+      title: `${title} — Minecraft Wiki`,
+      url: `https://minecraft.wiki/w/${encodeURIComponent(title.replace(/ /g, "_"))}`,
+      snippet: clean.slice(0, 400),
+    });
+  }
+  return results;
+}
+
 /**
  * Run a web search for `query` and return up to 5 combined results.
  * Never throws — an empty array just means "no results found".
@@ -100,15 +128,17 @@ export async function webSearch(query: string): Promise<SearchResult[]> {
   const trimmed = query.trim().slice(0, 200);
   if (!trimmed) return [];
 
-  const [ddg, wiki] = await Promise.all([
+  const [ddg, mcwiki, wiki] = await Promise.all([
     searchDuckDuckGo(trimmed).catch(() => [] as SearchResult[]),
+    searchMinecraftWiki(trimmed).catch(() => [] as SearchResult[]),
     searchWikipedia(trimmed).catch(() => [] as SearchResult[]),
   ]);
 
-  // Dedupe by url, prefer DuckDuckGo's answer first.
+  // Dedupe by url, prefer DuckDuckGo's instant answer first, then the
+  // Minecraft Wiki, then Wikipedia.
   const seen = new Set<string>();
   const merged: SearchResult[] = [];
-  for (const r of [...ddg, ...wiki]) {
+  for (const r of [...ddg, ...mcwiki, ...wiki]) {
     if (!r.snippet || seen.has(r.url)) continue;
     seen.add(r.url);
     merged.push(r);

@@ -53,15 +53,6 @@ const SUGGESTIONS = [
   { icon: "fa-globe", title: "Minecraft help", hint: "General game questions", text: "What's the fastest way to find ancient debris?" },
 ] as const;
 
-const CAPABILITIES = [
-  { icon: "fa-signal", label: "Live status" },
-  { icon: "fa-users", label: "Members" },
-  { icon: "fa-gavel", label: "Rules" },
-  { icon: "fa-images", label: "Builds" },
-  { icon: "fa-comments", label: "Forum" },
-  { icon: "fa-globe", label: "Web search" },
-] as const;
-
 /** Tool name → icon for the activity/trace chips. */
 const TOOL_ICONS: Record<string, string> = {
   get_server_status: "fa-signal",
@@ -463,93 +454,8 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
   const canRegenerate =
     !embedded && !typing && lastMsg?.role === "assistant" && !lastMsg?.error && messages.length > 1;
 
-  // ------------------------------------------------------------------
-  // Desktop sidebar rail (full variant): identity, capabilities and a rich
-  // prompt list that stays reachable mid-conversation. On small screens it
-  // hides entirely — fresh chats show compact suggestion pills instead.
-  // ------------------------------------------------------------------
-  const railDisabled = typing || !user || !hasAccess;
-  const askFromRail = (text: string) => {
-    if (railDisabled) return;
-    void send(text);
-    inputRef.current?.focus();
-  };
-  const rail = (
-    <aside className="hidden lg:flex w-72 xl:w-80 flex-shrink-0 flex-col gap-4 min-h-0 overflow-y-auto pr-0.5">
-      {/* Identity */}
-      <div className="card p-5">
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="w-11 h-11 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white rounded-xl">
-              <i className="fa-solid fa-robot text-lg" />
-            </div>
-            <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[var(--emerald)] border-2 border-[var(--bg)] rounded-full" />
-          </div>
-          <div className="min-w-0">
-            <p className="font-display font-bold leading-tight truncate">{ai.name}</p>
-            <p className="text-xs text-[var(--emerald)]">{ai.tagline}</p>
-          </div>
-        </div>
-        <p className="text-xs text-[var(--muted)] leading-relaxed mt-3">
-          The official {siteConfig.name} support agent. Answers come straight
-          from live tools — server status, members, rules, builds, forum —
-          never guesses.
-        </p>
-      </div>
-
-      {/* Capabilities */}
-      <div className="card p-5">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted-2)] mb-3">
-          What I can check
-        </p>
-        <div className="grid grid-cols-2 gap-1.5">
-          {CAPABILITIES.map((cap) => (
-            <span key={cap.label} className="chat-cap-chip justify-center! min-w-0">
-              <i className={`fa-solid ${cap.icon}`} aria-hidden="true" />
-              <span className="truncate">{cap.label}</span>
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* Prompt list */}
-      <div className="card p-3 flex-1 min-h-0">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted-2)] px-2 pt-2 pb-2">
-          Try asking
-        </p>
-        <div className="space-y-0.5">
-          {SUGGESTIONS.map((s) => (
-            <button
-              key={s.title}
-              type="button"
-              className="w-full flex items-center gap-2.5 text-left px-2 py-2 rounded-lg border border-transparent hover:border-[var(--border)] hover:bg-[var(--bg-2)] transition disabled:opacity-40 disabled:pointer-events-none"
-              onClick={() => askFromRail(s.text)}
-              disabled={railDisabled}
-            >
-              <span className="w-7 h-7 rounded-md bg-[var(--accent-dim)] border border-[var(--border)] text-[var(--accent)] flex items-center justify-center text-xs flex-shrink-0">
-                <i className={`fa-solid ${s.icon}`} aria-hidden="true" />
-              </span>
-              <span className="min-w-0">
-                <span className="block text-[13px] font-semibold text-[var(--fg)] truncate">
-                  {s.title}
-                </span>
-                <span className="block text-[11px] text-[var(--muted)] truncate">{s.hint}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <p className="text-[11px] text-[var(--muted-2)] leading-relaxed px-1 pb-1">
-        {ai.name} can make mistakes — double-check anything important against
-        the Rules page or Discord.
-      </p>
-    </aside>
-  );
-
-  // Gate screens share one shell — full-height inside the console column on
-  // desktop so they sit level with the rail.
-  const gateClass = embedded ? "min-h-[26rem]" : "min-h-[24rem] lg:h-full";
+  // Gate screens share one shell.
+  const gateClass = embedded ? "min-h-[26rem]" : "min-h-[24rem]";
 
   // ------------------------------------------------------------------
   // The console: gates when gated, otherwise the chat card. Shared by both
@@ -593,23 +499,9 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
       className={`card flex flex-col overflow-hidden ${
         embedded
           ? "h-[26rem]"
-          : "h-[calc(100dvh-14rem)] min-h-[26rem] lg:h-auto lg:flex-1 lg:min-h-0"
+          : "h-[calc(100dvh-13rem)] min-h-[26rem]"
       }`}
     >
-      {/* Slim console toolbar (full variant) — identity lives in the rail. */}
-      {!embedded ? (
-        <div className="flex-shrink-0 flex items-center justify-between gap-3 pl-5 pr-4 py-3 border-b border-[var(--border)]">
-          <p className="text-xs font-bold uppercase tracking-wider text-[var(--muted-2)] flex items-center gap-2">
-            <i className="fa-solid fa-comments text-[var(--accent)]" aria-hidden="true" />
-            Conversation
-          </p>
-          <button className="btn-ghost py-1.5! px-3!" onClick={clear} aria-label="New chat">
-            <i className="fa-solid fa-rotate-right" />
-            <span className="hidden sm:inline">New chat</span>
-          </button>
-        </div>
-      ) : null}
-
       {/* Messages */}
       <div
         ref={scrollRef}
@@ -641,7 +533,8 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
                 anything up on the site, and search the web for general
                 Minecraft questions.
               </p>
-              <div className="flex flex-wrap justify-center gap-1.5 mt-4 max-w-md lg:hidden">
+              {/* Fresh-state prompt pills — quick starts, every screen size. */}
+              <div className="flex flex-wrap justify-center gap-1.5 mt-4 max-w-md">
                 {SUGGESTIONS.map((s) => (
                   <button
                     key={s.title}
@@ -839,42 +732,36 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
 
   return (
     <div className={`w-full flex flex-col min-h-0 ${embedded ? "" : "flex-1"}`}>
-      {/* Compact header — embedded keeps its own identity strip; the full
-          page gets its title from the page shell and identity from the
-          sidebar rail. */}
-      {embedded ? (
-        <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <div className="w-10 h-10 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white rounded-xl">
-                <i className="fa-solid fa-robot text-lg" />
-              </div>
-              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[var(--emerald)] border-2 border-[var(--bg)] rounded-full" />
+      {/* Header — identity + status + New chat, shared by both variants. */}
+      <div className={`${embedded ? "mb-4" : "mb-5"} flex items-center justify-between gap-3 flex-wrap`}>
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <div
+              className={`${
+                embedded ? "w-10 h-10" : "w-11 h-11"
+              } bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white rounded-xl`}
+            >
+              <i className="fa-solid fa-robot text-lg" />
             </div>
-            <div>
-              <h2 className="font-display text-lg font-bold">{ai.name}</h2>
-              <div className="text-xs text-[var(--emerald)] flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 bg-[var(--emerald)] rounded-full" />
-                Online · knows the server live
-              </div>
+            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[var(--emerald)] border-2 border-[var(--bg)] rounded-full" />
+          </div>
+          <div>
+            <h1 className={embedded ? "font-display text-lg font-bold" : "font-display text-2xl font-bold"}>
+              {ai.name}
+            </h1>
+            <div className="text-xs text-[var(--emerald)] flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 bg-[var(--emerald)] rounded-full" />
+              Online · knows the server live
             </div>
           </div>
-          <button className="btn-ghost py-2! px-3!" onClick={clear} aria-label="New chat">
-            <i className="fa-solid fa-rotate-right" />
-            <span className="hidden sm:inline">New chat</span>
-          </button>
         </div>
-      ) : null}
+        <button className="btn-ghost py-2! px-3!" onClick={clear} aria-label="New chat">
+          <i className="fa-solid fa-rotate-right" />
+          <span className="hidden sm:inline">New chat</span>
+        </button>
+      </div>
 
-      {embedded ? (
-        consoleBody
-      ) : (
-        /* Full variant: two-pane app layout — sticky rail + console. */
-        <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-5 lg:h-[calc(100dvh-16rem)] lg:min-h-[30rem]">
-          {rail}
-          <section className="flex-1 min-w-0 flex flex-col min-h-0">{consoleBody}</section>
-        </div>
-      )}
+      {consoleBody}
     </div>
   );
 }

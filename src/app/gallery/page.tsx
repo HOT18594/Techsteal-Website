@@ -471,10 +471,6 @@ export default function GalleryPage() {
         {/* Header */}
         <div className="page-header rowed mb-6 gap-4">
           <div>
-            <p className="page-kicker">
-              <i className="fa-solid fa-images" aria-hidden="true" />
-              Community builds
-            </p>
             <h1 className="page-title">Gallery</h1>
           </div>
           <div className="flex items-center gap-3 flex-1 justify-end min-w-0">

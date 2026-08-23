@@ -632,27 +632,6 @@ body.scrolled .site-nav {
   flex-wrap: wrap;
   gap: 16px 24px;
 }
-.page-kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--accent-bright);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-}
-.page-kicker::before {
-  content: "";
-  width: 28px;
-  height: 2px;
-  background: linear-gradient(90deg, var(--accent), transparent);
-  border-radius: 2px;
-}
-.page-kicker i {
-  font-size: 13px;
-  opacity: 0.9;
-}
 .page-title {
   font-family: var(--font-pixel), monospace;
   font-size: 2.25rem;
@@ -2327,4 +2306,14 @@ html.custom-cursor.cursor-on-text .cursor-ring {
   height: 22px;
   border-radius: 4px;
   image-rendering: pixelated;
+}
+
+/* Pixel-font optical centering. Even after the @font-face metric
+   overrides, Minecraftia's visible ink band sits high inside its line
+   box — so pixel text flex-centered next to icons/tiles (status hero
+   label, icon headings) floats visibly above its companion. Nudging the
+   text down ~9% of its own font size restores the optical center. */
+.px-optical {
+  display: inline-block;
+  transform: translateY(0.09em);
 }

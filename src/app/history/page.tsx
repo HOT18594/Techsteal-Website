@@ -24,10 +24,6 @@ export default function HistoryPage() {
       <div className="w-full">
         {/* Header */}
         <div className="page-header mb-8">
-          <p className="page-kicker">
-            <i className="fa-solid fa-clock-rotate-left" aria-hidden="true" />
-            The story so far
-          </p>
           <h1 className="page-title">Server History</h1>
           <p className="text-sm text-[var(--muted)] mt-2">
             {events.length > 0

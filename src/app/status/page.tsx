@@ -182,10 +182,6 @@ export default function StatusPage() {
         {/* Header */}
         <div className="page-header rowed mb-8 gap-4">
           <div>
-            <p className="page-kicker">
-              <i className="fa-solid fa-signal" aria-hidden="true" />
-              Live telemetry
-            </p>
             <h1 className="page-title">Server Status</h1>
           </div>
           <div className="flex items-center gap-3">
@@ -243,7 +239,7 @@ export default function StatusPage() {
               </span>
               <div className="min-w-0">
                 <div className="flex items-baseline gap-3 flex-wrap">
-                  <span className="font-display text-3xl font-bold" style={{ color: style.color }}>
+                  <span className="font-display text-3xl font-bold px-optical" style={{ color: style.color }}>
                     {heroLabel}
                   </span>
                   {STATUS.serverName ? (
@@ -268,21 +264,21 @@ export default function StatusPage() {
             <div className="status-metrics flex-shrink-0 py-1 border-t border-[var(--border-strong)] pt-4 xl:border-0 xl:pt-0 flex-wrap gap-y-3">
               <div className="status-metric">
                 <span className="status-metric-label">Players</span>
-                <span className="status-metric-value" style={{ color: online ? "var(--emerald)" : undefined }}>
+                <span className="status-metric-value px-optical" style={{ color: online ? "var(--emerald)" : undefined }}>
                   {statusLive ? `${players}/${max}` : "—"}
                 </span>
               </div>
               <div className="status-metric">
                 <span className="status-metric-label">Version</span>
-                <span className="status-metric-value">{version}</span>
+                <span className="status-metric-value px-optical">{version}</span>
               </div>
               <div className="status-metric">
                 <span className="status-metric-label">Software</span>
-                <span className="status-metric-value">{software}</span>
+                <span className="status-metric-value px-optical">{software}</span>
               </div>
               <div className="status-metric">
                 <span className="status-metric-label">Region</span>
-                <span className="status-metric-value">{siteConfig.location}</span>
+                <span className="status-metric-value px-optical">{siteConfig.location}</span>
               </div>
             </div>
           </div>
@@ -297,7 +293,7 @@ export default function StatusPage() {
               <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
                 <h2 className="font-display text-xl font-bold flex items-center gap-2">
                   <i className="fa-solid fa-user-group text-[var(--accent)]" />
-                  Who&apos;s in game
+                  <span className="px-optical">Who&apos;s in game</span>
                 </h2>
                 <span
                   className="text-xs font-bold px-2.5 py-1 rounded-full border"
@@ -352,7 +348,7 @@ export default function StatusPage() {
               <div className="card p-6">
                 <h2 className="font-display text-xl font-bold mb-1 flex items-center gap-2">
                   <i className="fa-solid fa-power-off text-[var(--accent)]" />
-                  Server Control
+                  <span className="px-optical">Server Control</span>
                 </h2>
                 <p className="text-sm text-[var(--muted)] mb-5">
                   Start or stop the Minecraft server via the hosting panel.
@@ -424,7 +420,7 @@ export default function StatusPage() {
             <div className="card p-6">
               <h2 className="font-display text-xl font-bold mb-5 flex items-center gap-2">
                 <i className="fa-solid fa-server text-[var(--accent)]" />
-                Connection
+                <span className="px-optical">Connection</span>
               </h2>
               <div className="space-y-2">
                 <div className="flex justify-between items-center gap-3 pb-2 border-b border-[var(--border)]">

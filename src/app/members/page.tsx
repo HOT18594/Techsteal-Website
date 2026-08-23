@@ -46,10 +46,6 @@ export default function MembersPage() {
         {/* Header */}
         <div className="page-header rowed mb-6 gap-4">
           <div>
-            <p className="page-kicker">
-              <i className="fa-solid fa-users" aria-hidden="true" />
-              The in-game roster
-            </p>
             <h1 className="page-title">Members</h1>
           </div>
           <div className="relative w-full max-w-xs min-w-[10rem]">

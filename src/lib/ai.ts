@@ -33,10 +33,20 @@ const RATE_LIMITED_MESSAGE =
 /** Max model round-trips (a round = completion → maybe tool calls → results). */
 const MAX_ROUNDS = 4;
 
-/** Wall-clock budget for the whole agent run. /api/chat sets
- * `maxDuration = 60` — blowing past it gets the stream killed mid-reply,
- * so later tool rounds are skipped and a final answer is forced instead. */
-const TOTAL_BUDGET_MS = 45_000;
+/** Wall-clock budgets (ms), measured from when the event stream starts.
+ * /api/chat sets `maxDuration = 60` and Vercel KILLS the function at that
+ * point — a killed stream is what made long tool chains end with spinning
+ * chips and no answer. Rules: stop starting NEW tool rounds past
+ * TOOL_BUDGET_MS, and always reserve FINAL_ANSWER_MS for one last
+ * no-tools completion so the user always gets words. */
+const TOOL_BUDGET_MS = 30_000;
+const FINAL_ANSWER_MS = 20_000;
+/** Per-round upstream timeout (also bounds the pre-tool cascade). */
+const ROUND_TIMEOUT_MS = 20_000;
+/** Web searches actually executed per answer. The free models love to
+ * re-search over and over when results are thin — the cap turns the 4th
+ * call into a "wrap it up" instruction instead of another slow failure. */
+const MAX_WEB_SEARCHES = 2;
 
 /**
  * Heuristic that flags a question as server-specific (rules, members,
@@ -118,7 +128,7 @@ function buildSystemPrompt(opts: {
     `- search_gallery — find builds by title/builder/category`,
     `- search_forum + read_forum_thread — find and read discussions`,
     `- get_site_stats — member/thread/build/event counts`,
-    `- web_search — general Minecraft knowledge only (mechanics, crafting, mods, updates). NEVER for server-specific facts.`,
+    `- web_search — general Minecraft knowledge only (mechanics, crafting, mods, updates). NEVER for server-specific facts. LIMITED to 2 searches per answer — if the first results are thin, say so and answer from your own knowledge instead of searching again.`,
     `Rules of thumb: greeting/FAQ you already know → answer directly. Anything about current players, specific members/builds/threads, counts, or anything the snapshot doesn't fully cover → call the matching tool first, then answer from the result. You may chain tools (search_forum → read_forum_thread). Don't call tools you don't need.`,
     ``,
     `=== TRUTH HIERARCHY (always follow in this order) ===`,
@@ -328,8 +338,8 @@ async function completionRound(opts: {
     // A hung upstream must not hold the request open until the platform
     // kills it. Combine with the caller's abort signal (client Stop/leave).
     signal: opts.signal
-      ? AbortSignal.any([opts.signal, AbortSignal.timeout(opts.timeoutMs ?? 25_000)])
-      : AbortSignal.timeout(opts.timeoutMs ?? 25_000),
+      ? AbortSignal.any([opts.signal, AbortSignal.timeout(opts.timeoutMs ?? ROUND_TIMEOUT_MS)])
+      : AbortSignal.timeout(opts.timeoutMs ?? ROUND_TIMEOUT_MS),
   });
 
   if (!res.ok || !res.body) {
@@ -468,6 +478,17 @@ export async function streamChatReply(
   ];
 
   return eventStream(async (emit) => {
+    // Budgets run from stream start (the pre-stream prefetch — attached web
+    // results + knowledge snapshot — is separate but small).
+    const startedAt = Date.now();
+    // The forced final answer must be able to tell whether ANY text ever
+    // reached the client, so model-emitted events flow through this tracer.
+    let streamedText = false;
+    const trackEmit = (ev: Record<string, string>) => {
+      if (ev.t === "text" && ev.v) streamedText = true;
+      emit(ev);
+    };
+
     /**
      * One model attempt (with one 429 retry). Returns the round result, or
      * null if the client aborted. Throws upstream errors for the caller to
@@ -480,7 +501,7 @@ export async function streamChatReply(
       timeoutMs?: number
     ): Promise<{ toolCalls: { id: string; name: string; args: string }[] } | null> => {
       const run = () =>
-        completionRound({ baseUrl, model: m, apiKey, messages, withTools, signal, timeoutMs, emit });
+        completionRound({ baseUrl, model: m, apiKey, messages, withTools, signal, timeoutMs, emit: trackEmit });
       try {
         return await run();
       } catch (err) {
@@ -539,11 +560,11 @@ export async function streamChatReply(
     // Tool loop: execute calls, append results, run another round. Every
     // tool emits a live activity event the client shows as a chip.
     let roundNum = 1;
-    const startedAt = Date.now();
+    let webSearches = 0;
     while (
       round.toolCalls.length > 0 &&
       roundNum < MAX_ROUNDS &&
-      Date.now() - startedAt < TOTAL_BUDGET_MS
+      Date.now() - startedAt < TOOL_BUDGET_MS
     ) {
       // Record what the assistant "said" this round (its tool calls), then
       // answer each one. Content streamed before a tool call reads as
@@ -559,6 +580,21 @@ export async function streamChatReply(
       });
 
       for (const call of round.toolCalls) {
+        // Search cap: thin results made the model search again and again
+        // until the platform killed the function. Past the cap the call is
+        // answered with a wrap-it-up instruction instead of executing.
+        if (call.name === "web_search" && webSearches >= MAX_WEB_SEARCHES) {
+          emit({ t: "tool", name: call.name, label: "Wrapping up" });
+          messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content:
+              "Search limit reached (max 2 per answer). Do NOT search again — write your final answer NOW using the results you already have. If they're thin, say so and answer from general knowledge.",
+          });
+          continue;
+        }
+        if (call.name === "web_search") webSearches++;
+
         emit({ t: "tool", name: call.name, label: toolLabel(call.name) });
         const result = await executeChattyTool(call.name, call.args);
         messages.push({
@@ -575,14 +611,21 @@ export async function streamChatReply(
 
     // Round cap / wall-clock budget reached while the model still wanted
     // tools: run one final no-tools completion so the pending calls aren't
-    // silently dropped and the user always gets a textual answer.
+    // silently dropped and the user ALWAYS gets a textual answer.
     if (round.toolCalls.length > 0) {
-      const remaining = TOTAL_BUDGET_MS + 10_000 - (Date.now() - startedAt);
-      await attemptRound(
-        activeModel,
-        false,
-        Math.min(25_000, Math.max(5_000, remaining))
-      );
+      const elapsed = Date.now() - startedAt;
+      const finalTimeout = Math.min(FINAL_ANSWER_MS, Math.max(10_000, 55_000 - elapsed));
+      try {
+        await attemptRound(activeModel, false, finalTimeout);
+      } catch (err) {
+        console.error("chatty: final forced answer failed", err);
+        if (!streamedText) {
+          emit({
+            t: "text",
+            v: "I gathered what I could but couldn't finish composing the answer — ask me again and I'll take a cleaner pass.",
+          });
+        }
+      }
     }
   });
 }

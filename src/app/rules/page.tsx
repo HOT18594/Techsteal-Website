@@ -78,10 +78,6 @@ export default function RulesPage() {
       <div className="w-full">
         {/* Header */}
         <div className="page-header mb-8">
-          <p className="page-kicker">
-            <i className="fa-solid fa-gavel" aria-hidden="true" />
-            Community standards
-          </p>
           <h1 className="page-title">Server Rules</h1>
           <p className="text-sm text-[var(--muted)] mt-2">
             {totalRules > 0
