@@ -52,6 +52,10 @@ export async function GET(request: Request) {
   const fail = (reason: string) => {
     const res = NextResponse.redirect(new URL(`/login?error=${reason}`, request.url));
     res.cookies.set(STATE_COOKIE, "", { path: "/", maxAge: 0 });
+    // A failed attempt must not leave a stale redirect target behind —
+    // otherwise the NEXT successful login (possibly days later, started
+    // from somewhere else) lands on this flow's forgotten destination.
+    res.cookies.set(NEXT_COOKIE, "", { path: "/", maxAge: 0 });
     return res;
   };
 

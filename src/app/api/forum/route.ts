@@ -37,8 +37,10 @@ export interface ForumListResponse {
 
 type ThreadRow = typeof forumThreads.$inferSelect;
 
-function serializeThread(row: ThreadRow, avatarUrl: string | null, hasPoll: boolean) {
-  return { ...row, avatarUrl, hasPoll };
+function serializeThread(row: ThreadRow, avatarUrl: string | null, hasPoll: boolean, color: string) {
+  // `color` is the resolved per-account tile color so the list renders the
+  // same avatar a thread's detail page does (rows store only a default).
+  return { ...row, avatarUrl, hasPoll, color };
 }
 
 // List threads — pinned first, then by the requested sort. Supports
@@ -120,7 +122,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     threads: rows.map((row) => {
       const info = avatarInfoFor(avatars, row);
-      return serializeThread(row, info?.avatarUrl ?? null, pollThreadIds.has(row.id));
+      return serializeThread(row, info?.avatarUrl ?? null, pollThreadIds.has(row.id), info?.color ?? row.color);
     }),
     total,
     page,
@@ -226,7 +228,12 @@ export async function POST(request: NextRequest) {
   const avatars = await resolveAuthorAvatars([created]);
   const info = avatarInfoFor(avatars, created);
   return NextResponse.json(
-    { ...created, avatarUrl: info?.avatarUrl ?? null, hasPoll: pollInput !== null },
+    {
+      ...created,
+      avatarUrl: info?.avatarUrl ?? null,
+      color: info?.color ?? created.color,
+      hasPoll: pollInput !== null,
+    },
     { status: 201 }
   );
 }

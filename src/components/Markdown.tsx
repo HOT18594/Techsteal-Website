@@ -93,10 +93,21 @@ function scanInline(src: string, i: number): InlineScan {
 
   // Autolink bare http(s) URLs.
   if (rest.match(/^https?:\/\/\S/)) {
-    const m = /^https?:\/\/[^\s<>()]+/.exec(rest)!;
+    const m = /^https?:\/\/[^\s<>]+/.exec(rest)!;
+    let url = m[0];
+    // Parens/brackets may be PART of a URL (Wikipedia: …/X_(y)) — only trim
+    // closing brackets that don't have a matching opener, so
+    // "https://en.wikipedia.org/wiki/X_(disambiguation)" survives intact.
+    while (/[)\]}]/.test(url.slice(-1))) {
+      const opens = (url.match(/[{[(]/g) ?? []).length;
+      const closes = (url.match(/[}\])]/g) ?? []).length;
+      if (closes > opens) url = url.slice(0, -1);
+      else break;
+    }
     // Sentence punctuation after a URL is prose, not part of it
     // ("see https://example.com.") — leave it as text outside the link.
-    const url = m[0].replace(/[.,!?;:'"'…]+$/, "");
+    url = url.replace(/[.,!?;:'"'…]+$/, "");
+    if (!url) return { kind: "text", len: 1 };
     return { kind: "autolink", len: url.length, url };
   }
 

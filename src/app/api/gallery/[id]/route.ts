@@ -145,7 +145,12 @@ export async function POST(
 
   const avatars = await resolveAuthorAvatars([created]);
   const info = avatarInfoFor(avatars, created);
-  return NextResponse.json({ ...created, avatarUrl: info?.avatarUrl ?? null }, { status: 201 });
+  // `color` resolved like GET returns (gallery_comments stores none of its
+  // own), so the freshly-appended comment matches after a reload.
+  return NextResponse.json(
+    { ...created, avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? "avatar-1" },
+    { status: 201 }
+  );
 }
 
 // Two delete operations, disambiguated by the body:

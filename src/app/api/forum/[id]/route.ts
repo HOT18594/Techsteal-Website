@@ -185,7 +185,12 @@ export async function POST(
 
   const avatars = await resolveAuthorAvatars([reply]);
   const info = avatarInfoFor(avatars, reply);
-  return NextResponse.json({ ...reply, avatarUrl: info?.avatarUrl ?? null }, { status: 201 });
+  // `color` resolved like GET returns, so the optimistic client append
+  // renders the same tile a reload would.
+  return NextResponse.json(
+    { ...reply, avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? reply.color },
+    { status: 201 }
+  );
 }
 
 // Admin moderation: pin/unpin a comment (reply).

@@ -160,8 +160,9 @@ export default function GalleryPage() {
       document.body.style.overflow = prevOverflow;
       document.removeEventListener("keydown", onKey);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modalOpen, viewing, slideIndex, slides.length]);
+    // slides/visible must be deps: a filter/sort change that keeps the slide
+    // count identical would otherwise leave arrow keys paging a stale list.
+  }, [modalOpen, viewing, slideIndex, slides, visible]);
 
   // Load comments (and bump views) when the lightbox opens on a post.
   const viewingItemId = viewing?.itemId ?? null;
@@ -937,7 +938,8 @@ export default function GalleryPage() {
                       maxLength={2000}
                       onChange={(e) => setCommentText(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
+                        // Don't send while an IME composition is being confirmed.
+                        if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                           e.preventDefault();
                           void postComment();
                         }

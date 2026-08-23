@@ -10,7 +10,29 @@ import { getExarotonSnapshot } from "./exaroton";
 import { getServerStatus } from "./mcsrv";
 import { siteConfig } from "./site";
 
-export async function getLiveStatus(): Promise<ServerStatus> {
+// Short shared cache: a single page view fans out to /api/status several
+// times (navbar pill, home tile, Status page) plus /api/members and Chatty's
+// tools — each of those used to hit exaroton/mcsrvstat again. Upstream
+// rate-limits then answer 429 and the status flickers "Offline". 15s keeps
+// sections consistent and well under any rate limit; in-flight requests are
+// shared so even a cold burst is ONE upstream call.
+const CACHE_MS = 15_000;
+let cache: { at: number; promise: Promise<ServerStatus> } | null = null;
+
+export function getLiveStatus(): Promise<ServerStatus> {
+  const now = Date.now();
+  if (cache && now - cache.at < CACHE_MS) return cache.promise;
+  const promise = fetchLiveStatus();
+  cache = { at: now, promise };
+  // A rejected fetch must not poison the window — drop it so the next
+  // caller retries. (fetchLiveStatus resolves, never rejects; belt & braces.)
+  promise.catch(() => {
+    if (cache?.promise === promise) cache = null;
+  });
+  return promise;
+}
+
+async function fetchLiveStatus(): Promise<ServerStatus> {
   // Preferred: exaroton panel state.
   try {
     const snap = await getExarotonSnapshot();

@@ -96,9 +96,10 @@ export interface ExarotonSnapshot {
   version: string | null;
 }
 
-/** Strip Minecraft § formatting codes, keeping line breaks. */
+/** Strip Minecraft § formatting codes (incl. the §x hex-color prefix),
+ * keeping line breaks. */
 export function stripFormattingCodes(text: string): string {
-  return text.replace(/[§&][0-9a-fk-or]/gi, "");
+  return text.replace(/[§&][0-9a-fk-orx]/gi, "");
 }
 
 /**

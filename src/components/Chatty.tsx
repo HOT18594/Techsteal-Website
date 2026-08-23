@@ -410,8 +410,10 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
     while (cut.length > 1 && cut[cut.length - 1].role === "assistant") cut.pop();
     const lastUser = cut.length > 1 ? cut[cut.length - 1].text : null;
     if (!lastUser) return;
-    setMessages(cut);
-    void send(lastUser, cut.slice(0, -1)); // exclude the question itself — send() re-adds it
+    // Drop the question here too — send() re-adds it. Setting the full `cut`
+    // AND letting send() append would render the question twice.
+    setMessages(cut.slice(0, -1));
+    void send(lastUser, cut.slice(0, -1)); // exclude the question from context — send() re-adds it
   };
 
   const isEmpty = messages.length <= 1 && messages[0]?.role === "assistant";
@@ -684,7 +686,9 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
                 e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
               }}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
+                // isComposing: Enter that CONFIRMS an IME conversion (CJK
+                // input) must send nothing — the user is still typing.
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
                   void send();
                 }

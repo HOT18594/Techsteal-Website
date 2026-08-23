@@ -38,16 +38,27 @@ export function RevealObserver() {
     observeAll();
 
     // Catch any `.reveal` elements mounted after hydration (e.g. content
-    // loaded through the API).
+    // loaded through the API). Mutations arrive in bursts (streaming chat,
+    // list refetches) — coalesce them into one querySelectorAll per frame
+    // instead of scanning the whole document per mutation.
     let mo: MutationObserver | null = null;
+    let scheduled = 0;
     if (typeof MutationObserver !== "undefined") {
-      mo = new MutationObserver(() => observeAll());
+      const queueObserveAll = () => {
+        if (scheduled !== 0) return;
+        scheduled = requestAnimationFrame(() => {
+          scheduled = 0;
+          observeAll();
+        });
+      };
+      mo = new MutationObserver(queueObserveAll);
       mo.observe(document.body, { childList: true, subtree: true });
     }
 
     return () => {
       io.disconnect();
       mo?.disconnect();
+      if (scheduled !== 0) cancelAnimationFrame(scheduled);
     };
   }, []);
 
