@@ -140,6 +140,9 @@ export const timelineEvents = pgTable("timeline_events", {
   title: text("title").notNull(),
   era: text("era").notNull().default("Era I"),
   major: boolean("major").notNull().default(false),
+  // Shown under major events on the History page (nullable — a one-line
+  // event needs no body). Seeded by fallback-data / scripts/add-seasons.ts.
+  description: text("description"),
 });
 
 export const ruleSections = pgTable("rule_sections", {

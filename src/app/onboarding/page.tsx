@@ -138,8 +138,6 @@ function OnboardingContent() {
         const data = (await res.json()) as { skin?: string; error?: string };
         if (!res.ok || !data.skin) {
           setMcError(data.error ?? "Couldn't find that username.");
-          setMcBusy(false);
-          setFinishing(false);
           return;
         }
       }

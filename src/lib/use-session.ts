@@ -6,6 +6,29 @@
 import { useCallback, useEffect, useState } from "react";
 import type { SessionUser } from "@/types";
 
+// Single-flight fetch shared across every useSession() consumer. Navbar,
+// OnboardingReminder, PollAnnouncement and page components all call this
+// hook, and without sharing, each mounting instance fired its own identical
+// /api/auth/me request — 4+ duplicates per page load. Concurrent mounts now
+// join one request; there is deliberately NO result cache, so a refresh()
+// after login/logout/profile changes still sees fresh state.
+let inflight: Promise<SessionUser | null> | null = null;
+
+function fetchSession(): Promise<SessionUser | null> {
+  if (inflight) return inflight;
+  inflight = fetch("/api/auth/me")
+    .then(async (res) => {
+      if (!res.ok) throw new Error(`/api/auth/me → ${res.status}`);
+      const data = (await res.json()) as { user: SessionUser | null };
+      return data.user ?? null;
+    })
+    .catch(() => null)
+    .finally(() => {
+      inflight = null;
+    });
+  return inflight;
+}
+
 export interface SessionState {
   user: SessionUser | null;
   loading: boolean;
@@ -19,16 +42,8 @@ export function useSession(): SessionState {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    try {
-      const res = await fetch("/api/auth/me");
-      if (!res.ok) throw new Error(`/api/auth/me → ${res.status}`);
-      const data = (await res.json()) as { user: SessionUser | null };
-      setUser(data.user ?? null);
-    } catch {
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
+    setUser(await fetchSession());
+    setLoading(false);
   }, []);
 
   useEffect(() => {

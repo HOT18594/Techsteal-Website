@@ -114,7 +114,7 @@ export async function POST(
   }
 
   return NextResponse.json({
-    thread: { ...publicRow(updated), hasPoll: undefined },
+    thread: publicRow(updated),
     liked: (updated.likedBy ?? []).includes(user.id),
   });
 }

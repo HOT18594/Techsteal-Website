@@ -308,7 +308,7 @@ export async function PUT(request: NextRequest) {
     })
     .where(eq(forumThreads.id, id))
     .returning();
-  return NextResponse.json(rows[0]);
+  return NextResponse.json(publicRow(rows[0]));
 }
 
 // Admin moderation: pin/unpin or lock/unlock a thread.
@@ -344,7 +344,7 @@ export async function PATCH(request: NextRequest) {
   if (rows.length === 0) {
     return NextResponse.json({ error: "Thread not found" }, { status: 404 });
   }
-  return NextResponse.json(rows[0]);
+  return NextResponse.json(publicRow(rows[0]));
 }
 
 // Delete a thread. Admins can delete anything; members can delete their

@@ -959,7 +959,7 @@ export default function GalleryPage() {
                     </button>
                   </div>
                 ) : (
-                  <a href={`/login?next=/gallery`} className="btn-secondary btn-sm w-full justify-center">
+                  <a href="/login?next=/gallery" className="btn-secondary btn-sm w-full justify-center">
                     <i className="fa-brands fa-discord" />
                     Sign in to comment
                   </a>

@@ -16,10 +16,10 @@ const TEXT_HEADERS = {
 } as const;
 
 // Chatty Jr. is a perk of verifying in the Discord server: you must be
-  // signed in with Discord AND verified (or hold an explicit `ai_access`
-  // grant / be an admin). Permissions are read from the database, not the
-  // session cookie, so granting or revoking access takes effect immediately.
-  export async function POST(request: NextRequest) {
+// signed in with Discord AND verified (or hold an explicit `ai_access`
+// grant / be an admin). Permissions are read from the database, not the
+// session cookie, so granting or revoking access takes effect immediately.
+export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const message = typeof body.message === "string" ? body.message.trim() : "";
   if (!message) {
