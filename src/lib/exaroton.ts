@@ -44,7 +44,9 @@ export async function exarotonAction(
     throw err;
   });
   if (!res.ok) {
-    // Don't leak the raw exaroton response body (may echo token details).
+    // Don't leak the raw exaroton response body (may echo token details);
+    // cancelling also frees the pooled connection instead of holding it.
+    await res.body?.cancel().catch(() => {});
     throw new Error(`exaroton error ${res.status}`);
   }
   return { ok: true };
@@ -131,7 +133,10 @@ export async function getExarotonSnapshot(): Promise<ExarotonSnapshot> {
     }
     throw err;
   });
-  if (!res.ok) throw new Error(`exaroton server query failed (${res.status})`);
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => {});
+    throw new Error(`exaroton server query failed (${res.status})`);
+  }
   const server = (await res.json()) as ExarotonServerResponse;
   if (server.success === false || !server.data) {
     throw new Error("exaroton rejected the server query");

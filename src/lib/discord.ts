@@ -65,7 +65,10 @@ export async function fetchDiscordUser(accessToken: string): Promise<DiscordUser
     headers: { Authorization: `Bearer ${accessToken}` },
     signal: AbortSignal.timeout(10_000),
   });
-  if (!res.ok) throw new Error(`Discord user fetch failed (${res.status})`);
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => {});
+    throw new Error(`Discord user fetch failed (${res.status})`);
+  }
   const user = (await res.json().catch(() => null)) as DiscordUser | null;
   if (!user?.id || !user.username) throw new Error("Discord user fetch returned bad data");
   return user;

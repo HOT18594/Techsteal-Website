@@ -160,7 +160,11 @@ function SettingsContent() {
         setVerifyState("not_configured");
       } else if (data.verified) {
         // The verify endpoint persists the badge itself — no PATCH needed.
+        // Sync every consumer: the identity-card badge reads `profile`,
+        // while Chatty/gallery gates read the session user.
         setVerifyState("verified");
+        setProfile((p) => (p ? { ...p, discordVerified: true } : p));
+        await refresh();
         show("Verified", "You're a member of the official server.");
       } else {
         setVerifyState("idle");

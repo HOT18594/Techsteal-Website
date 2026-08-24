@@ -88,6 +88,9 @@ export default function GalleryPage() {
   const [commentText, setCommentText] = useState("");
   const [postingComment, setPostingComment] = useState(false);
   const [busyItem, setBusyItem] = useState<number | null>(null);
+  // In-flight marker for comment deletion — a double-clicked trash icon must
+  // not fire a second DELETE that 404s and toasts an error over the success.
+  const [busyCommentId, setBusyCommentId] = useState<number | null>(null);
   const [busyLike, setBusyLike] = useState<number | null>(null);
 
   const categories = useMemo(() => {
@@ -133,17 +136,15 @@ export default function GalleryPage() {
     };
   }, []);
 
-  // Escape closes whichever overlay is open; lock body scroll; arrow keys
-  // page through the lightbox.
+  // Lock body scroll while an overlay is up; arrow keys page through the
+  // lightbox. Escape is handled by <Modal> (topmost-overlay rule) — a second
+  // document-level listener here closed the composer AND the lightbox (and
+  // anything stacked above them) with a single press.
   useEffect(() => {
     if (!modalOpen && !viewing) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setModalOpen(false);
-        setViewing(null);
-      }
       // Arrow keys in a text field move the caret — never page the lightbox.
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
@@ -420,9 +421,10 @@ export default function GalleryPage() {
   };
 
   const deleteComment = async (c: GalleryComment) => {
-    if (!currentItem) return;
+    if (!currentItem || busyCommentId !== null) return;
     const ok = window.confirm("Delete this comment?");
     if (!ok) return;
+    setBusyCommentId(c.id ?? 0);
     try {
       const res = await fetch(`/api/gallery/${currentItem.id}`, {
         method: "DELETE",
@@ -441,6 +443,8 @@ export default function GalleryPage() {
       );
     } catch {
       show("Couldn't delete", "Check your connection and try again.", "error");
+    } finally {
+      setBusyCommentId(null);
     }
   };
 
@@ -915,9 +919,10 @@ export default function GalleryPage() {
                               <button
                                 className="text-[11px] text-[var(--muted-2)] hover:text-[var(--redstone)] transition"
                                 onClick={() => void deleteComment(c)}
+                                disabled={busyCommentId !== null}
                                 aria-label="Delete comment"
                               >
-                                <i className="fa-solid fa-trash" />
+                                <i className={`fa-solid fa-trash ${busyCommentId === c.id ? "fa-spin" : ""}`} />
                               </button>
                             ) : null}
                           </div>

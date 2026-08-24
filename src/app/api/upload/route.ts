@@ -31,6 +31,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Slow down — too many uploads." }, { status: 429 });
   }
 
+  // Reject oversized bodies BEFORE formData() buffers the whole multipart
+  // into memory. (Vercel caps request bodies anyway, but self-hosted
+  // deployments don't — parse-then-check would let a huge upload pin RAM.)
+  const declaredLength = Number(request.headers.get("content-length") ?? "0");
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_BYTES + 64 * 1024) {
+    return NextResponse.json({ error: "Images must be under 8 MB." }, { status: 413 });
+  }
+
   let form: FormData;
   try {
     form = await request.formData();

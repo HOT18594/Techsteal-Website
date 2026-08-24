@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { galleryItems } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
-import { findAccount } from "@/lib/accounts";
+import { ACCOUNT_DB_ERROR_MESSAGE, accountGate } from "@/lib/accounts";
 import { publicRow } from "@/lib/public-row";
 
 export const dynamic = "force-dynamic";
@@ -32,10 +32,14 @@ export async function POST(
   }
 
   // Same live-account gate as every other write route: a removed (banned)
-  // account's cookie may still be unexpired but must not keep voting.
-  const account = await findAccount(user.id).catch(() => null);
-  if (!account || account.banned) {
+  // account's cookie may still be unexpired but must not keep liking. A DB
+  // outage is a 503 — it must NOT read as "your account no longer exists".
+  const gate = await accountGate(user.id);
+  if (gate.status === "missing" || gate.status === "banned") {
     return NextResponse.json({ error: "Your account no longer exists on this server." }, { status: 403 });
+  }
+  if (gate.status === "db_error" || gate.status === "unconfigured") {
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
 
   const updated = await db.transaction(async (tx) => {

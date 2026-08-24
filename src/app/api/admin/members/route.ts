@@ -14,12 +14,21 @@ async function requireAdmin() {
   return getSessionUser();
 }
 
+// The account store throws on a pooler outage — surface a 503 with a
+// human message instead of an opaque 500.
+const DB_DOWN = { error: "The member database is unreachable right now — try again in a moment." };
+
 // List all accounts (admin only). Banned (removed) accounts are included
 // separately so they can be restored.
 export async function GET() {
   const admin = await requireAdmin();
   if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const all = await listAccounts();
+  let all;
+  try {
+    all = await listAccounts();
+  } catch {
+    return NextResponse.json(DB_DOWN, { status: 503 });
+  }
   return NextResponse.json({
     accounts: all.filter((a) => !a.banned),
     bannedAccounts: all.filter((a) => a.banned),
@@ -54,7 +63,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const updated = await updateAccount(id, patch);
+  let updated: Awaited<ReturnType<typeof updateAccount>>;
+  try {
+    updated = await updateAccount(id, patch);
+  } catch {
+    return NextResponse.json(DB_DOWN, { status: 503 });
+  }
   if (!updated) return NextResponse.json({ error: "Account not found" }, { status: 404 });
   return NextResponse.json({ account: updated });
 }
@@ -73,7 +87,12 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "You can't remove yourself." }, { status: 400 });
   }
 
-  const removed = await removeAccount(id);
+  let removed: boolean;
+  try {
+    removed = await removeAccount(id);
+  } catch {
+    return NextResponse.json(DB_DOWN, { status: 503 });
+  }
   if (!removed) return NextResponse.json({ error: "Account not found" }, { status: 404 });
   return NextResponse.json({ ok: true });
 }
@@ -87,7 +106,12 @@ export async function PUT(request: Request) {
   const id = typeof body?.id === "string" ? body.id : "";
   if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
 
-  const restored = await updateAccount(id, { banned: false });
+  let restored: Awaited<ReturnType<typeof updateAccount>>;
+  try {
+    restored = await updateAccount(id, { banned: false });
+  } catch {
+    return NextResponse.json(DB_DOWN, { status: 503 });
+  }
   if (!restored) return NextResponse.json({ error: "Account not found" }, { status: 404 });
   return NextResponse.json({ account: restored });
 }

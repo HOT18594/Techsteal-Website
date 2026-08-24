@@ -230,8 +230,11 @@ export function PollViewer({
           const count = poll.counts?.[opt.id] ?? 0;
           const pct = total > 0 ? Math.round((count / total) * 100) : 0;
           const mine = poll.myVote === opt.id;
-          // Results are visible once you've voted or the poll ended.
-          const showResults = voted || ended;
+          // Results are visible once you've voted or the poll ended — AND
+          // the server actually sent tallies (a poll that ends while this
+          // tab is open stays bar-less until a refetch, instead of showing
+          // false 0% bars).
+          const showResults = (voted || ended) && poll.counts !== undefined;
           const clickable = canVote && !ended && !busy;
 
           return (

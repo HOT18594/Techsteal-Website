@@ -1,8 +1,8 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getSessionUser } from "./auth";
 import { getDb } from "./db";
 import { profiles } from "./schema";
-import type { Account, Permission, SessionUser, UserRole } from "@/types";
+import type { Account, Permission, UserRole } from "@/types";
 
 // ------------------------------------------------------------------
 // Account store — backed by the `profiles` table in Postgres
@@ -24,11 +24,6 @@ function rowToAccount(row: typeof profiles.$inferSelect): Account {
     banned: row.banned ?? false,
     createdAt: row.createdAt ?? undefined,
   };
-}
-
-export async function getAllAccounts(): Promise<Account[]> {
-  const accounts = await listAccounts();
-  return accounts.filter((a) => !a.banned);
 }
 
 /** All accounts including banned ones (for the admin panel's ban list). */
@@ -172,15 +167,78 @@ export async function removeAccount(id: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-/** Shape a stored Account into the SessionUser carried in the cookie. */
-export function toSessionUser(account: Account): SessionUser {
-  return {
-    id: account.id,
-    username: account.username,
-    role: account.role,
-    permissions: [...account.permissions],
-    avatarUrl: account.avatarUrl,
-  };
+// ------------------------------------------------------------------
+// Permission grants/revokes done in SQL instead of read-modify-write.
+// The naive form (read array in JS → merge → overwrite the column)
+// loses updates when two writers race — e.g. an admin granting a perk
+// at the same moment the member re-verifies Discord, and whichever
+// wrote last silently erased the other's change. Both helpers below
+// let Postgres merge into the CURRENT column value atomically.
+// ------------------------------------------------------------------
+
+/** Grant permissions, deduped, without clobbering concurrent grants. */
+export async function addPermissions(
+  id: string,
+  perms: Permission[]
+): Promise<Account | null> {
+  const db = getDb();
+  if (!db) return null;
+  if (perms.length === 0) return findAccount(id);
+  const rows = await db
+    .update(profiles)
+    .set({
+      permissions: sql`(select coalesce(jsonb_agg(distinct x), '[]'::jsonb) from jsonb_array_elements(${profiles.permissions} || ${JSON.stringify(perms)}::jsonb) as t(x))`,
+    })
+    .where(eq(profiles.id, id))
+    .returning();
+  return rows[0] ? rowToAccount(rows[0]) : null;
+}
+
+/** Revoke permissions without touching anything else concurrently granted. */
+export async function removePermissions(
+  id: string,
+  perms: Permission[]
+): Promise<Account | null> {
+  const db = getDb();
+  if (!db) return null;
+  if (perms.length === 0) return findAccount(id);
+  const rows = await db
+    .update(profiles)
+    .set({
+      // jsonb `- text[]` drops every matching string element.
+      permissions: sql`${profiles.permissions} - ${sql.param(perms)}::text[]`,
+    })
+    .where(eq(profiles.id, id))
+    .returning();
+  return rows[0] ? rowToAccount(rows[0]) : null;
+}
+
+/**
+ * Persist a definitive Discord verification answer. The permission delta is
+ * applied in SQL (see above) so it can't erase a concurrent admin grant.
+ */
+export async function applyDiscordVerification(
+  id: string,
+  verified: boolean
+): Promise<Account | null> {
+  const db = getDb();
+  if (!db) return null;
+  const rows = await db
+    .update(profiles)
+    .set(
+      verified
+        ? {
+            discordVerified: true,
+            permissions: sql`(select coalesce(jsonb_agg(distinct x), '[]'::jsonb) from jsonb_array_elements(${profiles.permissions} || ${JSON.stringify(VERIFIED_PERMISSIONS)}::jsonb) as t(x))`,
+          }
+        : {
+            discordVerified: false,
+            permissions: sql`${profiles.permissions} - ${sql.param(VERIFIED_PERMISSIONS)}::text[]`,
+          }
+    )
+    .where(eq(profiles.id, id))
+    .returning();
+  return rows[0] ? rowToAccount(rows[0]) : null;
 }
 
 /**
@@ -220,13 +278,6 @@ export async function findOrCreateDiscordAccount(input: {
     role: "member",
     permissions: [],
   });
-}
-
-/** True if this account can do the given thing. */
-export function hasPermission(account: Account | undefined, permission: Permission): boolean {
-  if (!account) return false;
-  if (account.role === "admin") return true;
-  return account.permissions.includes(permission);
 }
 
 /**

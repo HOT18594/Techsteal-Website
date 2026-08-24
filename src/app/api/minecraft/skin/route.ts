@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isRateLimited } from "@/lib/rate-limit";
+import { isRateLimited, rateLimitIp } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -26,10 +26,9 @@ export async function GET(request: Request) {
       { status: 400 }
     );
   }
-  // Key by IP when available, else global — soft limit to be polite to Mojang.
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
-  if (isRateLimited(`skin:${ip}`, 20, 60_000)) {
+  // Key by client IP (edge-appended entry — client-supplied XFF prefixes
+  // are spoofable), else global — soft limit to be polite to Mojang.
+  if (isRateLimited(`skin:${rateLimitIp(request)}`, 20, 60_000)) {
     return NextResponse.json(
       { error: "Too many skin lookups — wait a minute." },
       { status: 429 }
@@ -42,9 +41,11 @@ export async function GET(request: Request) {
       { cache: "no-store", signal: AbortSignal.timeout(8_000) }
     );
     if (res.status === 204 || res.status === 404) {
+      await res.body?.cancel().catch(() => {});
       return NextResponse.json({ error: "That Minecraft username doesn't exist." }, { status: 404 });
     }
     if (!res.ok) {
+      await res.body?.cancel().catch(() => {});
       return NextResponse.json({ error: "Mojang API error" }, { status: 502 });
     }
     const data = (await res.json()) as { id: string; name: string };

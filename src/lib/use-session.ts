@@ -29,6 +29,17 @@ function fetchSession(): Promise<SessionUser | null> {
   return inflight;
 }
 
+// Session changes must reach EVERY hook instance, not just the one that
+// triggered them: logout() in the navbar also has to flip OnboardingReminder,
+// Chatty and any gated page back to signed-out (and vice versa on login).
+// Each instance subscribes; refresh()/logout() broadcast the new user.
+type SessionListener = (user: SessionUser | null) => void;
+const listeners = new Set<SessionListener>();
+
+function broadcast(user: SessionUser | null) {
+  for (const fn of listeners) fn(user);
+}
+
 export interface SessionState {
   user: SessionUser | null;
   loading: boolean;
@@ -42,12 +53,20 @@ export function useSession(): SessionState {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    setUser(await fetchSession());
+    broadcast(await fetchSession());
     setLoading(false);
   }, []);
 
   useEffect(() => {
+    const fn: SessionListener = (u) => {
+      setUser(u);
+      setLoading(false);
+    };
+    listeners.add(fn);
     void refresh();
+    return () => {
+      listeners.delete(fn);
+    };
   }, [refresh]);
 
   const logout = useCallback(async (): Promise<boolean> => {
@@ -56,7 +75,7 @@ export function useSession(): SessionState {
     try {
       const res = await fetch("/api/auth/logout", { method: "POST" });
       if (res.ok) {
-        setUser(null);
+        broadcast(null);
         return true;
       }
       await refresh();

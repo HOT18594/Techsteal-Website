@@ -34,6 +34,16 @@ export function MemberSlideshow({ members }: { members: Member[] }) {
     resumeTimer.current = setTimeout(() => setPaused(false), 6_000);
   };
 
+  // Hover must also cancel a pending dot-click resume — otherwise the stale
+  // timer fires mid-hover and rotation restarts under a stationary cursor.
+  const pauseWhileHovering = () => {
+    if (resumeTimer.current) {
+      clearTimeout(resumeTimer.current);
+      resumeTimer.current = null;
+    }
+    setPaused(true);
+  };
+
   useEffect(() => {
     return () => {
       if (resumeTimer.current) clearTimeout(resumeTimer.current);
@@ -97,9 +107,9 @@ export function MemberSlideshow({ members }: { members: Member[] }) {
     <div
       ref={rootRef}
       className="aspect-[4/3] w-full rounded-xl border border-[var(--border)] bg-[var(--bg-2)] overflow-hidden relative"
-      onMouseEnter={() => setPaused(true)}
+      onMouseEnter={pauseWhileHovering}
       onMouseLeave={() => setPaused(false)}
-      onFocusCapture={() => setPaused(true)}
+      onFocusCapture={pauseWhileHovering}
       onBlurCapture={() => setPaused(false)}
       aria-roledescription="carousel"
       aria-label="Members preview"

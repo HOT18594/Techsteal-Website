@@ -50,13 +50,19 @@ export default function ThreadPage() {
 
   // Sequence-guarded load: navigating between two threads keeps this page
   // mounted (only `id` changes), so a slow response for thread A must never
-  // land after thread B's and overwrite it.
+  // land after thread B's and overwrite it. Per-thread UI state (inline
+  // edits, the reply draft) belongs to the old thread — reset it too, or an
+  // open editor would save its contents to the WRONG thread id.
   const reqRef = useRef(0);
   const load = useCallback(async () => {
     const reqId = ++reqRef.current;
     setLoading(true);
     setNotFound(false); // a previous failed load must not stick
     setLoadError(false);
+    setEditing(null);
+    setReplyText("");
+    setBusyReply(null);
+    setBusyLike(null);
     try {
       const res = await fetch(`/api/forum/${id}`);
       if (res.status === 404) {
@@ -428,7 +434,7 @@ export default function ThreadPage() {
                       {thread.category}
                     </span>
                   </div>
-                  {editing?.kind === "thread" ? (
+                  {editing?.kind === "thread" && editing.id === (thread.id ?? 0) ? (
                     <input
                       className="input font-display text-xl font-bold"
                       value={editing.title ?? ""}
@@ -455,7 +461,7 @@ export default function ThreadPage() {
                 </div>
               </div>
 
-              {editing?.kind === "thread" ? (
+              {editing?.kind === "thread" && editing.id === (thread.id ?? 0) ? (
                 <div className="mt-6">
                   <RichEditor
                     idPrefix="edit-thread"

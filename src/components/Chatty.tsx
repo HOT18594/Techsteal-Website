@@ -1,9 +1,8 @@
 "use client";
 
 // Chatty Jr. — the site's AI assistant, now a tool-using agent.
-//   - "full":     the standalone assistant page — a two-pane app: identity/
-//                 capability/prompt sidebar rail beside a focused chat console
-//   - "embedded": a compact card you can drop on any page (e.g. /join)
+// Rendered as the standalone assistant page: a two-pane app with an
+// identity/capability/prompt sidebar rail beside a focused chat console.
 // The backend streams NDJSON events: text chunks plus live tool activity
 // ("Checking live status…") which render as chips on the reply. History
 // lives in localStorage; the 3-dot indicator only shows before the first
@@ -85,8 +84,7 @@ function loadHistory(): ChatMessage[] | null {
   }
 }
 
-export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) {
-  const embedded = variant === "embedded";
+export function Chatty() {
   const { show } = useToast();
   const { user, loading: sessionLoading } = useSession();
   const ai = siteConfig.assistant;
@@ -464,14 +462,13 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
   const isEmpty = messages.length <= 1 && messages[0]?.role === "assistant";
   const lastMsg = messages[messages.length - 1];
   const canRegenerate =
-    !embedded && !typing && lastMsg?.role === "assistant" && !lastMsg?.error && messages.length > 1;
+    !typing && lastMsg?.role === "assistant" && !lastMsg?.error && messages.length > 1;
 
   // Gate screens share one shell.
-  const gateClass = embedded ? "min-h-[26rem]" : "min-h-[24rem]";
+  const gateClass = "min-h-[24rem]";
 
   // ------------------------------------------------------------------
-  // The console: gates when gated, otherwise the chat card. Shared by both
-  // variants (heights adapt via `embedded`).
+  // The console: gates when gated, otherwise the chat card.
   // ------------------------------------------------------------------
   const consoleBody = sessionLoading ? (
     <div className={`card p-8 text-center flex items-center justify-center ${gateClass}`}>
@@ -507,13 +504,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
       </Link>
     </div>
   ) : (
-    <div
-      className={`card flex flex-col overflow-hidden ${
-        embedded
-          ? "h-[26rem]"
-          : "h-[calc(100dvh-13rem)] min-h-[26rem]"
-      }`}
-    >
+    <div className="card flex flex-col overflow-hidden h-[calc(100dvh-13rem)] min-h-[26rem]">
       {/* Messages */}
       <div
         ref={scrollRef}
@@ -530,17 +521,17 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
           {/* Welcome hero — only when fresh. Compact prompt pills cover
               touch/small screens where the sidebar rail isn't rendered. */}
           {isEmpty && !typing ? (
-            <div className={`${embedded ? "pb-4" : "pb-6"} flex flex-col items-center text-center`}>
-              <div className={`relative ${embedded ? "mb-3" : "mb-4"}`}>
-                <div className={`${embedded ? "w-14 h-14 text-2xl" : "w-20 h-20 text-3xl"} bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white rounded-2xl shadow-[0_14px_40px_-14px_var(--accent-glow)]`}>
+            <div className="pb-6 flex flex-col items-center text-center">
+              <div className="relative mb-4">
+                <div className="w-20 h-20 text-3xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white rounded-2xl shadow-[0_14px_40px_-14px_var(--accent-glow)]">
                   <i className="fa-solid fa-robot" />
                 </div>
                 <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-[var(--emerald)] border-2 border-[var(--card)] rounded-full shadow-[0_0_10px_var(--emerald-glow)]" />
               </div>
-              <h2 className={`font-display font-bold ${embedded ? "text-lg" : "text-2xl"}`}>
+              <h2 className="font-display font-bold text-2xl">
                 Hey{user?.username ? ` ${user.username}` : ""} — I&apos;m {ai.name}
               </h2>
-              <p className={`text-sm text-[var(--muted)] mt-1.5 max-w-md ${embedded ? "px-2" : ""}`}>
+              <p className="text-sm text-[var(--muted)] mt-1.5 max-w-md">
                 Your guide to {siteConfig.name}. I pull live server data, look
                 anything up on the site, and search the web for general
                 Minecraft questions.
@@ -743,24 +734,18 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
   );
 
   return (
-    <div className={`w-full flex flex-col min-h-0 ${embedded ? "" : "flex-1"}`}>
-      {/* Header — identity + status + New chat, shared by both variants. */}
-      <div className={`${embedded ? "mb-4" : "mb-5"} flex items-center justify-between gap-3 flex-wrap`}>
+    <div className="w-full flex flex-col min-h-0 flex-1">
+      {/* Header — identity + status + New chat. */}
+      <div className="mb-5 flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <div className="relative">
-            <div
-              className={`${
-                embedded ? "w-10 h-10" : "w-11 h-11"
-              } bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white rounded-xl`}
-            >
+            <div className="w-11 h-11 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white rounded-xl">
               <i className="fa-solid fa-robot text-lg" />
             </div>
             <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[var(--emerald)] border-2 border-[var(--bg)] rounded-full" />
           </div>
           <div>
-            <h1 className={embedded ? "font-display text-lg font-bold" : "font-display text-2xl font-bold"}>
-              {ai.name}
-            </h1>
+            <h1 className="font-display text-2xl font-bold">{ai.name}</h1>
             <div className="text-xs text-[var(--emerald)] flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 bg-[var(--emerald)] rounded-full" />
               Online · knows the server live

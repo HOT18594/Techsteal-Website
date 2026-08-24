@@ -79,6 +79,13 @@ export async function serializePoll(
     myVote = mine?.optionId ?? null;
   }
 
+  const ended = new Date(poll.endsAt).getTime() <= Date.now();
+  // Per-option tallies ship ONLY when results are visible (the viewer has
+  // voted or the poll ended) — matching the UI contract. Sending them to
+  // everyone let anyone read live standings from the network tab before
+  // voting. The participation total stays public either way.
+  const resultsVisible = ended || myVote !== null;
+
   return {
     id: poll.id,
     threadId: poll.threadId,
@@ -86,9 +93,9 @@ export async function serializePoll(
     options: poll.options ?? [],
     endsAt: new Date(poll.endsAt).toISOString(),
     createdAt: poll.createdAt ? new Date(poll.createdAt).toISOString() : null,
-    counts,
+    counts: resultsVisible ? counts : undefined,
     totalVotes,
     myVote,
-    ended: new Date(poll.endsAt).getTime() <= Date.now(),
+    ended,
   };
 }

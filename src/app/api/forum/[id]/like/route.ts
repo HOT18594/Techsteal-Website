@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { forumReplies, forumThreads } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
-import { findAccount } from "@/lib/accounts";
+import { ACCOUNT_DB_ERROR_MESSAGE, accountGate } from "@/lib/accounts";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { publicRow } from "@/lib/public-row";
 
@@ -45,10 +45,14 @@ export async function POST(
   }
 
   // Same live-account gate as every other write route: a removed (banned)
-  // account's cookie may still be unexpired but must not keep voting.
-  const account = await findAccount(user.id).catch(() => null);
-  if (!account || account.banned) {
+  // account's cookie may still be unexpired but must not keep voting. A DB
+  // outage is a 503 — it must NOT read as "your account no longer exists".
+  const gate = await accountGate(user.id);
+  if (gate.status === "missing" || gate.status === "banned") {
     return NextResponse.json({ error: "Your account no longer exists on this server." }, { status: 403 });
+  }
+  if (gate.status === "db_error" || gate.status === "unconfigured") {
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
 
   // Locking read + write inside a transaction: two simultaneous "like"
@@ -82,7 +86,10 @@ export async function POST(
     const avatars = await resolveAuthorAvatars([updated]);
     const info = avatarInfoFor(avatars, updated);
     return NextResponse.json({
-      reply: { ...publicRow(updated), avatarUrl: info?.avatarUrl ?? null },
+      // `color` must be resolved like the thread-detail GET does — the raw
+      // column default would visibly repaint the author's avatar tile when
+      // the client swaps this object into its list.
+      reply: { ...publicRow(updated), avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? updated.color },
       // Derived from the DB's final state — true if the user's id is in it.
       liked: (updated.likedBy ?? []).includes(user.id),
     });

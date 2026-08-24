@@ -34,7 +34,10 @@ export async function GET(request: Request) {
     maxAge: 600, // 10 minutes — enough to click through Discord's consent
   });
   if (next) {
-    res.cookies.set(NEXT_COOKIE, next, {
+    // Percent-encode so the value can't contain cookie-structural
+    // characters (space/comma force quoting; the callback's manual
+    // `split(";")` parse doesn't unquote). The callback decodes once.
+    res.cookies.set(NEXT_COOKIE, encodeURIComponent(next), {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",

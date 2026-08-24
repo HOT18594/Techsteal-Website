@@ -6,7 +6,7 @@
 // ("Checking live status…"). Nothing here mutates state — Chatty is a
 // support rep, not a sysadmin.
 
-import { and, count, desc, eq, ilike, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, or } from "drizzle-orm";
 import { getDb } from "./db";
 import { forumReplies, forumThreads, galleryItems, profiles, ruleSections, timelineEvents } from "./schema";
 import { getLiveStatus } from "./live-status";
@@ -249,7 +249,7 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
       const label = "Reading the rules";
       const db = getDb();
       if (!db) return { ok: true, label, content: NO_DB };
-      const sections = await db.select().from(ruleSections).limit(5);
+      const sections = await db.select().from(ruleSections).orderBy(asc(ruleSections.id)).limit(5);
       const text = sections
         .map((s) => `${s.title}:\n${(s.rules ?? []).map((r, i) => `${i + 1}. ${r}`).join("\n")}`)
         .join("\n\n");

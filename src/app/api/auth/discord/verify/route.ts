@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { findAccount, updateAccount, VERIFIED_PERMISSIONS } from "@/lib/accounts";
+import { applyDiscordVerification, findAccount } from "@/lib/accounts";
 import { isRateLimited } from "@/lib/rate-limit";
-import type { Permission } from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -61,8 +60,11 @@ export async function POST() {
       } catch {
         definitive = false;
       }
+    } else {
+      // 401/403/429/5xx → leave stored state untouched (report below);
+      // cancel the unread body so the connection returns to the pool.
+      await res.body?.cancel().catch(() => {});
     }
-    // 401/403/429/5xx → leave stored state untouched (report below).
   } catch {
     definitive = false; // Discord outage / timeout — don't wipe anything
   }
@@ -76,23 +78,14 @@ export async function POST() {
 
   // Verified membership is the live permission source: verified members
   // earn AI, Gallery posting, and Server Control; anyone no longer in the
-  // server loses them. (Admins bypass via role.)
+  // server loses them. (Admins bypass via role.) The permission delta is
+  // applied in SQL so a concurrent admin grant can't be erased by this
+  // write (and vice versa) — the old read-merge-overwrite lost updates.
   const account = await findAccount(user.id).catch(() => null);
   if (account && !account.banned) {
-    if (verified) {
-      // Idempotent: badge true + every verified perk present.
-      const next: Permission[] = [
-        ...new Set([...account.permissions, ...VERIFIED_PERMISSIONS]),
-      ];
-      await updateAccount(user.id, { discordVerified: true, permissions: next });
-    } else {
-      // Discord answered "not a member" → wipe the badge and the perks
-      // they earned from it.
-      const next: Permission[] = account.permissions.filter(
-        (p) => !VERIFIED_PERMISSIONS.includes(p)
-      );
-      await updateAccount(user.id, { discordVerified: false, permissions: next });
-    }
+    // Idempotent for verify; for a "left the server" answer it revokes
+    // exactly the perks earned from verification.
+    await applyDiscordVerification(user.id, verified);
   }
 
   return NextResponse.json({ configured: true, verified });

@@ -288,6 +288,20 @@ export async function PUT(request: NextRequest) {
   const db = getDb();
   if (!db) return NextResponse.json({ error: "Database not configured" }, { status: 503 });
 
+  // Live-account gate for the OWNER path: a removed member's unexpired
+  // cookie must not keep editing content. (Admins pass isAdminUser, which
+  // already re-reads the DB and rejects banned accounts.)
+  const gate = await accountGate(user.id);
+  if (gate.status === "missing" || gate.status === "banned") {
+    return NextResponse.json(
+      { error: "Your account no longer exists on this server." },
+      { status: 403 }
+    );
+  }
+  if (gate.status === "db_error") {
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
+
   const [thread] = await db
     .select({ authorId: forumThreads.authorId })
     .from(forumThreads)
@@ -364,6 +378,18 @@ export async function DELETE(request: NextRequest) {
   const db = getDb();
   if (!db) {
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+  }
+
+  // Live-account gate for the OWNER path — same rationale as PUT above.
+  const gate = await accountGate(user.id);
+  if (gate.status === "missing" || gate.status === "banned") {
+    return NextResponse.json(
+      { error: "Your account no longer exists on this server." },
+      { status: 403 }
+    );
+  }
+  if (gate.status === "db_error") {
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
 
   const [thread] = await db

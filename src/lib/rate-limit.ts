@@ -30,3 +30,19 @@ export function isRateLimited(
   HITS.set(key, recent);
   return false;
 }
+
+/**
+ * Best-effort client IP for rate-limit keys. The LAST x-forwarded-for
+ * entry is the one the platform's own edge appended and is the only
+ * trustworthy one — a client can pad the header with arbitrary values,
+ * so keying on the FIRST entry lets an attacker rotate a fresh "IP" per
+ * request and bypass the limiter entirely.
+ */
+export function rateLimitIp(request: Request): string {
+  const xff = request.headers.get("x-forwarded-for");
+  if (xff) {
+    const parts = xff.split(",").map((s) => s.trim()).filter(Boolean);
+    if (parts.length > 0) return parts[parts.length - 1].slice(0, 60);
+  }
+  return request.headers.get("x-real-ip")?.trim().slice(0, 60) || "local";
+}

@@ -100,6 +100,7 @@ export async function uploadImage(
   });
 
   if (!res.ok) {
+    await res.body?.cancel().catch(() => {});
     throw new Error(`Upload failed (${res.status}).`);
   }
 

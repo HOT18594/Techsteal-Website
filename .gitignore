@@ -49,3 +49,6 @@ scripts/CODES.md
 # keep ignoring any env variant (incl. .env.example copies)
 .env*
 !.env.example
+
+# local QA screenshots (never ship test artifacts)
+gui-test-shots/

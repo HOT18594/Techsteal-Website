@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { findAccount, updateAccount } from "@/lib/accounts";
+import { addPermissions, findAccount, updateAccount } from "@/lib/accounts";
 import { getSessionUser, setSession } from "@/lib/auth";
 import { getAdminCode } from "@/lib/admin-code";
-import { isRateLimited } from "@/lib/rate-limit";
+import { isRateLimited, rateLimitIp } from "@/lib/rate-limit";
 import type { Account } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -13,8 +13,36 @@ export async function GET() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const account = await findAccount(user.id);
-  if (!account) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  let account: Account | null = null;
+  try {
+    account = await findAccount(user.id);
+  } catch {
+    // Pooler outage — must not read as "profile not found" (the settings
+    // page would flip every badge to "Setup incomplete").
+    return NextResponse.json(
+      { error: "The member database is unreachable right now — try again in a moment." },
+      { status: 503 }
+    );
+  }
+  if (!account) {
+    if (!process.env.DATABASE_URL) {
+      // No-DB fallback mode: shape a minimal profile from the signed
+      // session so settings/onboarding still work.
+      return NextResponse.json({
+        profile: {
+          id: user.id,
+          username: user.username,
+          avatarUrl: user.avatarUrl,
+          role: user.role,
+          permissions: user.permissions,
+          discordVerified: false,
+          onboarded: true,
+          banned: false,
+        } satisfies Account,
+      });
+    }
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   return NextResponse.json({ profile: account });
 }
 
@@ -34,13 +62,12 @@ export async function PATCH(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "unknown";
+  // Edge-appended XFF entry — client-supplied prefixes are spoofable.
+  const ip = rateLimitIp(request);
 
   const body = await request.json().catch(() => ({}));
   const patch: Parameters<typeof updateAccount>[1] = {};
+  let claimedAdmin = false;
 
   if (typeof body.minecraftUsername === "string") {
     const name = body.minecraftUsername.trim();
@@ -58,7 +85,15 @@ export async function PATCH(request: NextRequest) {
   }
   if (typeof body.onboarded === "boolean") patch.onboarded = body.onboarded;
 
-  const account: Account | null = await findAccount(user.id);
+  let account: Account | null = null;
+  try {
+    account = await findAccount(user.id);
+  } catch {
+    return NextResponse.json(
+      { error: "The member database is unreachable right now — try again in a moment." },
+      { status: 503 }
+    );
+  }
   if (!account) return NextResponse.json({ error: "Not found" }, { status: 404 });
   // A removed (banned) account's cookie may still be unexpired — it must
   // not keep editing its profile or claiming the admin code.
@@ -99,12 +134,16 @@ export async function PATCH(request: NextRequest) {
       );
     }
     patch.role = "admin";
-    const perms = new Set(account.permissions);
-    perms.add("server_control");
-    patch.permissions = [...perms];
+    claimedAdmin = true;
   }
 
-  const updated = await updateAccount(account.id, patch);
+  let updated = await updateAccount(account.id, patch);
+  if (updated && claimedAdmin) {
+    // The server_control grant is merged in SQL — the old read-modify-write
+    // of the whole array could erase a permission an admin granted a moment
+    // earlier (or be erased by a concurrent verify).
+    updated = (await addPermissions(account.id, ["server_control"])) ?? updated;
+  }
   if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   // Role/permissions changed → re-sign the session so it's immediately true.

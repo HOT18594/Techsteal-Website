@@ -14,6 +14,7 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { MouseEvent, ReactNode } from "react";
+import { isTopOverlay, popOverlay, pushOverlay } from "@/lib/overlay-stack";
 
 interface ModalProps {
   /** Accessible name for the dialog. */
@@ -40,15 +41,29 @@ export function Modal({ label, onClose, cardClassName = "", children }: ModalPro
     if (!card) return;
     const trigger = document.activeElement as HTMLElement | null;
     card.focus();
+    // Stacked overlays (announcement over composer, confirm inside modal…)
+    // must close top-first: only the newest instance may react to Escape.
+    const overlayId = pushOverlay();
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (!isTopOverlay(overlayId)) return;
         e.stopPropagation();
         onCloseRef.current();
         return;
       }
       if (e.key !== "Tab") return;
-      const focusables = Array.from(card.querySelectorAll<HTMLElement>(FOCUSABLE));
+      const focusables = Array.from(card.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (el) =>
+          // Hidden inputs (RichEditor/gallery file pickers render
+          // display:none <input type="file">s) would otherwise become dead
+          // tab stops that swallow focus with nothing visibly highlighted.
+          el.offsetParent !== null ||
+          el === document.activeElement ||
+          // SVG-backed elements and position:fixed nodes report a null
+          // offsetParent despite being visible — keep them in.
+          (el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden")
+      );
       if (focusables.length === 0) {
         e.preventDefault();
         return;
@@ -68,6 +83,7 @@ export function Modal({ label, onClose, cardClassName = "", children }: ModalPro
 
     return () => {
       document.removeEventListener("keydown", onKey);
+      popOverlay(overlayId);
       // Give focus back to what opened the dialog — but only when focus is
       // still ours to move (inside the unmounting dialog, or lost to body).
       const active = document.activeElement;

@@ -62,13 +62,19 @@ function OnboardingContent() {
         body: JSON.stringify({ adminCode: adminCode.trim() }),
       });
       // Double-check the server actually promoted us (not just a 200).
-      const data = (await res.json().catch(() => ({}))) as { profile?: { role?: string } };
+      const data = (await res.json().catch(() => ({}))) as {
+        profile?: { role?: string };
+        error?: string;
+      };
       if (res.ok && data.profile?.role === "admin") {
         setAdminDone(true);
         await refresh();
         show("Admin unlocked", "Welcome to the admin team. 🔑");
       } else {
-        show("Wrong code", "That admin code isn't right.", "error");
+        // Surface the server's actual reason — a 429 rate-limit or an
+        // unconfigured code is NOT a wrong code, and hiding it sends the
+        // user into a retry loop with a message that lies.
+        show("Wrong code", data.error ?? "That admin code isn't right.", "error");
       }
     } catch {
       show("Couldn't check code", "Try again in a moment.", "error");

@@ -258,7 +258,14 @@ export async function PATCH(
   const info = avatarInfoFor(avatars, rows[0]);
   const viewer = await getSessionUser();
   const liked = viewer ? ((rows[0].likedBy ?? []) as string[]).includes(viewer.id) : false;
-  return NextResponse.json({ ...publicRow(rows[0]), avatarUrl: info?.avatarUrl ?? null, liked });
+  // `color` resolved like GET returns — the client replaces the whole reply
+  // object with this, and the raw column default would repaint its tile.
+  return NextResponse.json({
+    ...publicRow(rows[0]),
+    avatarUrl: info?.avatarUrl ?? null,
+    color: info?.color ?? rows[0].color,
+    liked,
+  });
 }
 
 // Edit a reply. The author can edit their own; admins can edit any.
@@ -296,6 +303,20 @@ export async function PUT(
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
 
+  // Live-account gate for the OWNER path: a removed member's unexpired
+  // cookie must not keep editing content. (Admins pass isAdminUser, which
+  // already re-reads the DB and rejects banned accounts.)
+  const gate = await accountGate(user.id);
+  if (gate.status === "missing" || gate.status === "banned") {
+    return NextResponse.json(
+      { error: "Your account no longer exists on this server." },
+      { status: 403 }
+    );
+  }
+  if (gate.status === "db_error") {
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
+
   const [reply] = await db
     .select({ authorId: forumReplies.authorId })
     .from(forumReplies)
@@ -320,7 +341,12 @@ export async function PUT(
   const avatars = await resolveAuthorAvatars([rows[0]]);
   const info = avatarInfoFor(avatars, rows[0]);
   const liked = ((rows[0].likedBy ?? []) as string[]).includes(user.id);
-  return NextResponse.json({ ...publicRow(rows[0]), avatarUrl: info?.avatarUrl ?? null, liked });
+  return NextResponse.json({
+    ...publicRow(rows[0]),
+    avatarUrl: info?.avatarUrl ?? null,
+    color: info?.color ?? rows[0].color,
+    liked,
+  });
 }
 
 // Delete a reply. Admins can delete any reply in this thread; members can
@@ -349,6 +375,18 @@ export async function DELETE(
   const db = getDb();
   if (!db) {
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+  }
+
+  // Live-account gate for the OWNER path — same rationale as PUT above.
+  const gate = await accountGate(user.id);
+  if (gate.status === "missing" || gate.status === "banned") {
+    return NextResponse.json(
+      { error: "Your account no longer exists on this server." },
+      { status: 403 }
+    );
+  }
+  if (gate.status === "db_error") {
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
 
   // Ownership check, scoped to this thread's URL.

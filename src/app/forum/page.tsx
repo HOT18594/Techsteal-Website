@@ -54,7 +54,14 @@ export default function ForumPage() {
   const reqRef = useRef(0);
 
   // Debounce the search box so typing doesn't fire a request per keystroke.
+  // The first run is skipped: on mount there is nothing to debounce, and the
+  // timer's setPage(1) would clobber a pager click made within 350ms.
+  const debouncedMounted = useRef(false);
   useEffect(() => {
+    if (!debouncedMounted.current) {
+      debouncedMounted.current = true;
+      return;
+    }
     const t = setTimeout(() => {
       setDebouncedQ(search.trim());
       setPage(1);
@@ -116,19 +123,17 @@ export default function ForumPage() {
   const [submitting, setSubmitting] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
 
-  // Escape closes the modal; autofocus the title field; lock body scroll.
+  // Autofocus the title field and lock body scroll while the composer is
+  // open. Escape is handled by <Modal> (topmost-overlay rule) — a second
+  // document-level listener here would close the composer AND anything
+  // stacked above it (e.g. a poll announcement) with one press.
   useEffect(() => {
     if (!modalOpen) return;
     titleRef.current?.focus();
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setModalOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
     return () => {
       document.body.style.overflow = prevOverflow;
-      document.removeEventListener("keydown", onKey);
     };
   }, [modalOpen]);
 

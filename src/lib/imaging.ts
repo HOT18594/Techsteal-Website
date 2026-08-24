@@ -29,7 +29,7 @@ export async function compressImage(
   return (await compressImageDetailed(file, maxDim, quality)).file;
 }
 
-export async function compressImageDetailed(
+async function compressImageDetailed(
   file: File,
   maxDim = 1920,
   quality = 0.85

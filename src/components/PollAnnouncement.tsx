@@ -98,20 +98,17 @@ export function PollAnnouncement() {
     // Dismissed earlier → stays dismissed until a NEW poll starts.
     !(poll !== null && dismissedIds().has(String(poll.id)));
 
-  // Escape closes the announcement; lock body scroll while it's up.
+  // Lock body scroll while the announcement is up. Escape is handled by
+  // <Modal> itself (topmost-overlay rule) — a second listener here would
+  // close this announcement AND any composer/lightbox beneath it at once.
   useEffect(() => {
     if (!visible || !poll) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    document.addEventListener("keydown", onKey);
     return () => {
       document.body.style.overflow = prevOverflow;
-      document.removeEventListener("keydown", onKey);
     };
-  }, [visible, poll, close]);
+  }, [visible, poll]);
 
   if (!visible || !poll) return null;
 
