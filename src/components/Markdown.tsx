@@ -34,10 +34,17 @@ function safeUrl(url: string): string | null {
 type InlineScan =
   | { kind: "text"; len: number }
   | { kind: "bold" | "italic" | "strike" | "spoiler" | "code"; len: number }
-  | { kind: "bolditalic"; len: number }
+  | { kind: "bolditalic"; len: number; innerStart: number; innerEnd: number }
   | { kind: "link"; len: number; url: string; text: string }
   | { kind: "image"; len: number; url: string; alt: string }
   | { kind: "autolink"; len: number; url: string };
+
+// Link/image targets allow ONE level of balanced parentheses so Wikipedia
+// style URLs ([x](https://en.wikipedia.org/wiki/X_(y))) survive intact — a
+// plain lazy `\S+?` stops at the first `)` inside the URL.
+const LINK_TARGET = "((?:[^()\\s]|\\([^()]*\\))+)(?:\\s+\"[^\"]*\")?";
+const MD_IMAGE_RE = new RegExp(`^!\\[([^\\]]*)\\]\\(${LINK_TARGET}\\)`);
+const MD_LINK_RE = new RegExp(`^\\[([^\\]]*)\\]\\(${LINK_TARGET}\\)`);
 
 /** Match one inline token starting at `i`, or a plain-text run. */
 function scanInline(src: string, i: number): InlineScan {
@@ -52,29 +59,31 @@ function scanInline(src: string, i: number): InlineScan {
   }
 
   // Image ![alt](url) — must be checked before plain links.
-  if (rest.startsWith("![")) {
-    const m = /^!\[([^\]]*)\]\((\S+?)(?:\s+"[^"]*")?\)/.exec(rest);
-    if (m && safeUrl(m[2])) {
-      return { kind: "image", len: m[0].length, url: m[2], alt: m[1] };
-    }
-    return { kind: "text", len: 1 };
+  if (rest.startsWith("![") && safeUrl(MD_IMAGE_RE.exec(rest)?.[2] ?? "")) {
+    const m = MD_IMAGE_RE.exec(rest)!;
+    return { kind: "image", len: m[0].length, url: m[2], alt: m[1] };
   }
 
   // Link [text](url)
   if (at(0) === "[") {
-    const m = /^\[([^\]]*)\]\((\S+?)(?:\s+"[^"]*")?\)/.exec(rest);
+    const m = MD_LINK_RE.exec(rest);
     if (m && safeUrl(m[2])) {
       return { kind: "link", len: m[0].length, url: m[2], text: m[1] };
     }
     return { kind: "text", len: 1 };
   }
 
-  // Bold+italic ***…*** — checked before plain ** so BOTH delimiters are
-  // consumed; otherwise ***text*** renders bold "*text" plus a stray "*".
+  // Bold+italic — a run of 3+ asterisks (***…***, ****…****). Checked before
+  // plain ** so the whole run is consumed; extra asterisks on either end are
+  // absorbed into the delimiters instead of leaking as stray "*" text.
   if (rest.startsWith("***")) {
-    const close = src.indexOf("***", i + 3);
-    if (close > i + 3 && close + 3 <= src.length) {
-      return { kind: "bolditalic", len: close - i + 3 };
+    let openRun = 0;
+    while (at(openRun) === "*") openRun++;
+    const close = src.indexOf("***", i + openRun);
+    if (close > i + openRun && close + 3 <= src.length) {
+      let end = close + 3;
+      while (src[end] === "*") end++;
+      return { kind: "bolditalic", len: end - i, innerStart: i + openRun, innerEnd: close };
     }
   }
 
@@ -159,7 +168,7 @@ function inlineNodes(src: string, keyPrefix: string, depth = 0): ReactNode[] {
         break;
       }
       case "bolditalic": {
-        const inner = src.slice(i + 3, i + tok.len - 3);
+        const inner = src.slice(tok.innerStart, tok.innerEnd);
         push(
           <strong>
             <em>{inlineNodes(inner, `${keyPrefix}-bi${key}`, depth + 1)}</em>
@@ -188,7 +197,9 @@ function inlineNodes(src: string, keyPrefix: string, depth = 0): ReactNode[] {
         break;
       case "spoiler": {
         const inner = src.slice(i + 2, i + tok.len - 2);
-        push(<Spoiler>{inner}</Spoiler>, tok.len, "sp");
+        // Spoilers parse their contents like every other wrapper — nested
+        // bold/links/spoilers render as markdown, not literal markers.
+        push(<Spoiler>{inlineNodes(inner, `${keyPrefix}-sp${key}`, depth + 1)}</Spoiler>, tok.len, "sp");
         break;
       }
       case "link":
@@ -255,7 +266,7 @@ function Spoiler({ children }: { children: ReactNode }) {
 // Block rendering
 // ---------------------------------------------------------------------------
 
-const IMAGE_ONLY = /^!\[([^\]]*)\]\((\S+?)(?:\s+"[^"]*")?\)\s*$/;
+const IMAGE_ONLY = new RegExp(`^!\\[([^\\]]*)\\]\\(${LINK_TARGET}\\)\\s*$`);
 
 /** Max blockquote nesting depth — quotes-in-quotes recurse through
  * parseBlocks, and a pathological ">>>>>>…" line must not recurse per char. */

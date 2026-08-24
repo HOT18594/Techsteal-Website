@@ -108,6 +108,15 @@ export function RichEditor({
 }: RichEditorProps) {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // In-flight embed uploads — aborted on unmount so a finished upload can't
+  // fire toasts / insert into a torn-down editor.
+  const inflightUploads = useRef<Set<XMLHttpRequest>>(new Set());
+  useEffect(() => {
+    const set = inflightUploads.current;
+    return () => {
+      for (const xhr of set) xhr.abort();
+    };
+  }, []);
   const [mode, setMode] = useState<"write" | "preview">("write");
   const [uploading, setUploading] = useState(0); // uploads in flight
   // Ref counter for the in-flight cap — state reads inside async callbacks
@@ -140,10 +149,12 @@ export function RichEditor({
       });
       const capped = next.length > maxLength ? next.slice(0, maxLength) : next;
       onChange(capped);
-      // Selection is restored after React re-renders the new value.
+      // Selection is restored after React re-renders the new value — clamped
+      // to the capped length so a truncating edit can't set an out-of-range
+      // caret (browsers clamp silently, but mid-token).
       requestAnimationFrame(() => {
         ta.focus();
-        ta.setSelectionRange(selStart, selEnd);
+        ta.setSelectionRange(Math.min(selStart, capped.length), Math.min(selEnd, capped.length));
       });
     },
     [disabled, maxLength, onChange]
@@ -224,7 +235,7 @@ export function RichEditor({
         // Downscale/compress in the browser first — screenshots straight out
         // of Minecraft are often 3–8 MB PNGs for no visual benefit.
         const compressed = await compressImage(file, 1920, 0.85);
-        const url = await xhrUpload(compressed, setUploadPct);
+        const url = await xhrUpload(compressed, setUploadPct, inflightUploads.current);
         const snippet = `\n![${compressed.name.replace(/[^\w.-]/g, "").slice(0, 60) || "image"}](${url})\n`;
         if (taRef.current) {
           insertAtCursor(snippet);
@@ -236,6 +247,9 @@ export function RichEditor({
           setMode("write");
         }
       } catch (e) {
+        // An aborted upload (editor unmounted) is intentional cleanup, not
+        // an error the user should hear about.
+        if (e instanceof Error && e.message === "aborted") return;
         onUploadError?.(e instanceof Error ? e.message : "Upload failed — try again.");
       } finally {
         uploadingCount.current = Math.max(0, uploadingCount.current - 1);
@@ -248,13 +262,19 @@ export function RichEditor({
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
     const file = Array.from(e.clipboardData.files).find((f) => f.type.startsWith("image/"));
-    if (file) {
-      e.preventDefault();
-      void uploadFile(file);
-    }
+    if (!file) return;
+    // A clipboard holding text AND an image (rich copy from Word/Slack)
+    // must keep its text — only hijack the paste when it's image-only.
+    if (e.clipboardData.getData("text/plain").trim()) return;
+    e.preventDefault();
+    void uploadFile(file);
   };
 
   const onDrop = (e: DragEvent<HTMLDivElement>) => {
+    // Only intercept FILE drags. Text drag-and-drop (moving a selection
+    // inside the textarea, or dragging text in from elsewhere) must keep its
+    // native behavior — preventDefault-ing it silently swallowed the move.
+    if (!e.dataTransfer.types.includes("Files")) return;
     e.preventDefault();
     setDragOver(false);
     const file = Array.from(e.dataTransfer.files).find((f) => f.type.startsWith("image/"));
@@ -277,6 +297,9 @@ export function RichEditor({
     <div
       className={`rich-editor ${className}`}
       onDragOver={(e) => {
+        // The "Drop to embed" overlay is for image files only — text drags
+        // keep their native affordance.
+        if (!e.dataTransfer.types.includes("Files")) return;
         e.preventDefault();
         setDragOver(true);
       }}
@@ -404,19 +427,30 @@ export function RichEditor({
 }
 
 /** Upload with real progress events (fetch has none for request bodies).
- *  A hard timeout keeps a hung connection from spinning the progress bar forever. */
-function xhrUpload(file: File, onProgress: (pct: number) => void): Promise<string> {
+ *  A hard timeout keeps a hung connection from spinning the progress bar
+ *  forever. When `registry` is given the request is tracked there so the
+ *  owner can abort it (unmount cleanup); aborting rejects with "aborted". */
+function xhrUpload(
+  file: File,
+  onProgress: (pct: number) => void,
+  registry?: Set<XMLHttpRequest>
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const body = new FormData();
     body.set("image", file);
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/upload");
     xhr.timeout = 60_000;
-    xhr.ontimeout = () => reject(new Error("Upload timed out — try again."));
+    const settle = () => registry?.delete(xhr);
+    xhr.ontimeout = () => {
+      settle();
+      reject(new Error("Upload timed out — try again."));
+    };
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
     };
     xhr.onload = () => {
+      settle();
       try {
         const data = JSON.parse(xhr.responseText) as { url?: string; error?: string };
         if (xhr.status >= 200 && xhr.status < 300 && data.url) resolve(data.url);
@@ -425,7 +459,15 @@ function xhrUpload(file: File, onProgress: (pct: number) => void): Promise<strin
         reject(new Error("Upload failed"));
       }
     };
-    xhr.onerror = () => reject(new Error("Upload failed — check your connection."));
+    xhr.onerror = () => {
+      settle();
+      reject(new Error("Upload failed — check your connection."));
+    };
+    xhr.onabort = () => {
+      settle();
+      reject(new Error("aborted"));
+    };
+    registry?.add(xhr);
     xhr.send(body);
   });
 }

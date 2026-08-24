@@ -241,9 +241,11 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
     setActiveTools([]);
 
     // Prior turns give the model context for follow-ups ("what about
-    // rule 3?"). Skip the welcome message (id 0); cap and truncate lightly.
+    // rule 3?"). Skip the welcome message (id 0), failed exchanges (their
+    // error text is noise that degrades follow-up answers), and cap/truncate
+    // lightly.
     const priorTurns = basis
-      .filter((m) => m.id !== 0 && m.text.trim().length > 0)
+      .filter((m) => m.id !== 0 && !m.error && m.text.trim().length > 0)
       .slice(-8)
       .map((m) => ({
         role: m.role,
@@ -286,13 +288,18 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
         signal: controller.signal,
       });
       if (!res.ok) {
-        // 401 sign-in / 403 no-access etc. — the server streams a friendly
-        // explanation, show it as the reply.
+        // 401/403/429 are access/rate gates the server explains in its body —
+        // show that as a friendly reply. Any other status is a REAL failure:
+        // mark it as an error bubble with Retry instead of dressing it up as
+        // an AI answer.
         const gateText = await res.text().catch(() => "");
         if (gen !== genRef.current) return;
         setDots(false);
+        const gate = res.status === 401 || res.status === 403 || res.status === 429;
         updateAssistant(
-          gateText.trim() || "Hmm, something went wrong — check your access and try again."
+          gateText.trim() || "Hmm, something went wrong — check your access and try again.",
+          !gate,
+          gate ? undefined : text
         );
         return;
       }
@@ -383,7 +390,11 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
         }
       }
     } catch {
-      if (gen !== genRef.current) return; // stopped — keep partial text
+      // Aborted streams (Stop button, unmount, superseded by a newer send)
+      // are not failures — keep any partial text and stay quiet. React also
+      // drops setState-after-unmount, but classifying it as a connection
+      // error was simply wrong.
+      if (gen !== genRef.current || controller.signal.aborted) return;
       // A failed request must NOT look like an AI answer — mark the bubble
       // as an error and offer to re-send the question.
       updateAssistant("Something went wrong reaching me — check your connection.", true, text);
@@ -582,7 +593,7 @@ export function Chatty({ variant = "full" }: { variant?: "full" | "embedded" }) 
                       {m.error && m.retry ? (
                         <button
                           className="mt-2 text-xs font-semibold text-[var(--redstone)] hover:text-[var(--fg)] transition inline-flex items-center gap-1.5"
-                          onClick={() => void send(m.retry)}
+                          onClick={m.id === lastMsg?.id ? regenerate : () => void send(m.retry)}
                         >
                           <i className="fa-solid fa-rotate-right" />
                           Retry
@@ -798,7 +809,9 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
 
 function renderText(text: string): ReactNode[] {
   // Split on fenced code blocks first so nothing else touches their contents.
-  const parts = text.split(/```(\w*)\n?([\s\S]*?)(?:```|$)/g);
+  // The language capture allows non-word chars (c++, c#, node.js) — a plain
+  // \w* stopped at the first symbol and leaked the rest into the code body.
+  const parts = text.split(/```([\w+#.-]*)\n?([\s\S]*?)(?:```|$)/g);
   const out: ReactNode[] = [];
   parts.forEach((part, i) => {
     if (i % 3 === 1) return; // language capture — used below
