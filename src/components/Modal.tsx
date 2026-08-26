@@ -13,7 +13,7 @@
 
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import type { MouseEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { isTopOverlay, popOverlay, pushOverlay } from "@/lib/overlay-stack";
 
 interface ModalProps {
@@ -35,6 +35,10 @@ export function Modal({ label, onClose, cardClassName = "", children }: ModalPro
   // re-run the effect and yank focus away from mid-typing users.
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  // Close on backdrop click only when the press STARTED on the backdrop:
+  // a text selection that begins inside the card and ends on it also fires
+  // the click event here, and closing mid-selection discarded the drag.
+  const backdropPressed = useRef(false);
 
   useEffect(() => {
     const card = cardRef.current;
@@ -97,14 +101,16 @@ export function Modal({ label, onClose, cardClassName = "", children }: ModalPro
   // guard anyway so an SSR pass never touches `document`.
   if (typeof document === "undefined") return null;
 
-  const onBackdropClick = (e: MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) onClose();
-  };
-
   return createPortal(
     <div
       className="modal-backdrop"
-      onClick={onBackdropClick}
+      onMouseDown={(e) => {
+        backdropPressed.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        if (backdropPressed.current && e.target === e.currentTarget) onClose();
+        backdropPressed.current = false;
+      }}
       role="dialog"
       aria-modal="true"
       aria-label={label}

@@ -2,20 +2,16 @@
 // connected database. Safe to re-run — it clears the past-seasons era first.
 import { config } from "dotenv";
 config({ path: ".env.local" });
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
 import { eq } from "drizzle-orm";
+import { createDb } from "../src/lib/db";
 import { timelineEvents } from "../src/lib/schema";
 
 const url = process.env.DATABASE_URL;
 if (!url) throw new Error("DATABASE_URL is not set");
-// Route through the TRANSACTION pooler (port 6543) — the session pooler is
-// at its client cap, and these two quick statements are fine in tx mode
-// with prepare:false.
-const txUrl = url.replace(":5432", ":6543");
-
-const client = postgres(txUrl, { prepare: false, max: 1 });
-const db = drizzle(client);
+// createDb routes through the TRANSACTION pooler (port 6543, prepare:false)
+// itself — a naive `url.replace(":5432", ":6543")` here would corrupt any
+// URL whose password happened to contain ":5432".
+const db = createDb(url);
 
 const seasons = [
   { date: "Concluded", title: "Season 1", era: "Past Seasons", major: true, description: "Season 1 has passed — it ran before this website existed. The world is closed, but it started everything." },
@@ -31,10 +27,11 @@ async function main() {
   const rows = await db.select().from(timelineEvents);
   console.log(`timeline now has ${rows.length} event(s):`);
   for (const r of rows) console.log(` - [${r.era}] ${r.date} · ${r.title}`);
-  await client.end();
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });

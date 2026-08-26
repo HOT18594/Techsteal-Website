@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "node:crypto";
+import { and, eq, ne } from "drizzle-orm";
 import { addPermissions, findAccount, updateAccount } from "@/lib/accounts";
 import { getSessionUser, setSession } from "@/lib/auth";
+import { getDb } from "@/lib/db";
 import { getAdminCode } from "@/lib/admin-code";
 import { isRateLimited, rateLimitIp } from "@/lib/rate-limit";
+import { profiles } from "@/lib/schema";
 import type { Account } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -99,6 +102,29 @@ export async function PATCH(request: NextRequest) {
   // not keep editing its profile or claiming the admin code.
   if (account.banned) {
     return NextResponse.json({ error: "This account has been removed." }, { status: 403 });
+  }
+
+  // A linked Minecraft name must belong to exactly one member: the client
+  // checks Mojang before saving, but a direct API caller could otherwise
+  // claim any name — including one another member already wears — and read
+  // as them in the directory and forum avatar fallbacks.
+  if (patch.minecraftUsername) {
+    const db = getDb();
+    if (db) {
+      const [taken] = await db
+        .select({ id: profiles.id })
+        .from(profiles)
+        .where(
+          and(eq(profiles.minecraftUsername, patch.minecraftUsername), ne(profiles.id, account.id))
+        )
+        .limit(1);
+      if (taken) {
+        return NextResponse.json(
+          { error: "That Minecraft username is already linked to another member." },
+          { status: 409 }
+        );
+      }
+    }
   }
 
   // Admin code claim — exact match promotes to admin. Failures are explicit

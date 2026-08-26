@@ -36,9 +36,10 @@ function OnboardingContent() {
   const [mcError, setMcError] = useState("");
   const [finishing, setFinishing] = useState(false);
 
-  // Not signed in? Send to login.
+  // Not signed in? Send to login — with the return path, so signing in
+  // resumes onboarding instead of dropping the user on the default page.
   useEffect(() => {
-    if (!sessionLoading && !user) router.replace("/login");
+    if (!sessionLoading && !user) router.replace("/login?next=/onboarding");
   }, [user, sessionLoading, router]);
 
   // Auto-check Discord membership on FIRST entry to step 2 only. Re-running

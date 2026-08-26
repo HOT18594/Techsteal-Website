@@ -347,11 +347,28 @@ export function canControlServer(account: Account | undefined): boolean {
  *
  * Falls back to the session role when no database is configured, so the
  * site still works in "no DB yet" mode.
+ *
+ * Tri-state on purpose: "db_error" is a TRANSIENT OUTAGE, not a demotion.
+ * Collapsing it into "no" made every admin route answer 403 "Forbidden"
+ * (and /admin bounce its admins home) during exactly the kind of pooler
+ * incident `accountGate` was written to stop lying about. Callers must
+ * answer db_error with a 503 instead.
  */
-export async function isAdminUser(): Promise<boolean> {
+export async function checkAdmin(): Promise<"yes" | "no" | "db_error"> {
   const user = await getSessionUser();
-  if (!user || user.role !== "admin") return false;
-  if (!getDb()) return true; // no database — trust the signed session
-  const account = await findAccount(user.id).catch(() => null);
-  return account?.role === "admin" && !account.banned;
+  if (!user || user.role !== "admin") return "no";
+  if (!getDb()) return "yes"; // no database — trust the signed session
+  try {
+    const account = await findAccount(user.id);
+    return account?.role === "admin" && !account.banned ? "yes" : "no";
+  } catch (err) {
+    console.error("checkAdmin: lookup failed", err);
+    return "db_error";
+  }
+}
+
+/** Boolean convenience wrapper over {@link checkAdmin} for callers that
+ *  genuinely can't do anything smarter than fail closed. */
+export async function isAdminUser(): Promise<boolean> {
+  return (await checkAdmin()) === "yes";
 }

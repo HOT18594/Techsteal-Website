@@ -153,6 +153,7 @@ function countdown(endsAt: string): string {
   if (Number.isNaN(ms)) return "";
   if (ms <= 0) return "Final results";
   const mins = Math.floor(ms / 60_000);
+  if (mins < 1) return "Ends in under a minute";
   if (mins < 60) return `Ends in ${mins}m`;
   const hours = Math.floor(mins / 60);
   if (hours < 48) return `Ends in ${hours}h ${mins % 60}m`;

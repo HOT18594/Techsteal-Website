@@ -9,8 +9,8 @@
 //   `inline code`                ```lang … ``` fenced code blocks
 //   > blockquotes                - / * bullets   1. numbered lists
 //   --- / *** horizontal rules   [text](https://…) links (http/https only)
-//   ![alt](https://…/img.png) images   ||spoiler|| (click to reveal)
-//   bare https://… URLs autolink
+//   ![alt](https://…/img.png) images   [![alt](img)](url) clickable thumbnails
+//   ||spoiler|| (click to reveal)     bare https://… URLs autolink
 
 import { Fragment, useState, type ReactNode } from "react";
 
@@ -37,6 +37,7 @@ type InlineScan =
   | { kind: "bolditalic"; len: number; innerStart: number; innerEnd: number }
   | { kind: "link"; len: number; url: string; text: string }
   | { kind: "image"; len: number; url: string; alt: string }
+  | { kind: "imagelink"; len: number; url: string; imageUrl: string; alt: string }
   | { kind: "autolink"; len: number; url: string };
 
 // Link/image targets allow ONE level of balanced parentheses so Wikipedia
@@ -45,6 +46,12 @@ type InlineScan =
 const LINK_TARGET = "((?:[^()\\s]|\\([^()]*\\))+)(?:\\s+\"[^\"]*\")?";
 const MD_IMAGE_RE = new RegExp(`^!\\[([^\\]]*)\\]\\(${LINK_TARGET}\\)`);
 const MD_LINK_RE = new RegExp(`^\\[([^\\]]*)\\]\\(${LINK_TARGET}\\)`);
+// A clickable thumbnail: [![alt](img)](href). The nested ]( pairs defeat the
+// flat link regex above ([^\]]* stops at the image's own closing bracket),
+// which used to truncate mid-URL and leak literal markup.
+const MD_IMAGE_LINK_RE = new RegExp(
+  `^\\[!\\[([^\\]]*)\\]\\(${LINK_TARGET}\\)\\]\\(${LINK_TARGET}\\)`
+);
 
 /** Match one inline token starting at `i`, or a plain-text run. */
 function scanInline(src: string, i: number): InlineScan {
@@ -66,6 +73,13 @@ function scanInline(src: string, i: number): InlineScan {
 
   // Link [text](url)
   if (at(0) === "[") {
+    // Clickable thumbnail form first — its nested brackets would otherwise
+    // be swallowed by the flat link match below. Groups: 1=alt, 2=img URL,
+    // 3=outer URL (the optional `"title"` tails are non-capturing).
+    const il = MD_IMAGE_LINK_RE.exec(rest);
+    if (il && safeUrl(il[2]) && safeUrl(il[3])) {
+      return { kind: "imagelink", len: il[0].length, url: il[3], imageUrl: il[2], alt: il[1] };
+    }
     const m = MD_LINK_RE.exec(rest);
     if (m && safeUrl(m[2])) {
       return { kind: "link", len: m[0].length, url: m[2], text: m[1] };
@@ -205,10 +219,30 @@ function inlineNodes(src: string, keyPrefix: string, depth = 0): ReactNode[] {
       case "link":
         push(
           <a href={tok.url} target="_blank" rel="noopener noreferrer nofollow" className="md-link">
-            {tok.text || tok.url}
+            {/* The label parses as inline markdown too — [**bold**](url)
+                used to show its literal asterisks. Labels can't contain
+                another [link](…) (the capture excludes `]`), so this
+                recursion is naturally one level deep. */}
+            {tok.text ? inlineNodes(tok.text, `${keyPrefix}-l${key}`, depth + 1) : tok.url}
           </a>,
           tok.len,
           "l"
+        );
+        break;
+      case "imagelink":
+        push(
+          <a href={tok.url} target="_blank" rel="noopener noreferrer nofollow" className="md-imagelink">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={tok.imageUrl}
+              alt={tok.alt}
+              loading="lazy"
+              decoding="async"
+              className="md-image"
+            />
+          </a>,
+          tok.len,
+          "il"
         );
         break;
       case "autolink":

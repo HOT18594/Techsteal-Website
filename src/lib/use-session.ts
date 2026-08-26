@@ -14,18 +14,33 @@ import type { SessionUser } from "@/types";
 // after login/logout/profile changes still sees fresh state.
 let inflight: Promise<SessionUser | null> | null = null;
 
+async function fetchOnce(): Promise<SessionUser | null> {
+  const res = await fetch("/api/auth/me");
+  if (!res.ok) throw new Error(`/api/auth/me → ${res.status}`);
+  const data = (await res.json()) as { user: SessionUser | null };
+  return data.user ?? null;
+}
+
 function fetchSession(): Promise<SessionUser | null> {
   if (inflight) return inflight;
-  inflight = fetch("/api/auth/me")
-    .then(async (res) => {
-      if (!res.ok) throw new Error(`/api/auth/me → ${res.status}`);
-      const data = (await res.json()) as { user: SessionUser | null };
-      return data.user ?? null;
-    })
-    .catch(() => null)
-    .finally(() => {
-      inflight = null;
-    });
+  inflight = (async () => {
+    try {
+      return await fetchOnce();
+    } catch {
+      // One transient blip (pooler hiccup, dropped Wi-Fi) must not flip the
+      // whole site to "signed out" — the server answers 503 for DB outages
+      // precisely so this can be retried instead of trusted. One retry,
+      // then give up and render signed-out; the next refresh recovers.
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      try {
+        return await fetchOnce();
+      } catch {
+        return null;
+      }
+    }
+  })().finally(() => {
+    inflight = null;
+  });
   return inflight;
 }
 

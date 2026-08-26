@@ -19,3 +19,12 @@ export function popOverlay(id: symbol): void {
 export function isTopOverlay(id: symbol): boolean {
   return stack.length > 0 && stack[stack.length - 1] === id;
 }
+
+/** True while ANY registered overlay is open. Non-overlay Escape handlers
+ * (e.g. the navbar popover) must stand down while this is true: their
+ * document-level listener can't be stopped by a dialog, and closing the
+ * popover + refocusing its button on top of an open dialog both shuts two
+ * things with one press and breaks the dialog's focus trap. */
+export function hasOpenOverlays(): boolean {
+  return stack.length > 0;
+}

@@ -3,8 +3,8 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { galleryComments, galleryItems } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
-import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, isAdminUser } from "@/lib/accounts";
-import { isRateLimited } from "@/lib/rate-limit";
+import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, checkAdmin } from "@/lib/accounts";
+import { isRateLimited, rateLimitIp } from "@/lib/rate-limit";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { publicRow } from "@/lib/public-row";
 
@@ -64,9 +64,9 @@ export async function GET(
   let item = items[0];
 
   const user = await getSessionUser();
-  const viewer =
-    user?.id ??
-    (request.headers.get("x-forwarded-for") ?? "anon").split(",")[0].trim().slice(0, 60);
+  // rateLimitIp takes the LAST x-forwarded-for entry (our own edge's) —
+  // deduping on the client-controlled first entry let anyone inflate views.
+  const viewer = user?.id ?? rateLimitIp(request);
   if (countView(itemId, viewer)) {
     const [bumped] = await db
       .update(galleryItems)
@@ -195,8 +195,8 @@ export async function DELETE(
   }
 
   // Live-account gate for the OWNER paths: a removed member's unexpired
-  // cookie must not keep deleting their posts/comments. (Admins pass
-  // isAdminUser, which already re-reads the DB and rejects banned accounts.)
+  // cookie must not keep deleting their posts/comments. (Admins pass the
+  // checkAdmin re-read below, which also rejects banned accounts.)
   const gate = await accountGate(user.id);
   if (gate.status === "missing" || gate.status === "banned") {
     return NextResponse.json({ error: "Your account no longer exists on this server." }, { status: 403 });
@@ -215,8 +215,14 @@ export async function DELETE(
       return NextResponse.json({ error: "Comment not found" }, { status: 404 });
     }
     const isOwner = comment.authorId === user.id && comment.authorId !== "";
-    if (!isOwner && !(await isAdminUser())) {
-      return NextResponse.json({ error: "Admins only." }, { status: 403 });
+    if (!isOwner) {
+      const adminVerdict = await checkAdmin();
+      if (adminVerdict === "db_error") {
+        return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+      }
+      if (adminVerdict === "no") {
+        return NextResponse.json({ error: "Admins only." }, { status: 403 });
+      }
     }
     await db
       .delete(galleryComments)
@@ -233,8 +239,14 @@ export async function DELETE(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const isOwner = item.authorId === user.id && item.authorId !== "";
-  if (!isOwner && !(await isAdminUser())) {
-    return NextResponse.json({ error: "Admins only." }, { status: 403 });
+  if (!isOwner) {
+    const adminVerdict = await checkAdmin();
+    if (adminVerdict === "db_error") {
+      return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+    }
+    if (adminVerdict === "no") {
+      return NextResponse.json({ error: "Admins only." }, { status: 403 });
+    }
   }
   // Atomic cascade: a mid-failure must not orphan comments on a deleted post.
   await db.transaction(async (tx) => {
@@ -250,7 +262,11 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  if (!(await isAdminUser())) {
+  const adminVerdict = await checkAdmin();
+  if (adminVerdict === "db_error") {
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
+  if (adminVerdict === "no") {
     return NextResponse.json({ error: "Admins only." }, { status: 403 });
   }
   const { id } = await params;

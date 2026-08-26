@@ -4,7 +4,7 @@ import { getDb } from "@/lib/db";
 import { forumPolls, forumPollVotes, forumReplies, forumThreads } from "@/lib/schema";
 import { fallbackThreads } from "@/lib/fallback-data";
 import { getSessionUser } from "@/lib/auth";
-import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, isAdminUser } from "@/lib/accounts";
+import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, checkAdmin } from "@/lib/accounts";
 import { isRateLimited } from "@/lib/rate-limit";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { parsePollInput, pollOptionRows } from "@/lib/polls";
@@ -199,10 +199,15 @@ export async function POST(request: NextRequest) {
   }
 
   // Polls are admin-only — validated up front so the transaction can't
-  // half-commit a thread the admin didn't mean to create.
+  // half-commit a thread the admin didn't mean to create. An outage is not
+  // a demotion: answer 503 rather than telling an admin they aren't one.
   let pollInput: { question: string; options: string[]; endsAt: Date } | null = null;
   if (body.poll !== undefined && body.poll !== null) {
-    if (!(await isAdminUser())) {
+    const adminVerdict = await checkAdmin();
+    if (adminVerdict === "db_error") {
+      return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+    }
+    if (adminVerdict === "no") {
       return NextResponse.json({ error: "Only admins can start polls." }, { status: 403 });
     }
     const parsed = parsePollInput(body.poll);
@@ -309,8 +314,14 @@ export async function PUT(request: NextRequest) {
     .limit(1);
   if (!thread) return NextResponse.json({ error: "Thread not found" }, { status: 404 });
   const isOwner = thread.authorId === user.id && thread.authorId !== "";
-  if (!isOwner && !(await isAdminUser())) {
-    return NextResponse.json({ error: "You can only edit your own posts." }, { status: 403 });
+  if (!isOwner) {
+    const adminVerdict = await checkAdmin();
+    if (adminVerdict === "db_error") {
+      return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+    }
+    if (adminVerdict === "no") {
+      return NextResponse.json({ error: "You can only edit your own posts." }, { status: 403 });
+    }
   }
 
   const rows = await db
@@ -328,7 +339,11 @@ export async function PUT(request: NextRequest) {
 // Admin moderation: pin/unpin or lock/unlock a thread.
 // Body: { id, pinned? , locked? }
 export async function PATCH(request: NextRequest) {
-  if (!(await isAdminUser())) {
+  const adminVerdict = await checkAdmin();
+  if (adminVerdict === "db_error") {
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
+  if (adminVerdict === "no") {
     return NextResponse.json({ error: "Admins only." }, { status: 403 });
   }
 
@@ -401,8 +416,14 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "Thread not found" }, { status: 404 });
   }
   const isOwner = thread.authorId === user.id && thread.authorId !== "";
-  if (!isOwner && !(await isAdminUser())) {
-    return NextResponse.json({ error: "Admins only." }, { status: 403 });
+  if (!isOwner) {
+    const adminVerdict = await checkAdmin();
+    if (adminVerdict === "db_error") {
+      return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+    }
+    if (adminVerdict === "no") {
+      return NextResponse.json({ error: "Admins only." }, { status: 403 });
+    }
   }
 
   // Atomic cascade: thread, replies, poll and votes go together — a

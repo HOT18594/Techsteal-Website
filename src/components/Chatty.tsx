@@ -8,7 +8,7 @@
 // lives in localStorage; the 3-dot indicator only shows before the first
 // event arrives.
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { siteConfig } from "@/lib/site";
 import { Avatar } from "@/components/Avatar";
@@ -156,15 +156,39 @@ export function Chatty() {
     setHydrated(true);
   }, []);
 
-  // Persist history — but only once hydrated, so the welcome state never
-  // overwrites saved chats. Capped to the last 50 messages so the stored
-  // payload can't grow without bound.
+  // Persist history — throttled. Streaming fires dozens of setMessages per
+  // second; a stringify-plus-localStorage write on every token janks the
+  // main thread (worst on mobile). Saves trail ~600ms behind the last
+  // update and flush immediately when the tab hides or the component
+  // unmounts, so nothing is lost if the user leaves mid-stream.
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const hydratedRef = useRef(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flushSave = useCallback(() => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    if (!hydratedRef.current) return; // never clobber saved chats pre-hydration
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(messagesRef.current.slice(-50)));
+    } catch {}
+  }, []);
   useEffect(() => {
     if (!hydrated) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-50)));
-    } catch {}
-  }, [messages, hydrated]);
+    hydratedRef.current = true;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(flushSave, 600);
+  }, [messages, hydrated, flushSave]);
+  useEffect(() => {
+    const onHide = () => flushSave();
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      window.removeEventListener("pagehide", onHide);
+      flushSave();
+    };
+  }, [flushSave]);
 
   // Keep the newest message in view — no scrolling the page to read it —
   // but only while the reader hasn't scrolled up to re-read something.
@@ -907,7 +931,9 @@ function inlineFormat(line: string): ReactNode[] {
             rel="noopener noreferrer"
             className="text-[var(--accent-bright)] underline decoration-[var(--accent)]/40 hover:decoration-[var(--accent)] break-words"
           >
-            {link[1]}
+            {/* The label is formatted too — [**bold**](url) must not show
+                its literal asterisks inside the anchor text. */}
+            {link[1] ? inlineFormat(link[1]) : link[2]}
           </a>
         );
         return;

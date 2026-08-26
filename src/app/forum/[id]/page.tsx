@@ -94,16 +94,25 @@ export default function ThreadPage() {
   // Replies
   // ------------------------------------------------------------------
 
+  // Snapshot of the thread this component is currently showing. The page
+  // stays mounted across /forum/a → /forum/b navigations, so any mutation
+  // handler must bail out if its response lands after `id` has changed —
+  // otherwise thread A's new reply/like/edit lands in thread B's UI.
+  const idRef = useRef(id);
+  idRef.current = id;
+
   const submitReply = async () => {
     const text = replyText.trim();
     if (!text || replying) return;
+    const threadId = id;
     setReplying(true);
     try {
-      const res = await fetch(`/api/forum/${id}`, {
+      const res = await fetch(`/api/forum/${threadId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: text }),
       });
+      if (threadId !== idRef.current) return; // navigated away mid-post
       if (res.ok) {
         const created = (await res.json()) as ForumReply;
         setReplies((prev) => sortReplies([...prev, created]));
@@ -119,7 +128,9 @@ export default function ThreadPage() {
         show("Couldn't reply", data.error ?? "The server rejected the request.", "error");
       }
     } catch {
-      show("Couldn't reply", "Check your connection and try again.");
+      if (threadId === idRef.current) {
+        show("Couldn't reply", "Check your connection and try again.");
+      }
     } finally {
       setReplying(false);
     }
@@ -197,17 +208,19 @@ export default function ThreadPage() {
       return;
     }
     if (!thread || busyLike !== null) return;
+    const threadId = id;
     setBusyLike("thread");
     const liked = thread.liked === true;
     setThread((t) =>
       t ? { ...t, liked: !liked, likes: (t.likes ?? 0) + (liked ? -1 : 1) } : t
     );
     try {
-      const res = await fetch(`/api/forum/${id}/like`, {
+      const res = await fetch(`/api/forum/${threadId}/like`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
+      if (threadId !== idRef.current) return; // navigated away mid-like
       if (!res.ok) throw new Error(`like failed (${res.status})`);
       const data = await res.json() as { thread: ForumThread; liked: boolean };
       setThread((t) =>
@@ -220,6 +233,7 @@ export default function ThreadPage() {
           : t
       );
     } catch {
+      if (threadId !== idRef.current) return;
       setThread((t) => (t ? { ...t, liked: thread.liked ?? false, likes: thread.likes ?? 0 } : t));
       show("Couldn't like", "The server rejected the request.", "error");
     } finally {
@@ -232,12 +246,13 @@ export default function ThreadPage() {
   // ------------------------------------------------------------------
 
   const castVote = async (optionId: string) => {
-    const res = await fetch(`/api/forum/${id}/vote`, {
+    const res = await fetch(`/api/forum/${idRef.current}/vote`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ optionId }),
     });
     const data = (await res.json().catch(() => ({}))) as { poll?: ForumPoll; error?: string };
+    if (idRef.current !== id) return; // navigated away mid-vote — drop it
     if (!res.ok || !data.poll) {
       throw new Error(data.error ?? "Couldn't vote — try again.");
     }
@@ -338,9 +353,10 @@ export default function ThreadPage() {
     if (!editing || savingEdit) return;
     const content = editing.content.trim();
     if (!content) return;
+    const threadId = id;
     setSavingEdit(true);
     try {
-      const url = editing.kind === "thread" ? "/api/forum" : `/api/forum/${id}`;
+      const url = editing.kind === "thread" ? "/api/forum" : `/api/forum/${threadId}`;
       const res = await fetch(url, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -350,6 +366,7 @@ export default function ThreadPage() {
             : { replyId: editing.id, content }
         ),
       });
+      if (threadId !== idRef.current) return; // navigated away mid-save
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         show("Couldn't save", data.error ?? "The server rejected the request.", "error");
@@ -719,6 +736,7 @@ export default function ThreadPage() {
                     onChange={setReplyText}
                     rows={5}
                     maxLength={20000}
+                    disabled={replying}
                     placeholder="Write a reply… paste or drag screenshots straight in."
                     onUploadError={(m) => show("Couldn't upload image", m, "error")}
                   />

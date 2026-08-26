@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listAccounts, updateAccount, removeAccount, isAdminUser } from "@/lib/accounts";
+import { listAccounts, updateAccount, removeAccount, checkAdmin } from "@/lib/accounts";
 import { getSessionUser } from "@/lib/auth";
 import type { Permission } from "@/types";
 
@@ -7,22 +7,38 @@ export const dynamic = "force-dynamic";
 
 const VALID_PERMISSIONS: Permission[] = ["server_control", "ai_access", "gallery_post"];
 
+type AdminSession = NonNullable<Awaited<ReturnType<typeof getSessionUser>>>;
+
 // Checks the CURRENT database role, not the (up to 7-day-old) session
 // cookie, so demoting/removing an admin takes effect immediately.
-async function requireAdmin() {
-  if (!(await isAdminUser())) return null;
-  return getSessionUser();
+// A DB outage is NOT a demotion: it must answer 503, not 403 "Forbidden"
+// that tells a real admin they aren't one.
+async function requireAdmin(): Promise<
+  { ok: true; admin: AdminSession } | { ok: false; status: 403 | 503 }
+> {
+  const verdict = await checkAdmin();
+  if (verdict === "yes") {
+    const admin = await getSessionUser();
+    return admin ? { ok: true, admin } : { ok: false, status: 403 };
+  }
+  return { ok: false, status: verdict === "db_error" ? 503 : 403 };
 }
 
 // The account store throws on a pooler outage — surface a 503 with a
 // human message instead of an opaque 500.
 const DB_DOWN = { error: "The member database is unreachable right now — try again in a moment." };
 
+function denyResponse(guard: { ok: false; status: 403 | 503 }): NextResponse {
+  return NextResponse.json(guard.status === 503 ? DB_DOWN : { error: "Forbidden" }, {
+    status: guard.status,
+  });
+}
+
 // List all accounts (admin only). Banned (removed) accounts are included
 // separately so they can be restored.
 export async function GET() {
-  const admin = await requireAdmin();
-  if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const guard = await requireAdmin();
+  if (!guard.ok) return denyResponse(guard);
   let all;
   try {
     all = await listAccounts();
@@ -38,8 +54,9 @@ export async function GET() {
 // Update an account's role/permissions (admin only).
 // Body: { id, role?, permissions? }
 export async function POST(request: Request) {
-  const admin = await requireAdmin();
-  if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const guard = await requireAdmin();
+  if (!guard.ok) return denyResponse(guard);
+  const admin = guard.admin;
 
   const body = await request.json().catch(() => ({}));
   const id = typeof body.id === "string" ? body.id : "";
@@ -75,8 +92,9 @@ export async function POST(request: Request) {
 
 // Remove an account (admin only). This BANS the user — see removeAccount.
 export async function DELETE(request: Request) {
-  const admin = await requireAdmin();
-  if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const guard = await requireAdmin();
+  if (!guard.ok) return denyResponse(guard);
+  const admin = guard.admin;
 
   const body = await request.json().catch(() => ({}));
   const id = typeof body?.id === "string" ? body.id : "";
@@ -99,8 +117,8 @@ export async function DELETE(request: Request) {
 
 // Restore a banned account (admin only). Body: { id }
 export async function PUT(request: Request) {
-  const admin = await requireAdmin();
-  if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const guard = await requireAdmin();
+  if (!guard.ok) return denyResponse(guard);
 
   const body = await request.json().catch(() => ({}));
   const id = typeof body?.id === "string" ? body.id : "";

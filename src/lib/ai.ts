@@ -361,6 +361,43 @@ async function completionRound(opts: {
   const calls = new Map<number, PartialToolCall>();
   let sawAbort = false;
 
+  // One decoded SSE line → text deltas / accumulated tool-call fragments.
+  // Shared by the read loop and the final tail flush so a complete last
+  // event that arrives without a trailing newline is not silently dropped.
+  const handleLine = (line: string) => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) return;
+    const payload = trimmed.slice(5).trim();
+    if (!payload || payload === "[DONE]") return;
+    try {
+      const json = JSON.parse(payload) as {
+        choices?: Array<{
+          delta?: {
+            content?: string;
+            tool_calls?: Array<{
+              index?: number;
+              id?: string;
+              function?: { name?: string; arguments?: string };
+            }>;
+          };
+        }>;
+      };
+      const delta = json.choices?.[0]?.delta;
+      if (!delta) return;
+      if (delta.content) opts.emit({ t: "text", v: delta.content });
+      for (const tc of delta.tool_calls ?? []) {
+        const i = tc.index ?? 0;
+        const acc = calls.get(i) ?? { id: "", name: "", args: "" };
+        if (tc.id) acc.id = tc.id;
+        if (tc.function?.name) acc.name = acc.name ? acc.name + tc.function.name : tc.function.name;
+        if (tc.function?.arguments) acc.args += tc.function.arguments;
+        calls.set(i, acc);
+      }
+    } catch {
+      /* fragmented line — wait for the next chunk */
+    }
+  };
+
   try {
     while (true) {
       if (opts.signal?.aborted) {
@@ -375,44 +412,31 @@ async function completionRound(opts: {
       const lines = buffer.split("\n");
       buffer = lines.pop() ?? "";
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) continue;
-        const payload = trimmed.slice(5).trim();
-        if (!payload || payload === "[DONE]") continue;
-        try {
-          const json = JSON.parse(payload) as {
-            choices?: Array<{
-              delta?: {
-                content?: string;
-                tool_calls?: Array<{
-                  index?: number;
-                  id?: string;
-                  function?: { name?: string; arguments?: string };
-                }>;
-              };
-            }>;
-          };
-          const delta = json.choices?.[0]?.delta;
-          if (!delta) continue;
-          if (delta.content) opts.emit({ t: "text", v: delta.content });
-          for (const tc of delta.tool_calls ?? []) {
-            const i = tc.index ?? 0;
-            const acc = calls.get(i) ?? { id: "", name: "", args: "" };
-            if (tc.id) acc.id = tc.id;
-            if (tc.function?.name) acc.name = acc.name ? acc.name + tc.function.name : tc.function.name;
-            if (tc.function?.arguments) acc.args += tc.function.arguments;
-            calls.set(i, acc);
-          }
-        } catch {
-          /* fragmented line — wait for the next chunk */
-        }
+        handleLine(line);
       }
     }
-  } catch {
-    // A mid-stream hiccup ends the round with whatever was collected.
+    // Flush the decoder and drain a trailing event cut off before its "\n".
+    buffer += decoder.decode();
+    if (buffer.trim()) handleLine(buffer);
+    buffer = "";
+  } catch (err) {
+    // Two rejection causes must NOT be treated as "the upstream merely
+    // hiccuped": a client abort (Stop button / navigation) voids the whole
+    // round, and a round timeout must propagate so attemptRound's model
+    // cascade and error classification still run. reader.read() spends
+    // almost all its life blocked, so both normally surface HERE, not via
+    // the between-reads poll above — swallowing them produced silent empty
+    // replies and truncated tool calls being executed with default args.
+    await reader.cancel().catch(() => {});
+    if (opts.signal?.aborted) {
+      sawAbort = true;
+    } else if ((err as Error | undefined)?.name === "TimeoutError") {
+      throw err;
+    }
+    // Genuine upstream body hiccup: end the round with what was collected.
   }
 
-  if (sawAbort) return null;
+  if (sawAbort || opts.signal?.aborted) return null;
   return {
     toolCalls: [...calls.entries()]
       .sort(([a], [b]) => a - b)

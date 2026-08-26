@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { findAccount } from "@/lib/accounts";
+import { findAccount, ACCOUNT_DB_ERROR_MESSAGE } from "@/lib/accounts";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +14,17 @@ export async function GET() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ user: null });
 
-  const account = await findAccount(user.id).catch(() => null);
+  let account: Awaited<ReturnType<typeof findAccount>>;
+  try {
+    account = await findAccount(user.id);
+  } catch (err) {
+    // A pooler outage is NOT "logged out": answering { user: null } here
+    // visually signed out every member site-wide during transient blips —
+    // the exact lie `accountGate` was introduced to stop. 503 lets the
+    // client distinguish "unknown" from a real sign-out.
+    console.error("auth/me: account lookup failed", err);
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
   // Account gone (removed) — the session must die with it, or a stale
   // 7-day cookie keeps reporting e.g. role: "admin" to the UI.
   if (!account || account.banned) return NextResponse.json({ user: null });

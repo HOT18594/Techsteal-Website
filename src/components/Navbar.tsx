@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { siteConfig } from "@/lib/site";
 import { fallbackStatus } from "@/lib/fallback-data";
+import { hasOpenOverlays } from "@/lib/overlay-stack";
 import type { ServerStatus } from "@/types";
 import { Avatar } from "./Avatar";
 import { useToast } from "./Toast";
@@ -59,6 +60,10 @@ export function Navbar() {
       profileBtnRef.current?.focus();
     };
     const onKey = (e: KeyboardEvent) => {
+      // A dialog/lightbox above this popover owns Escape (see overlay-stack):
+      // closing the menu too — and yanking focus to its trigger — would slam
+      // two overlays with one press and break the dialog's focus trap.
+      if (hasOpenOverlays()) return;
       if (e.key === "Escape") {
         setProfileOpen(false);
         profileBtnRef.current?.focus();

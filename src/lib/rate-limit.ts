@@ -3,7 +3,11 @@
 // instance keeps its own counter, so this slows abuse down rather than
 // being a hard guarantee — plenty for a low-traffic community site.
 
-const HITS = new Map<string, number[]>();
+// Each key remembers the largest window it was used with, so the sweep can
+// prune exactly-stale histories without breaking callers whose window is
+// longer than the sweeper's own idea of "stale" (a fixed 60-minute cutoff
+// silently reset e.g. 24h windows after an hour of idleness).
+const HITS = new Map<string, { ts: number[]; windowMs: number }>();
 let lastSweep = 0;
 
 /** True when `key` has gone over `limit` requests within `windowMs`. */
@@ -17,17 +21,18 @@ export function isRateLimited(
   // abandoned keys linger in the map forever (slow memory leak).
   if (now - lastSweep > 5 * 60_000) {
     lastSweep = now;
-    for (const [k, ts] of HITS) {
-      if (ts.every((t) => now - t > 60 * 60_000)) HITS.delete(k);
+    for (const [k, entry] of HITS) {
+      const newest = entry.ts[entry.ts.length - 1];
+      if (newest !== undefined && now - newest > entry.windowMs) HITS.delete(k);
     }
   }
-  const recent = (HITS.get(key) ?? []).filter((t) => now - t < windowMs);
+  const recent = (HITS.get(key)?.ts ?? []).filter((t) => now - t < windowMs);
   if (recent.length >= limit) {
-    HITS.set(key, recent);
+    HITS.set(key, { ts: recent, windowMs });
     return true;
   }
   recent.push(now);
-  HITS.set(key, recent);
+  HITS.set(key, { ts: recent, windowMs });
   return false;
 }
 

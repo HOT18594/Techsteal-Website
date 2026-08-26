@@ -155,7 +155,6 @@ export default function GalleryPage() {
         setViewing({ itemId: visible[next.item].id ?? 0, image: next.image });
       }
     };
-    if (modalOpen) titleRef.current?.focus();
     document.addEventListener("keydown", onKey);
     return () => {
       document.body.style.overflow = prevOverflow;
@@ -164,6 +163,14 @@ export default function GalleryPage() {
     // slides/visible must be deps: a filter/sort change that keeps the slide
     // count identical would otherwise leave arrow keys paging a stale list.
   }, [modalOpen, viewing, slideIndex, slides, visible]);
+
+  // Autofocus the title field when the composer OPENS — as its own effect.
+  // Inside the scroll-lock effect above it re-fired whenever slides/visible
+  // changed (e.g. the grid data arriving), yanking focus back to the title
+  // mid-typing in the description editor.
+  useEffect(() => {
+    if (modalOpen) titleRef.current?.focus();
+  }, [modalOpen]);
 
   // Load comments (and bump views) when the lightbox opens on a post.
   const viewingItemId = viewing?.itemId ?? null;
@@ -387,26 +394,39 @@ export default function GalleryPage() {
     }
   };
 
+  // Latest-ref mirror of `viewing` so async comment callbacks can tell
+  // whether the lightbox is STILL on the post the request was sent for —
+  // one arrow-key press while a POST is in flight would otherwise append
+  // the new comment to (and clear) whatever post is open now.
+  const viewingRef = useRef(viewing);
+  viewingRef.current = viewing;
+
   const postComment = async () => {
     if (!currentItem) return;
+    const itemId = currentItem.id ?? 0;
     const text = commentText.trim();
     if (!text || postingComment) return;
     setPostingComment(true);
     try {
-      const res = await fetch(`/api/gallery/${currentItem.id}`, {
+      const res = await fetch(`/api/gallery/${itemId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: text }),
       });
       if (res.ok) {
         const created = (await res.json()) as GalleryComment;
-        setComments((prev) => [...(prev ?? []), created]);
+        // Only touch the visible list and composer when the lightbox hasn't
+        // moved on; the count bump below is safe either way.
+        const stillSamePost = viewingRef.current?.itemId === itemId;
+        if (stillSamePost) {
+          setComments((prev) => [...(prev ?? []), created]);
+          setCommentText("");
+        }
         setLocalItems((prev) =>
           (prev ?? items).map((g) =>
-            g.id === currentItem.id ? { ...g, commentCount: (g.commentCount ?? 0) + 1 } : g
+            g.id === itemId ? { ...g, commentCount: (g.commentCount ?? 0) + 1 } : g
           )
         );
-        setCommentText("");
       } else if (res.status === 401) {
         show("Sign in to comment", "Log in with Discord to comment.", "error");
       } else {
@@ -551,10 +571,25 @@ export default function GalleryPage() {
         ) : visible.length === 0 ? (
           <EmptyState
             icon="fa-images"
-            title={filter === "All" ? "No builds posted yet" : `No ${filter} builds yet`}
-            hint="Screenshots of bases, farms and contraptions live here."
+            title={
+              search.trim()
+                ? "No builds match your search"
+                : filter === "All"
+                  ? "No builds posted yet"
+                  : `No ${filter} builds yet`
+            }
+            hint={
+              search.trim()
+                ? `Nothing matches "${search.trim()}".`
+                : "Screenshots of bases, farms and contraptions live here."
+            }
             action={
               <>
+                {search.trim() ? (
+                  <button className="btn-secondary btn-sm" onClick={() => setSearch("")}>
+                    Clear search
+                  </button>
+                ) : null}
                 {filter !== "All" ? (
                   <button className="btn-secondary btn-sm" onClick={() => setFilter("All")}>
                     Show all
@@ -945,6 +980,7 @@ export default function GalleryPage() {
                       placeholder="Add a comment…"
                       value={commentText}
                       maxLength={2000}
+                      disabled={postingComment}
                       onChange={(e) => setCommentText(e.target.value)}
                       onKeyDown={(e) => {
                         // Don't send while an IME composition is being confirmed.

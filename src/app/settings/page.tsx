@@ -38,9 +38,10 @@ function SettingsContent() {
   // Discord verify
   const [verifyState, setVerifyState] = useState<"idle" | "checking" | "verified" | "not_configured">("idle");
 
-  // Not signed in? Send to login.
+  // Not signed in? Send to login — with the return path, so signing in
+  // comes back here instead of dumping the user on the default page.
   useEffect(() => {
-    if (!sessionLoading && !user) router.replace("/login");
+    if (!sessionLoading && !user) router.replace("/login?next=/settings");
   }, [user, sessionLoading, router]);
 
   // Load the full profile.
@@ -79,7 +80,12 @@ function SettingsContent() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (!res.ok) throw new Error();
+    if (!res.ok) {
+      // Surface the server's reason (e.g. a name another member already
+      // linked) instead of a generic "something went wrong".
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(data.error || `Save failed (${res.status})`);
+    }
     const data = (await res.json()) as { profile: Account };
     setProfile(data.profile);
     return data.profile;
@@ -110,8 +116,8 @@ function SettingsContent() {
       setMcSaved(true);
       await refresh();
       show("Saved", name ? `Minecraft: ${name}` : "Minecraft username cleared.");
-    } catch {
-      show("Couldn't save", "Something went wrong.", "error");
+    } catch (err) {
+      show("Couldn't save", err instanceof Error ? err.message : "Something went wrong.", "error");
     } finally {
       setMcBusy(false);
     }

@@ -3,8 +3,8 @@ import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { forumReplies, forumThreads } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
-import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, isAdminUser } from "@/lib/accounts";
-import { isRateLimited } from "@/lib/rate-limit";
+import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, checkAdmin } from "@/lib/accounts";
+import { isRateLimited, rateLimitIp } from "@/lib/rate-limit";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { serializePoll } from "@/lib/polls";
 import { publicRow } from "@/lib/public-row";
@@ -72,10 +72,11 @@ export async function GET(
   }
 
   // Viewed by session user id or client IP (signed-out readers count too).
+  // rateLimitIp takes the LAST x-forwarded-for entry — the one our own edge
+  // appended. The first entry is client-controlled, so deduping on it let
+  // anyone inflate views by rotating a fake header value per request.
   const user = await getSessionUser();
-  const viewer =
-    user?.id ??
-    (request.headers.get("x-forwarded-for") ?? "anon").split(",")[0].trim().slice(0, 60);
+  const viewer = user?.id ?? rateLimitIp(request);
   let thread = threads[0];
   if (countView(threadId, viewer)) {
     const [bumped] = await db
@@ -223,7 +224,11 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  if (!(await isAdminUser())) {
+  const adminVerdict = await checkAdmin();
+  if (adminVerdict === "db_error") {
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
+  if (adminVerdict === "no") {
     return NextResponse.json({ error: "Admins only." }, { status: 403 });
   }
 
@@ -326,8 +331,14 @@ export async function PUT(
     return NextResponse.json({ error: "Reply not found" }, { status: 404 });
   }
   const isOwner = reply.authorId === user.id && reply.authorId !== "";
-  if (!isOwner && !(await isAdminUser())) {
-    return NextResponse.json({ error: "You can only edit your own replies." }, { status: 403 });
+  if (!isOwner) {
+    const adminVerdict = await checkAdmin();
+    if (adminVerdict === "db_error") {
+      return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+    }
+    if (adminVerdict === "no") {
+      return NextResponse.json({ error: "You can only edit your own replies." }, { status: 403 });
+    }
   }
 
   const rows = await db
@@ -399,24 +410,37 @@ export async function DELETE(
     return NextResponse.json({ error: "Reply not found" }, { status: 404 });
   }
   const isOwner = reply.authorId === user.id && reply.authorId !== "";
-  if (!isOwner && !(await isAdminUser())) {
-    return NextResponse.json({ error: "Admins only." }, { status: 403 });
+  if (!isOwner) {
+    const adminVerdict = await checkAdmin();
+    if (adminVerdict === "db_error") {
+      return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+    }
+    if (adminVerdict === "no") {
+      return NextResponse.json({ error: "Admins only." }, { status: 403 });
+    }
   }
 
-  const rows = await db
-    .delete(forumReplies)
-    .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
-    .returning();
-  if (rows.length === 0) {
+  // Delete + counter decrement must commit together — the same rule the
+  // reply INSERT path follows. A failure between them permanently drifted
+  // the replies count (GREATEST floors at zero; it doesn't reconcile).
+  const deleted = await db.transaction(async (tx) => {
+    const rows = await tx
+      .delete(forumReplies)
+      .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
+      .returning();
+    if (rows.length === 0) return false;
+
+    // Atomic decrement with a 0 floor — the read-then-write form could lose
+    // updates when two deletes race (both read 5, both write 4).
+    await tx
+      .update(forumThreads)
+      .set({ replies: sql`GREATEST(${forumThreads.replies} - 1, 0)` })
+      .where(eq(forumThreads.id, threadId));
+    return true;
+  });
+  if (!deleted) {
     return NextResponse.json({ error: "Reply not found" }, { status: 404 });
   }
-
-  // Atomic decrement with a 0 floor — the read-then-write form could lose
-  // updates when two deletes race (both read 5, both write 4).
-  await db
-    .update(forumThreads)
-    .set({ replies: sql`GREATEST(${forumThreads.replies} - 1, 0)` })
-    .where(eq(forumThreads.id, threadId));
 
   return NextResponse.json({ ok: true });
 }

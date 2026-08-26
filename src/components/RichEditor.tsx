@@ -124,15 +124,20 @@ export function RichEditor({
   const uploadingCount = useRef(0);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  // An embed that finished while Preview was open (textarea unmounted) —
-  // inserted as soon as Write mode remounts the textarea.
-  const queuedInsert = useRef<string | null>(null);
+  // Embeds that finished while Preview was open (textarea unmounted) —
+  // inserted as soon as Write mode remounts the textarea. A QUEUE, not a
+  // single slot: up to four uploads run concurrently, and two finishing in
+  // the same render window would otherwise overwrite each other and
+  // silently drop an uploaded image.
+  const queuedInsert = useRef<string[]>([]);
 
   useEffect(() => {
-    if (mode !== "write" || queuedInsert.current === null) return;
-    const snippet = queuedInsert.current;
-    queuedInsert.current = null;
-    requestAnimationFrame(() => insertAtCursor(snippet));
+    if (mode !== "write" || queuedInsert.current.length === 0) return;
+    const snippets = queuedInsert.current;
+    queuedInsert.current = [];
+    requestAnimationFrame(() => {
+      for (const snippet of snippets) insertAtCursor(snippet);
+    });
     // insertAtCursor identity is stable (useCallback on applyEdit).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
@@ -243,7 +248,7 @@ export function RichEditor({
           // Preview tab is open (no textarea): queue the embed and flip back
           // to Write — previously this uploaded the file and silently
           // dropped it.
-          queuedInsert.current = snippet;
+          queuedInsert.current.push(snippet);
           setMode("write");
         }
       } catch (e) {
