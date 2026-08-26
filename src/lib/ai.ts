@@ -458,7 +458,7 @@ export async function streamChatReply(
   const apiKey = process.env.AI_API_KEY;
   const baseUrl = (process.env.AI_BASE_URL ?? "https://openrouter.ai/api/v1").replace(/\/+$/, "");
   // Primary + fallback so a rate-limited free model doesn't strand the reply.
-  const model = process.env.AI_MODEL ?? "google/gemma-4-26b-a4b-it:free";
+  const model = process.env.AI_MODEL ?? "minimax/minimax-m3:free";
   const fallbackModel = process.env.AI_FALLBACK_MODEL ?? "nvidia/nemotron-3-super-120b-a12b:free";
 
   if (!apiKey) return messageStream(NOT_CONFIGURED(message));

@@ -178,7 +178,7 @@ bun run build      # production build
 | `MINECRAFT_PORT` | no | Server port |
 | `AI_API_KEY` | for AI chat | API key for an OpenAI-compatible endpoint |
 | `AI_BASE_URL` | no | Endpoint base URL (default OpenRouter) |
-| `AI_MODEL` | no | Model name (default `poolside/laguna-s-2.1:free`) |
+| `AI_MODEL` | no | Model name (default `minimax/minimax-m3:free`) |
 | `SESSION_SECRET` | **yes (prod)** | Strong random value signing the session cookie. Falls back to a dev secret locally — set a real one before deploying or sessions can be forged. |
 | `ADMIN_CODE` | **yes (prod)** | Code that promotes a member to admin. In production the site refuses to unlock admin without this variable (it used to be a hardcoded constant — that was a security hole). |
 | `DISCORD_CLIENT_ID` | for Discord login | OAuth client id |
