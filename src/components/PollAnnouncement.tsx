@@ -51,6 +51,12 @@ export function PollAnnouncement() {
   // without this, voting inline would set myVote and instantly close the
   // popup before the user sees their results.
   const [engaged, setEngaged] = useState<Set<number>>(new Set());
+  // localStorage is a non-reactive external source — reading it during
+  // render made visibility flicker per render. Hydrate it once on mount.
+  const [dismissed, setDismissed] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    setDismissed(dismissedIds());
+  }, []);
 
   // Fetch the latest active poll once the session is known (the response
   // includes the user's vote, so "already voted" can skip the popup).
@@ -80,7 +86,14 @@ export function PollAnnouncement() {
   }, [loading, user]);
 
   const close = useCallback(() => {
-    if (poll) rememberDismissed(poll.id);
+    if (poll) {
+      rememberDismissed(poll.id);
+      setDismissed((prev) => {
+        const next = new Set(prev ?? []);
+        next.add(String(poll.id));
+        return next;
+      });
+    }
     setPoll(null);
   }, [poll]);
 
@@ -96,7 +109,7 @@ export function PollAnnouncement() {
     // open via `engaged` so the user sees the results.)
     !(poll !== null && poll.myVote && !engaged.has(poll.id)) &&
     // Dismissed earlier → stays dismissed until a NEW poll starts.
-    !(poll !== null && dismissedIds().has(String(poll.id)));
+    !(poll !== null && dismissed !== null && dismissed.has(String(poll.id)));
 
   // Lock body scroll while the announcement is up. Escape is handled by
   // <Modal> itself (topmost-overlay rule) — a second listener here would

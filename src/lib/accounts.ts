@@ -366,9 +366,6 @@ export async function checkAdmin(): Promise<"yes" | "no" | "db_error"> {
     return "db_error";
   }
 }
-
-/** Boolean convenience wrapper over {@link checkAdmin} for callers that
- *  genuinely can't do anything smarter than fail closed. */
-export async function isAdminUser(): Promise<boolean> {
-  return (await checkAdmin()) === "yes";
-}
+// No boolean isAdminUser() wrapper is provided on purpose: every caller must
+// handle the "db_error" tri-state (fail closed) instead of collapsing the
+// outage case into a plain false and silently locking admins out.

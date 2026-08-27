@@ -283,7 +283,13 @@ function eventStream(emitFn: (emit: (ev: Record<string, string>) => void) => Pro
       let closed = false;
       const emit = (ev: Record<string, string>) => {
         if (closed) return;
-        controller.enqueue(encoder.encode(JSON.stringify(ev) + "\n"));
+        // A client abort (Stop button) closes the stream mid-flight, making
+        // enqueue throw. Never let that escape — including from the catch path.
+        try {
+          controller.enqueue(encoder.encode(JSON.stringify(ev) + "\n"));
+        } catch {
+          closed = true;
+        }
       };
       try {
         await emitFn(emit);
@@ -647,7 +653,15 @@ export async function streamChatReply(
         });
       }
 
-      round = await attemptRound(activeModel, !rejectsTools.has(activeModel));
+      try {
+        round = await attemptRound(activeModel, !rejectsTools.has(activeModel));
+      } catch (err) {
+        console.error("chatty: follow-up round failed", err);
+        if (!streamedText) {
+          emit({ t: "text", v: ERROR_MESSAGE });
+        }
+        return;
+      }
       if (round === null) return; // aborted or the follow-up failed
       roundNum++;
     }

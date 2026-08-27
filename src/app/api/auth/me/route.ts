@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSessionUser } from "@/lib/auth";
+import { getSessionUser, clearSession } from "@/lib/auth";
 import { findAccount, ACCOUNT_DB_ERROR_MESSAGE } from "@/lib/accounts";
 
 export const dynamic = "force-dynamic";
@@ -25,9 +25,13 @@ export async function GET() {
     console.error("auth/me: account lookup failed", err);
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
-  // Account gone (removed) — the session must die with it, or a stale
-  // 7-day cookie keeps reporting e.g. role: "admin" to the UI.
-  if (!account || account.banned) return NextResponse.json({ user: null });
+  // Account gone or banned — the session must die with it, or a stale
+  // 7-day cookie keeps reporting e.g. role: "admin" to the UI (and keeps
+  // being sent on every request).
+  if (!account || account.banned) {
+    await clearSession().catch(() => {});
+    return NextResponse.json({ user: null });
+  }
 
   return NextResponse.json({
     user: {

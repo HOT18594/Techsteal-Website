@@ -217,13 +217,13 @@ export default function GalleryPage() {
 
   const onPick = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const room = MAX_IMAGES - pending.length;
-    if (room <= 0) {
-      show("Too many images", `Posts can have at most ${MAX_IMAGES} images.`, "error");
-      return;
-    }
-    const picked = Array.from(files).slice(0, room);
-    for (const f of picked) {
+    // The cap is enforced against a local counter seeded from the current
+    // list AND again inside the functional updater: two rapid picks (or a
+    // pick while uploads are in flight) must never overshoot MAX_IMAGES,
+    // and the updater is the last line of defense against stale `pending`.
+    let used = pending.length;
+    let overflowed = 0;
+    for (const f of Array.from(files)) {
       if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(f.type)) {
         show("Unsupported image", `${f.name}: use JPG, PNG, WebP or GIF.`, "error");
         continue;
@@ -238,9 +238,16 @@ export default function GalleryPage() {
         );
         continue;
       }
+      if (used >= MAX_IMAGES) {
+        overflowed++;
+        continue;
+      }
+      used++;
       const key = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const preview = URL.createObjectURL(f);
-      setPending((prev) => [...prev, { key, name: f.name, preview, progress: 0 }]);
+      setPending((prev) =>
+        prev.length >= MAX_IMAGES ? prev : [...prev, { key, name: f.name, preview, progress: 0 }]
+      );
       // Compress in the browser, then upload — each file is its own request
       // so we stay well below the serverless body limit and get progress.
       void (async () => {
@@ -260,6 +267,9 @@ export default function GalleryPage() {
           );
         }
       })();
+    }
+    if (overflowed > 0) {
+      show("Too many images", `Posts can have at most ${MAX_IMAGES} images.`, "error");
     }
   };
 

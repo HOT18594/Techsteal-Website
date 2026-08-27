@@ -110,6 +110,12 @@ export default function ForumPage() {
   const totalThreads =
     list?.total ??
     (Array.isArray(fallbackThreads) ? fallbackThreads.length : 0);
+  // Sidebar "All" must equal the sum of the per-category rows next to it.
+  // `list.total` is scoped to the ACTIVE category (plus search/unanswered),
+  // while categoryCounts aren't — so sum the category counts instead.
+  const sidebarAllCount = list
+    ? Object.values(list.categoryCounts ?? {}).reduce<number>((a, b) => a + b, 0)
+    : totalThreads;
 
   // ------------------------------------------------------------------
   // Composer state.
@@ -344,6 +350,7 @@ export default function ForumPage() {
                           setSearch("");
                           setCategoryFilter("All");
                           setUnanswered(false);
+                          setPage(1);
                         }}
                       >
                         Clear filters
@@ -522,7 +529,7 @@ export default function ForumPage() {
                 {["All", ...CATEGORY_LIST].map((c) => {
                   const active = categoryFilter === c;
                   const count =
-                    c === "All" ? totalThreads : list?.categoryCounts?.[c] ?? 0;
+                    c === "All" ? sidebarAllCount : list?.categoryCounts?.[c] ?? 0;
                   return (
                     <button
                       key={c}

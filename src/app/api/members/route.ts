@@ -22,7 +22,15 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const db = getDb();
   if (!db) return NextResponse.json(fallbackMembers);
+  try {
+    return await memberRoster(db);
+  } catch (err) {
+    console.error("api/members: query failed", err);
+    return NextResponse.json(fallbackMembers);
+  }
+}
 
+async function memberRoster(db: Exclude<ReturnType<typeof getDb>, null>): Promise<NextResponse> {
   const rows = await db
     .select({
       id: profiles.id,

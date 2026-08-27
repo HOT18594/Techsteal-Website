@@ -21,7 +21,11 @@ export function MemberSlideshow({ members }: { members: Member[] }) {
   const slides = members.filter((m) => Boolean(m.minecraftUsername));
   const [index, setIndex] = useState(0);
   const [visible, setVisible] = useState(false);
-  const [paused, setPaused] = useState(false);
+  // Hover and dot-click pauses are independent signals combined below.
+  // Sharing one `paused` boolean made onMouseLeave cancel a dot-click's
+  // 6s pause instantly (and focus churn restart rotation mid-hover).
+  const [hovering, setHovering] = useState(false);
+  const [dotHold, setDotHold] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   // Dot clicks pause rotation; touch taps never fire mouseleave, so the
@@ -29,19 +33,9 @@ export function MemberSlideshow({ members }: { members: Member[] }) {
   const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const pauseTemporarily = () => {
-    setPaused(true);
     if (resumeTimer.current) clearTimeout(resumeTimer.current);
-    resumeTimer.current = setTimeout(() => setPaused(false), 6_000);
-  };
-
-  // Hover must also cancel a pending dot-click resume — otherwise the stale
-  // timer fires mid-hover and rotation restarts under a stationary cursor.
-  const pauseWhileHovering = () => {
-    if (resumeTimer.current) {
-      clearTimeout(resumeTimer.current);
-      resumeTimer.current = null;
-    }
-    setPaused(true);
+    setDotHold(true);
+    resumeTimer.current = setTimeout(() => setDotHold(false), 6_000);
   };
 
   useEffect(() => {
@@ -71,14 +65,14 @@ export function MemberSlideshow({ members }: { members: Member[] }) {
     if (typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       return;
     }
-    if (!visible || paused || slides.length <= 1) return;
+    if (!visible || hovering || dotHold || slides.length <= 1) return;
     timer.current = setInterval(() => {
       setIndex((i) => (i + 1) % slides.length);
     }, SLIDE_MS);
     return () => {
       if (timer.current) clearInterval(timer.current);
     };
-  }, [visible, paused, slides.length]);
+  }, [visible, hovering, dotHold, slides.length]);
 
   // Clamp the index if the slide list shrinks (e.g. after a refetch) so we
   // never point past the end.
@@ -107,10 +101,10 @@ export function MemberSlideshow({ members }: { members: Member[] }) {
     <div
       ref={rootRef}
       className="aspect-[4/3] w-full rounded-xl border border-[var(--border)] bg-[var(--bg-2)] overflow-hidden relative"
-      onMouseEnter={pauseWhileHovering}
-      onMouseLeave={() => setPaused(false)}
-      onFocusCapture={pauseWhileHovering}
-      onBlurCapture={() => setPaused(false)}
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+      onFocusCapture={() => setHovering(true)}
+      onBlurCapture={() => setHovering(false)}
       aria-roledescription="carousel"
       aria-label="Members preview"
     >

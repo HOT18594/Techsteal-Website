@@ -136,7 +136,7 @@ export async function PUT(request: Request) {
 
 function sanitizePermissions(value: unknown): Permission[] {
   if (!Array.isArray(value)) return [];
-  return value.filter((p): p is Permission =>
-    VALID_PERMISSIONS.includes(p as Permission)
-  );
+  return [...new Set(
+    value.filter((p): p is Permission => VALID_PERMISSIONS.includes(p as Permission))
+  )];
 }

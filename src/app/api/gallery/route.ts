@@ -25,6 +25,15 @@ function isOurStorageUrl(url: string): boolean {
 export async function GET() {
   const db = getDb();
   if (!db) return NextResponse.json(fallbackGallery);
+  try {
+    return await listGallery(db);
+  } catch (err) {
+    console.error("api/gallery: list query failed", err);
+    return NextResponse.json(fallbackGallery);
+  }
+}
+
+async function listGallery(db: Exclude<ReturnType<typeof getDb>, null>): Promise<NextResponse> {
   const [rows, commentCounts, viewer] = await Promise.all([
     db.select().from(galleryItems).orderBy(desc(galleryItems.featured), desc(galleryItems.id)),
     db

@@ -13,8 +13,13 @@ export async function GET() {
     // chronological order) — reverse it here to match the desc(id) result.
     return NextResponse.json([...fallbackTimeline].reverse());
   }
-  // Newest events first — rows are appended chronologically, so higher id =
-  // more recent. The timeline page renders top-to-bottom.
-  const rows = await db.select().from(timelineEvents).orderBy(desc(timelineEvents.id));
-  return NextResponse.json(rows);
+  try {
+    // Newest events first — rows are appended chronologically, so higher id =
+    // more recent. The timeline page renders top-to-bottom.
+    const rows = await db.select().from(timelineEvents).orderBy(desc(timelineEvents.id));
+    return NextResponse.json(rows);
+  } catch (err) {
+    console.error("api/timeline: query failed", err);
+    return NextResponse.json([...fallbackTimeline].reverse());
+  }
 }

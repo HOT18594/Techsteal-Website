@@ -167,4 +167,11 @@ export const profiles = pgTable("profiles", {
   // Discord id stays denylisted — OAuth login refuses to recreate it.
   banned: boolean("banned").notNull().default(false),
   createdAt: text("created_at"),
-});
+}, (t) => [
+  // A linked Minecraft name must belong to exactly one member: the
+  // check-then-write in PATCH /api/profile races under concurrent claims,
+  // so the database gets the final word (partial index — many NULLs allowed).
+  uniqueIndex("profiles_mc_name_uq")
+    .on(t.minecraftUsername)
+    .where(sql`minecraft_username is not null`),
+]);

@@ -46,7 +46,12 @@ function SettingsContent() {
 
   // Load the full profile.
   useEffect(() => {
-    if (!user) return;
+    // Signed-out visitors must not sit on "Loading profile…" while (or after)
+    // the redirect effect fires — clear it here too.
+    if (!user) {
+      setLoadingProfile(false);
+      return;
+    }
     let cancelled = false;
     fetch("/api/profile")
       // A 500/503 must reach the catch (toast + keep the form) — mapping it
@@ -183,6 +188,10 @@ function SettingsContent() {
   };
 
   const isAdmin = user?.role === "admin" || profile?.role === "admin";
+  // When the profile request fails, `profile` stays null — fall back to the
+  // session user's truth instead of telling a verified member they're not.
+  const discordVerified = profile?.discordVerified ?? user?.discordVerified ?? false;
+  const onboarded = profile?.onboarded ?? user?.onboarded ?? false;
   const inputClass =
     "w-full bg-[var(--bg-2)] border border-[var(--border)] px-4 py-3 text-sm text-[var(--fg)] outline-none focus:border-[var(--accent)] transition placeholder:text-[var(--muted-2)] rounded-lg";
 
@@ -224,14 +233,14 @@ function SettingsContent() {
               </span>
               <span
                 className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-md border ${
-                  profile?.discordVerified
+                  discordVerified
                     ? "bg-[var(--emerald)]/10 border-[var(--emerald)]/40 text-[var(--emerald)]"
                     : "border-[var(--border)] text-[var(--muted-2)]"
                 }`}
               >
-                {profile?.discordVerified ? "Discord verified" : "Discord unverified"}
+                {discordVerified ? "Discord verified" : "Discord unverified"}
               </span>
-              {profile?.onboarded ? (
+              {onboarded ? (
                 <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-md border border-[var(--emerald)]/40 text-[var(--emerald)]">
                   Onboarded
                 </span>
@@ -306,7 +315,7 @@ function SettingsContent() {
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
             <div
               className={`flex-1 rounded-xl border px-4 py-3 text-sm ${
-                verifyState === "verified" || profile?.discordVerified
+                verifyState === "verified" || discordVerified
                   ? "border-[var(--emerald)]/40 bg-[var(--emerald)]/10 text-[var(--emerald)]"
                   : "border-[var(--border)] bg-[var(--bg-2)] text-[var(--muted)]"
               }`}
@@ -315,7 +324,7 @@ function SettingsContent() {
                 <span className="flex items-center gap-2">
                   <i className="fa-solid fa-spinner fa-spin text-[var(--accent)]" /> Checking…
                 </span>
-              ) : verifyState === "verified" || profile?.discordVerified ? (
+              ) : verifyState === "verified" || discordVerified ? (
                 <span className="flex items-center gap-2">
                   <i className="fa-solid fa-circle-check" /> Verified member
                 </span>
@@ -332,10 +341,10 @@ function SettingsContent() {
             <button
               className="btn-secondary flex-shrink-0"
               onClick={() => void verifyDiscord()}
-              disabled={verifyState === "checking" || profile?.discordVerified}
+              disabled={verifyState === "checking" || discordVerified}
             >
               <i className="fa-solid fa-rotate" />
-              {profile?.discordVerified ? "Verified" : "Verify"}
+              {discordVerified ? "Verified" : "Verify"}
             </button>
           </div>
         </div>

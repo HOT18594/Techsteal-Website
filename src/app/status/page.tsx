@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { siteConfig } from "@/lib/site";
 import { fallbackStatus } from "@/lib/fallback-data";
 import type { ServerStatus } from "@/types";
@@ -61,6 +61,9 @@ export default function StatusPage() {
   const refresh = async () => {
     setRefreshing(true);
     await refetch();
+    // Also re-probe the control-panel capability — a one-shot miss must not
+    // hide the card until the session changes.
+    void refreshControl();
     setRefreshing(false);
   };
 
@@ -104,12 +107,10 @@ export default function StatusPage() {
   const [control, setControl] = useState<{ configured: boolean; allowed: boolean } | null>(null);
   const [controlBusy, setControlBusy] = useState<"start" | "stop" | null>(null);
 
-  useEffect(() => {
-    if (sessionLoading) return;
-    if (!user) {
-      setControl(null);
-      return;
-    }
+  // One-shot probes are re-runnable: a single blipped request used to hide
+  // the entire Server Control card until the next full session change.
+  const refreshControl = useCallback(() => {
+    if (sessionLoading || !user) return;
     let cancelled = false;
     fetch("/api/server/control")
       .then((r) => (r.ok ? r.json() : null))
@@ -121,6 +122,8 @@ export default function StatusPage() {
       cancelled = true;
     };
   }, [user, sessionLoading]);
+
+  useEffect(() => refreshControl(), [refreshControl]);
 
   const runControl = async (action: "start" | "stop") => {
     if (controlBusy) return;

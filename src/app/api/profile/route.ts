@@ -163,7 +163,21 @@ export async function PATCH(request: NextRequest) {
     claimedAdmin = true;
   }
 
-  let updated = await updateAccount(account.id, patch);
+  let updated: Awaited<ReturnType<typeof updateAccount>>;
+  try {
+    updated = await updateAccount(account.id, patch);
+  } catch (err) {
+    // 23505 = unique violation on profiles_mc_name_uq. The SELECT above is a
+    // check-then-write that races under concurrent claims; the partial unique
+    // index is the real guarantee — surface the same friendly 409 here.
+    if ((err as { code?: string } | null)?.code === "23505") {
+      return NextResponse.json(
+        { error: "That Minecraft username is already linked to another member." },
+        { status: 409 }
+      );
+    }
+    throw err;
+  }
   if (updated && claimedAdmin) {
     // The server_control grant is merged in SQL — the old read-modify-write
     // of the whole array could erase a permission an admin granted a moment

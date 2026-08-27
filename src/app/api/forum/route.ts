@@ -49,6 +49,17 @@ function serializeThread(row: ThreadRow, avatarUrl: string | null, hasPoll: bool
 // server-side search (?q=), category filter, pagination and an unanswered
 // filter, so the forum stays fast as threads pile up.
 export async function GET(request: NextRequest) {
+  // A pooler blip must not 500 the whole listing — degrade to the same
+  // fallback data the no-database branch serves, keeping the site readable.
+  try {
+    return await listThreads(request);
+  } catch (err) {
+    console.error("api/forum: list query failed", err);
+    return NextResponse.json(fallbackThreads);
+  }
+}
+
+async function listThreads(request: NextRequest): Promise<NextResponse> {
   const db = getDb();
   if (!db) return NextResponse.json(fallbackThreads);
 

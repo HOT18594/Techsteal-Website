@@ -24,7 +24,8 @@ const ToastContext = createContext<{
 
 // Most error toasts in this codebase start with one of these — detect them
 // so a success icon never appears on a failure message.
-const ERROR_TITLE_RE = /^(couldn|can't|wrong|failed|not verified|sign in failed|too many|delete[ds]? blocked)/i;
+const ERROR_TITLE_RE =
+  /^(couldn|can't|can’t|wrong|failed|error|not verified|not allowed|no |nothing was|sign in|slow down|too |unknown|unsupported|image too|delete[ds]? blocked|thread locked|setup incomplete)/i;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<ToastState | null>(null);

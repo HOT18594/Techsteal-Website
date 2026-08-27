@@ -14,17 +14,13 @@ export async function GET() {
   const db = getDb();
   if (!db) return NextResponse.json({ poll: null });
 
-  const [row] = await db
-    .select({
-      poll: forumPolls,
-      threadTitle: forumThreads.title,
-      threadCategory: forumThreads.category,
-    })
-    .from(forumPolls)
-    .innerJoin(forumThreads, eq(forumPolls.threadId, forumThreads.id))
-    .where(gt(forumPolls.endsAt, new Date()))
-    .orderBy(desc(forumPolls.id))
-    .limit(1);
+  let row: { poll: typeof forumPolls.$inferSelect; threadTitle: string; threadCategory: string } | null;
+  try {
+    row = await activeRow(db);
+  } catch (err) {
+    console.error("api/polls/active: query failed", err);
+    return NextResponse.json({ poll: null });
+  }
   if (!row) return NextResponse.json({ poll: null });
 
   const user = await getSessionUser();
@@ -38,4 +34,21 @@ export async function GET() {
       threadCategory: row.threadCategory,
     },
   });
+}
+
+async function activeRow(
+  db: Exclude<ReturnType<typeof getDb>, null>
+): Promise<{ poll: typeof forumPolls.$inferSelect; threadTitle: string; threadCategory: string } | null> {
+  const [row] = await db
+    .select({
+      poll: forumPolls,
+      threadTitle: forumThreads.title,
+      threadCategory: forumThreads.category,
+    })
+    .from(forumPolls)
+    .innerJoin(forumThreads, eq(forumPolls.threadId, forumThreads.id))
+    .where(gt(forumPolls.endsAt, new Date()))
+    .orderBy(desc(forumPolls.id))
+    .limit(1);
+  return row ?? null;
 }

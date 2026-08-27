@@ -123,6 +123,16 @@ export function RichEditor({
   // are stale closures and let the cap slip.
   const uploadingCount = useRef(0);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
+  // Per-upload progress keyed by an incrementing id — up to four XHRs run
+  // concurrently and writing all of them into one shared percentage made
+  // the bar jump up and down ("37% → 92% → 15%"). We render their average.
+  const progressRef = useRef<Map<number, number>>(new Map());
+  const nextUploadId = useRef(0);
+  const pushProgress = useCallback((id: number, pct: number) => {
+    progressRef.current.set(id, pct);
+    const vals = [...progressRef.current.values()];
+    setUploadPct(Math.round(vals.reduce((a, b) => a + b, 0) / vals.length));
+  }, []);
   const [dragOver, setDragOver] = useState(false);
   // Embeds that finished while Preview was open (textarea unmounted) —
   // inserted as soon as Write mode remounts the textarea. A QUEUE, not a
@@ -235,12 +245,13 @@ export function RichEditor({
       }
       uploadingCount.current += 1;
       setUploading(uploadingCount.current);
-      setUploadPct(0);
+      const uploadId = ++nextUploadId.current;
+      pushProgress(uploadId, 0);
       try {
         // Downscale/compress in the browser first — screenshots straight out
         // of Minecraft are often 3–8 MB PNGs for no visual benefit.
         const compressed = await compressImage(file, 1920, 0.85);
-        const url = await xhrUpload(compressed, setUploadPct, inflightUploads.current);
+        const url = await xhrUpload(compressed, (pct) => pushProgress(uploadId, pct), inflightUploads.current);
         const snippet = `\n![${compressed.name.replace(/[^\w.-]/g, "").slice(0, 60) || "image"}](${url})\n`;
         if (taRef.current) {
           insertAtCursor(snippet);
@@ -257,12 +268,16 @@ export function RichEditor({
         if (e instanceof Error && e.message === "aborted") return;
         onUploadError?.(e instanceof Error ? e.message : "Upload failed — try again.");
       } finally {
+        progressRef.current.delete(uploadId);
         uploadingCount.current = Math.max(0, uploadingCount.current - 1);
         setUploading(uploadingCount.current);
-        if (uploadingCount.current === 0) setUploadPct(null);
+        if (uploadingCount.current === 0) {
+          progressRef.current.clear();
+          setUploadPct(null);
+        }
       }
     },
-    [disabled, insertAtCursor, onUploadError]
+    [disabled, insertAtCursor, onUploadError, pushProgress]
   );
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {

@@ -140,13 +140,15 @@ export default function ThreadPage() {
     if (busyReply !== null) return;
     const ok = window.confirm("Delete this reply? This can't be undone.");
     if (!ok) return;
+    const threadId = id;
     setBusyReply(reply.id ?? 0);
     try {
-      const res = await fetch(`/api/forum/${id}`, {
+      const res = await fetch(`/api/forum/${threadId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ replyId: reply.id }),
       });
+      if (threadId !== idRef.current) return; // navigated away mid-delete
       if (!res.ok) {
         show("Couldn't delete", "The server rejected the request.", "error");
         return;
@@ -155,7 +157,9 @@ export default function ThreadPage() {
       setThread((t) => (t ? { ...t, replies: Math.max(0, t.replies - 1) } : t));
       show("Deleted", "Reply removed.");
     } catch {
-      show("Couldn't delete", "Check your connection and try again.");
+      if (threadId === idRef.current) {
+        show("Couldn't delete", "Check your connection and try again.");
+      }
     } finally {
       setBusyReply(null);
     }
@@ -172,6 +176,7 @@ export default function ThreadPage() {
       return;
     }
     if (busyLike !== null) return;
+    const threadId = id;
     setBusyLike(reply.id ?? 0);
     const liked = reply.liked === true;
     setReplies((prev) =>
@@ -182,15 +187,17 @@ export default function ThreadPage() {
       )
     );
     try {
-      const res = await fetch(`/api/forum/${id}/like`, {
+      const res = await fetch(`/api/forum/${threadId}/like`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ replyId: reply.id }),
       });
+      if (threadId !== idRef.current) return; // navigated away mid-like
       if (!res.ok) throw new Error(`like failed (${res.status})`);
       const data = await res.json() as { reply: ForumReply; liked: boolean };
       setReplies((prev) => prev.map((r) => (r.id === reply.id ? { ...data.reply, liked: data.liked } : r)));
     } catch {
+      if (threadId !== idRef.current) return; // navigated away — leave new thread's state alone
       setReplies((prev) =>
         prev.map((r) =>
           r.id === reply.id ? { ...r, liked: reply.liked ?? false, likes: reply.likes ?? 0 } : r
@@ -315,13 +322,15 @@ export default function ThreadPage() {
 
   const pinReply = async (reply: ForumReply) => {
     if (!isAdmin || busyReply !== null) return;
+    const threadId = id;
     setBusyReply(reply.id ?? 0);
     try {
-      const res = await fetch(`/api/forum/${id}`, {
+      const res = await fetch(`/api/forum/${threadId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ replyId: reply.id, pinned: !reply.pinned }),
       });
+      if (threadId !== idRef.current) return; // navigated away mid-action
       if (!res.ok) {
         show("Couldn't update", "The server rejected the request.", "error");
         return;
@@ -330,7 +339,9 @@ export default function ThreadPage() {
       setReplies((prev) => sortReplies(prev.map((r) => (r.id === updated.id ? updated : r))));
       show(updated.pinned ? "Pinned" : "Unpinned", `Comment ${updated.pinned ? "pinned" : "unpinned"}.`);
     } catch {
-      show("Couldn't update", "Check your connection and try again.");
+      if (threadId === idRef.current) {
+        show("Couldn't update", "Check your connection and try again.");
+      }
     } finally {
       setBusyReply(null);
     }
