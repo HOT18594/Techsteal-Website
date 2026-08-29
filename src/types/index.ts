@@ -1,7 +1,9 @@
 // Shared domain types used across API routes, components, and seed data.
 
 export interface Member {
-  id?: number;
+  /** Stable account id ("discord:<snowflake>") from /api/members. Used as the
+   *  React key, so it must survive roster reordering. */
+  id?: string;
   name: string;
   role: string;
   icon: string;
@@ -40,10 +42,8 @@ export interface ForumThread {
   /** Thread-level likes. */
   likes?: number;
   /** Whether the CURRENT viewer has liked it (server-computed per session;
-   * raw liker ids stay server-side). */
+   * raw liker ids stay server-side — see lib/public-row.ts). */
   liked?: boolean;
-  /** @deprecated server responses no longer include liker account ids. */
-  likedBy?: string[];
   /** Set when the post was edited; shown as an "edited" marker. */
   editedAt?: string | null;
   createdAt?: string | null;
@@ -85,8 +85,6 @@ export interface ForumReply {
   likes?: number;
   /** Whether the CURRENT viewer has liked it (server-computed per session). */
   liked?: boolean;
-  /** @deprecated server responses no longer include liker account ids. */
-  likedBy?: string[];
   /** Admin-pinned comment — shows first with a pin badge. */
   pinned?: boolean;
   /** Set when the reply was edited; shown as an "edited" marker. */
@@ -111,8 +109,6 @@ export interface GalleryItem {
   images?: string[];
   /** Whether the CURRENT viewer has liked this post (server-computed). */
   liked?: boolean;
-  /** @deprecated server responses no longer include liker account ids. */
-  likedBy?: string[];
   /** Admin-pinned posts float to the top with a badge. */
   featured?: boolean;
   views?: number;

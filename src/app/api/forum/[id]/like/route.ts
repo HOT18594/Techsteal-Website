@@ -6,6 +6,7 @@ import { getSessionUser } from "@/lib/auth";
 import { ACCOUNT_DB_ERROR_MESSAGE, accountGate } from "@/lib/accounts";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { publicRow } from "@/lib/public-row";
+import { parseRouteId } from "@/lib/route-ids";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +23,8 @@ export async function POST(
   }
 
   const { id } = await params;
-  const threadId = Number(id);
-  if (!Number.isInteger(threadId)) {
+  const threadId = parseRouteId(id);
+  if (threadId === null) {
     return NextResponse.json({ error: "Invalid thread id" }, { status: 400 });
   }
 
@@ -32,8 +33,13 @@ export async function POST(
   // reject it so a client bug can't toggle the wrong thing.
   let replyId: number | null = null;
   if (body?.replyId !== undefined && body?.replyId !== null) {
-    const parsed = typeof body.replyId === "number" ? body.replyId : Number(body.replyId);
-    if (!Number.isInteger(parsed) || parsed <= 0) {
+    const parsed =
+      typeof body.replyId === "number"
+        ? Number.isSafeInteger(body.replyId) && body.replyId > 0
+          ? body.replyId
+          : null
+        : parseRouteId(typeof body.replyId === "string" ? body.replyId : null);
+    if (parsed === null) {
       return NextResponse.json({ error: "Invalid replyId" }, { status: 400 });
     }
     replyId = parsed;

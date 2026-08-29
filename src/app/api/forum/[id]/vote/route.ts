@@ -6,6 +6,7 @@ import { getSessionUser } from "@/lib/auth";
 import { accountGate, ACCOUNT_DB_ERROR_MESSAGE } from "@/lib/accounts";
 import { isRateLimited } from "@/lib/rate-limit";
 import { serializePoll } from "@/lib/polls";
+import { parseRouteId } from "@/lib/route-ids";
 
 export const dynamic = "force-dynamic";
 
@@ -23,8 +24,8 @@ export async function POST(
   }
 
   const { id } = await params;
-  const threadId = Number(id);
-  if (!Number.isInteger(threadId)) {
+  const threadId = parseRouteId(id);
+  if (threadId === null) {
     return NextResponse.json({ error: "Invalid thread id" }, { status: 400 });
   }
 
@@ -95,8 +96,8 @@ export async function DELETE(
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
   const { id } = await params;
-  const threadId = Number(id);
-  if (!Number.isInteger(threadId)) {
+  const threadId = parseRouteId(id);
+  if (threadId === null) {
     return NextResponse.json({ error: "Invalid thread id" }, { status: 400 });
   }
   const db = getDb();

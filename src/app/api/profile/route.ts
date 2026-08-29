@@ -5,6 +5,7 @@ import { addPermissions, findAccount, updateAccount } from "@/lib/accounts";
 import { getSessionUser, setSession } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getAdminCode } from "@/lib/admin-code";
+import { isValidMcName } from "@/lib/mc-name";
 import { isRateLimited, rateLimitIp } from "@/lib/rate-limit";
 import { profiles } from "@/lib/schema";
 import type { Account } from "@/types";
@@ -49,10 +50,6 @@ export async function GET() {
   return NextResponse.json({ profile: account });
 }
 
-// Valid Minecraft usernames: 1–16 chars of letters, digits or underscore.
-// (Since 2022 Mojang allows any length ≥1 and prefixes like "." are illegal.)
-const MC_NAME_RE = /^[A-Za-z0-9_]{1,16}$/;
-
 // Update profile fields. Body may include:
 //   { minecraftUsername?, onboarded?, adminCode? }
 //
@@ -74,7 +71,7 @@ export async function PATCH(request: NextRequest) {
 
   if (typeof body.minecraftUsername === "string") {
     const name = body.minecraftUsername.trim();
-    if (name.length > 0 && !MC_NAME_RE.test(name)) {
+    if (name.length > 0 && !isValidMcName(name)) {
       return NextResponse.json(
         { error: "Minecraft usernames can only use letters, numbers and underscores (1–16 chars)." },
         { status: 400 }
@@ -142,7 +139,8 @@ export async function PATCH(request: NextRequest) {
         { status: 429 }
       );
     }
-    if (!getAdminCode()) {
+    const configuredCode = getAdminCode();
+    if (!configuredCode) {
       return NextResponse.json(
         { error: "The admin code isn't configured on this server yet." },
         { status: 403 }
@@ -150,9 +148,8 @@ export async function PATCH(request: NextRequest) {
     }
     // Compare SHA-256 digests instead of raw strings — constant-time-ish and
     // avoids any early-exit string comparison leaking length/prefix info.
-    const configuredCode = getAdminCode();
     const attempt = createHash("sha256").update(body.adminCode.trim()).digest();
-    const expected = createHash("sha256").update(configuredCode ?? "").digest();
+    const expected = createHash("sha256").update(configuredCode).digest();
     if (!timingSafeEqual(attempt, expected)) {
       return NextResponse.json(
         { error: "That admin code isn't right." },
@@ -176,7 +173,15 @@ export async function PATCH(request: NextRequest) {
         { status: 409 }
       );
     }
-    throw err;
+    // Anything else here is a database failure, not a bad request. Rethrowing
+    // surfaced Next's generic 500 ("Internal Server Error") and the settings
+    // page rendered it as an unexplained save failure; a 503 with the same
+    // wording as every other outage path is both truthful and retryable.
+    console.error("profile PATCH: update failed", err);
+    return NextResponse.json(
+      { error: "The member database is unreachable right now — try again in a moment." },
+      { status: 503 }
+    );
   }
   if (updated && claimedAdmin) {
     // The server_control grant is merged in SQL — the old read-modify-write

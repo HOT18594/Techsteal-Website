@@ -92,7 +92,7 @@ function OnboardingContent() {
         // Auth failure / server error — NOT "not configured". Re-check so
         // the user can try again instead of being told setup is missing.
         setVerifyState("idle");
-        show("Couldn't verify", "Something went wrong — try again in a moment.");
+        show("Couldn't verify", "Something went wrong — try again in a moment.", "error");
         return;
       }
       const data = (await res.json()) as { configured: boolean; verified: boolean };
@@ -107,7 +107,7 @@ function OnboardingContent() {
       }
     } catch {
       setVerifyState("idle");
-      show("Couldn't reach the server", "Check your connection and try again.");
+      show("Couldn't reach the server", "Check your connection and try again.", "error");
     }
   };
 
@@ -148,6 +148,11 @@ function OnboardingContent() {
           return;
         }
       }
+      // The name resolved (or was cleared) — drop any error left over from an
+      // earlier attempt. Without this, fixing a typo and finishing kept the
+      // red "Couldn't find that username." line visible under the input for
+      // the whole redirect.
+      setMcError("");
       const patchBody: Record<string, unknown> = { onboarded: true };
       if (name) patchBody.minecraftUsername = name;
       const res = await fetch("/api/profile", {
@@ -278,9 +283,10 @@ function OnboardingContent() {
               className={`rounded-xl border px-5 py-4 mb-6 flex items-center gap-3 ${
                 verifyState === "verified"
                   ? "border-[var(--emerald)]/40 bg-[var(--emerald)]/10 text-[var(--emerald)]"
-                  : verifyState === "not_configured"
-                    ? "border-[var(--border)] bg-[var(--bg-2)] text-[var(--muted)]"
-                    : "border-[var(--border)] bg-[var(--bg-2)] text-[var(--muted)]"
+                  : // Every non-verified state shares the neutral card — the
+                    // `not_configured` branch used to repeat the default one
+                    // verbatim, which read as if it were styled differently.
+                    "border-[var(--border)] bg-[var(--bg-2)] text-[var(--muted)]"
               }`}
             >
               <i
@@ -289,7 +295,9 @@ function OnboardingContent() {
                     ? "fa-solid fa-spinner fa-spin text-[var(--accent)]"
                     : verifyState === "verified"
                       ? "fa-solid fa-circle-check"
-                      : "fa-solid fa-user-check"
+                      : verifyState === "skipped"
+                        ? "fa-solid fa-forward"
+                        : "fa-solid fa-user-check"
                 }`}
               />
               <div className="text-sm">
@@ -298,9 +306,13 @@ function OnboardingContent() {
                 {verifyState === "not_configured"
                   ? "Verification isn't set up yet — you can skip for now."
                   : null}
-                {verifyState === "idle" || verifyState === "skipped"
-                  ? "Not verified yet."
+                {/* "skipped" used to render the same "Not verified yet." as
+                    "idle", so coming Back to this step after skipping gave no
+                    sign the choice had registered. */}
+                {verifyState === "skipped"
+                  ? "Skipped — you can verify any time from Profile & Settings."
                   : null}
+                {verifyState === "idle" ? "Not verified yet." : null}
               </div>
             </div>
 
@@ -365,6 +377,10 @@ function OnboardingContent() {
 
             {mcSkin ? (
               <div className="flex items-center gap-4 rounded-xl border border-[var(--border-strong)] bg-[var(--bg-2)] p-4 mb-5">
+                {/* A remote Minotar render at a fixed 64px. next/image would
+                    add wrapper markup for no gain: images.unoptimized is on
+                    in next.config.ts, so there's no optimizer in the path. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={mcSkin}
                   alt={`${mcUsername} skin`}

@@ -106,3 +106,74 @@ export async function uploadImage(
 
   return `${url}/storage/v1/object/public/${BUCKET}/${path}`;
 }
+
+/**
+ * Turn a public storage URL back into its object path inside the bucket.
+ * Returns null for URLs that don't belong to our bucket on our project — a
+ * legacy/external image URL (or a crafted one) must never make us issue a
+ * delete against an arbitrary path.
+ */
+export function storagePathFromUrl(publicUrl: string): string | null {
+  let base: string;
+  try {
+    base = supabaseUrl();
+  } catch {
+    return null;
+  }
+  const prefix = `${base}/storage/v1/object/public/${BUCKET}/`;
+  if (!publicUrl.startsWith(prefix)) return null;
+  const path = publicUrl.slice(prefix.length).split("?")[0];
+  // No traversal, no empty path.
+  if (!path || path.includes("..")) return null;
+  return path;
+}
+
+/**
+ * Delete gallery/embed objects by their public URLs. Best-effort: a failed
+ * delete is logged, never thrown, because the DB rows are already gone and
+ * failing the request would leave the user staring at an error for a post
+ * that no longer exists. URLs outside our bucket are ignored.
+ *
+ * Returns the number of objects Supabase reported as deleted.
+ */
+export async function deleteImagesByUrl(publicUrls: string[]): Promise<number> {
+  const paths = [
+    ...new Set(
+      publicUrls
+        .map((u) => (typeof u === "string" ? storagePathFromUrl(u) : null))
+        .filter((p): p is string => Boolean(p))
+    ),
+  ];
+  if (paths.length === 0) return 0;
+
+  let url: string;
+  let key: string;
+  try {
+    url = supabaseUrl();
+    key = serviceRoleKey();
+  } catch {
+    return 0; // storage not configured — nothing to clean up
+  }
+
+  try {
+    const res = await fetch(`${url}/storage/v1/object/${BUCKET}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ prefixes: paths }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => {});
+      console.error(`storage: delete failed (${res.status}) for ${paths.length} object(s)`);
+      return 0;
+    }
+    const deleted = (await res.json().catch(() => null)) as unknown;
+    return Array.isArray(deleted) ? deleted.length : paths.length;
+  } catch (err) {
+    console.error("storage: delete request failed", err);
+    return 0;
+  }
+}

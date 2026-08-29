@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { siteConfig } from "@/lib/site";
 import { fallbackStatus } from "@/lib/fallback-data";
 import type { ServerStatus } from "@/types";
@@ -63,7 +63,7 @@ export default function StatusPage() {
     await refetch();
     // Also re-probe the control-panel capability — a one-shot miss must not
     // hide the card until the session changes.
-    void refreshControl();
+    refreshControl();
     setRefreshing(false);
   };
 
@@ -109,21 +109,36 @@ export default function StatusPage() {
 
   // One-shot probes are re-runnable: a single blipped request used to hide
   // the entire Server Control card until the next full session change.
+  //
+  // Staleness is handled with a sequence ref rather than a returned cleanup
+  // closure: `refresh()` below also calls this, and it had no way to hold on
+  // to a cleanup, so a manual refresh raced the effect's probe and whichever
+  // response landed last won. Bumping the sequence makes only the newest
+  // probe able to write.
+  const controlSeq = useRef(0);
   const refreshControl = useCallback(() => {
     if (sessionLoading || !user) return;
-    let cancelled = false;
+    const seq = ++controlSeq.current;
     fetch("/api/server/control")
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { configured?: boolean; allowed?: boolean } | null) => {
-        if (!cancelled && d) setControl({ configured: !!d.configured, allowed: !!d.allowed });
+        if (controlSeq.current !== seq || !d) return;
+        setControl({ configured: !!d.configured, allowed: !!d.allowed });
       })
       .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
   }, [user, sessionLoading]);
 
-  useEffect(() => refreshControl(), [refreshControl]);
+  useEffect(() => {
+    refreshControl();
+    // Abandon an in-flight probe's result on unmount / re-run. The ref is read
+    // (and written) at cleanup time on purpose — that's the whole point of the
+    // sequence guard, so the exhaustive-deps ref warning doesn't apply: there
+    // is no "current at effect time" value we want here, we want the latest.
+    const seqRef = controlSeq;
+    return () => {
+      seqRef.current++;
+    };
+  }, [refreshControl]);
 
   const runControl = async (action: "start" | "stop") => {
     if (controlBusy) return;
@@ -139,7 +154,7 @@ export default function StatusPage() {
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        show("Couldn't " + (action === "start" ? "start" : "stop"), data.error ?? "Try again soon.");
+        show("Couldn't " + (action === "start" ? "start" : "stop"), data.error ?? "Try again soon.", "error");
         return;
       }
       show(
@@ -176,6 +191,14 @@ export default function StatusPage() {
     if (!statusLive)
       return { icon: "fa-satellite-dish", text: "Status data unavailable right now." };
     if (!online) return { icon: "fa-bed", text: "Nobody here — the server is down." };
+    // Online with players but no names: the query protocol hides the list on
+    // some setups. "The realm is quiet right now." directly contradicted the
+    // "N playing" line right above it.
+    if (players > 0)
+      return {
+        icon: "fa-user-secret",
+        text: `${players} ${players === 1 ? "player is" : "players are"} online, but the server isn't sharing names.`,
+      };
     return { icon: "fa-leaf", text: "The realm is quiet right now." };
   })();
 
@@ -313,7 +336,7 @@ export default function StatusPage() {
                   {statusLoading && !statusLive
                     ? "Checking…"
                     : statusLive
-                      ? `${playerList.length}/${max} online`
+                      ? `${players}/${max} online`
                       : "Unknown"}
                 </span>
               </div>
@@ -336,6 +359,16 @@ export default function StatusPage() {
                       <span className="truncate max-w-[140px]">{name}</span>
                     </span>
                   ))}
+                  {/* The count and the name list come from different fields:
+                      the query protocol only returns a SAMPLE of names on many
+                      servers, so "12 playing" next to 8 chips is correct, not
+                      a bug. Say so rather than letting it read as one. */}
+                  {playerList.length < players ? (
+                    <span className="w-full text-[11px] text-[var(--muted-2)] mt-1">
+                      Showing {playerList.length} of {players} names — the server only reports a
+                      sample.
+                    </span>
+                  ) : null}
                 </div>
               ) : (
                 <div className="text-sm text-[var(--muted-2)] py-7 text-center border border-dashed border-[var(--border)] rounded-xl">
@@ -442,13 +475,17 @@ export default function StatusPage() {
                     </button>
                   </span>
                 </div>
-                {[
+                {([
+                  // `as const` tuples: without them TS widened every row to
+                  // string[], which cost a `label as string` cast on the key
+                  // and let a typo in `kind` pass unnoticed.
                   ["Version", `${version} · ${software}`, "text"],
                   ["Difficulty", siteConfig.difficulty, "text"],
                   ["Whitelist", siteConfig.whitelist, "emerald"],
                   ["Location", siteConfig.location, "text"],
-                ].map(([label, value, kind]) => (
-                  <div key={label as string} className="flex justify-between items-center gap-4 pb-2 border-b border-[var(--border)] last:border-b-0 last:pb-0">
+                ] as const satisfies readonly (readonly [string, string, "text" | "emerald"])[]).map(
+                  ([label, value, kind]) => (
+                  <div key={label} className="flex justify-between items-center gap-4 pb-2 border-b border-[var(--border)] last:border-b-0 last:pb-0">
                     <span className="text-sm text-[var(--muted)] flex-shrink-0">{label}</span>
                     <span className="min-w-0 text-right break-all">
                       {kind === "emerald" ? (
@@ -458,7 +495,8 @@ export default function StatusPage() {
                       )}
                     </span>
                   </div>
-                ))}
+                  )
+                )}
               </div>
               <Link href="/join" className="btn-secondary w-full justify-center mt-5">
                 <i className="fa-solid fa-compass" />

@@ -8,41 +8,17 @@ import { isRateLimited, rateLimitIp } from "@/lib/rate-limit";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { serializePoll } from "@/lib/polls";
 import { publicRow } from "@/lib/public-row";
+import { parseRouteId } from "@/lib/route-ids";
+import { shouldCountView } from "@/lib/view-counter";
 
 export const dynamic = "force-dynamic";
 
-/** Parse a reply id from a JSON body, rejecting null/""/0. */
+/** Parse a reply id from a JSON body, rejecting null/""/0/negatives. */
 function parseReplyId(value: unknown): number | null {
-  const id =
-    typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
-  return Number.isInteger(id) && id > 0 ? id : null;
-}
-
-// View-count dedupe: one count per viewer per thread per 6h. In-memory like
-// the rate limiter — best-effort on serverless, plenty for this site.
-const VIEW_SEEN = new Map<string, number>();
-const VIEW_TTL = 6 * 60 * 60_000;
-
-function countView(threadId: number, viewer: string): boolean {
-  const now = Date.now();
-  if (VIEW_SEEN.size > 5000) {
-    // Drop stale entries so the map can't grow forever.
-    for (const [k, ts] of VIEW_SEEN) {
-      if (now - ts > VIEW_TTL) VIEW_SEEN.delete(k);
-    }
-    // Still over cap (flood of unique viewers within one TTL window):
-    // hard-evict oldest-inserted keys — bounded memory beats perfect counts.
-    while (VIEW_SEEN.size > 4500) {
-      const oldest = VIEW_SEEN.keys().next();
-      if (oldest.done) break;
-      VIEW_SEEN.delete(oldest.value);
-    }
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
   }
-  const key = `${threadId}:${viewer}`;
-  const last = VIEW_SEEN.get(key);
-  if (last !== undefined && now - last < VIEW_TTL) return false;
-  VIEW_SEEN.set(key, now);
-  return true;
+  return parseRouteId(typeof value === "string" ? value : null);
 }
 
 // Thread detail: thread + its replies (pinned comments first, then oldest)
@@ -52,8 +28,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const threadId = Number(id);
-  if (!Number.isInteger(threadId)) {
+  const threadId = parseRouteId(id);
+  if (threadId === null) {
     return NextResponse.json({ error: "Invalid thread id" }, { status: 400 });
   }
 
@@ -78,7 +54,7 @@ export async function GET(
   const user = await getSessionUser();
   const viewer = user?.id ?? rateLimitIp(request);
   let thread = threads[0];
-  if (countView(threadId, viewer)) {
+  if (shouldCountView("forum", threadId, viewer)) {
     const [bumped] = await db
       .update(forumThreads)
       .set({ views: sql`${forumThreads.views} + 1` })
@@ -123,8 +99,8 @@ export async function POST(
   }
 
   const { id } = await params;
-  const threadId = Number(id);
-  if (!Number.isInteger(threadId)) {
+  const threadId = parseRouteId(id);
+  if (threadId === null) {
     return NextResponse.json({ error: "Invalid thread id" }, { status: 400 });
   }
 
@@ -224,6 +200,9 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // Read the session once: checkAdmin() answers the authorization question,
+  // but the response body also needs the viewer's id to derive `liked`.
+  const viewer = await getSessionUser();
   const adminVerdict = await checkAdmin();
   if (adminVerdict === "db_error") {
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
@@ -233,8 +212,8 @@ export async function PATCH(
   }
 
   const { id } = await params;
-  const threadId = Number(id);
-  if (!Number.isInteger(threadId)) {
+  const threadId = parseRouteId(id);
+  if (threadId === null) {
     return NextResponse.json({ error: "Invalid thread id" }, { status: 400 });
   }
 
@@ -261,7 +240,6 @@ export async function PATCH(
 
   const avatars = await resolveAuthorAvatars([rows[0]]);
   const info = avatarInfoFor(avatars, rows[0]);
-  const viewer = await getSessionUser();
   const liked = viewer ? ((rows[0].likedBy ?? []) as string[]).includes(viewer.id) : false;
   // `color` resolved like GET returns — the client replaces the whole reply
   // object with this, and the raw column default would repaint its tile.
@@ -285,8 +263,8 @@ export async function PUT(
   }
 
   const { id } = await params;
-  const threadId = Number(id);
-  if (!Number.isInteger(threadId)) {
+  const threadId = parseRouteId(id);
+  if (threadId === null) {
     return NextResponse.json({ error: "Invalid thread id" }, { status: 400 });
   }
 
@@ -309,8 +287,8 @@ export async function PUT(
   }
 
   // Live-account gate for the OWNER path: a removed member's unexpired
-  // cookie must not keep editing content. (Admins pass isAdminUser, which
-  // already re-reads the DB and rejects banned accounts.)
+  // cookie must not keep editing content. (The admin path below calls
+  // checkAdmin(), which re-reads the DB and rejects banned accounts.)
   const gate = await accountGate(user.id);
   if (gate.status === "missing" || gate.status === "banned") {
     return NextResponse.json(
@@ -372,8 +350,8 @@ export async function DELETE(
   }
 
   const { id } = await params;
-  const threadId = Number(id);
-  if (!Number.isInteger(threadId)) {
+  const threadId = parseRouteId(id);
+  if (threadId === null) {
     return NextResponse.json({ error: "Invalid thread id" }, { status: 400 });
   }
 

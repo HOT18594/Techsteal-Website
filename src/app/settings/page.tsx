@@ -103,6 +103,11 @@ function SettingsContent() {
     setMcSaved(false);
     try {
       // If a name was typed, validate it against Mojang first.
+      // The resolved skin is held locally and only painted once the PATCH
+      // lands: setting it here meant a failed save (name taken by another
+      // member, 503, offline) left the card showing a skin the account
+      // doesn't actually have, next to the old username in the input.
+      let nextSkin: string | null = null;
       if (name) {
         const res = await fetch(`/api/minecraft/skin?username=${encodeURIComponent(name)}`);
         const data = (await res.json()) as { skin?: string; error?: string };
@@ -110,14 +115,13 @@ function SettingsContent() {
           show("Unknown username", data.error ?? "That Minecraft username doesn't exist.", "error");
           return;
         }
-        setMcSkin(data.skin);
-      } else {
-        setMcSkin(null);
+        nextSkin = data.skin;
       }
       // Setting a Minecraft username is the key onboarding step — mark the
       // account onboarded so the reminder banner stops nagging. (Explicitly
       // clearing it to empty still counts, matching "done enough".)
       await patch({ minecraftUsername: name || null, onboarded: true });
+      setMcSkin(nextSkin);
       setMcSaved(true);
       await refresh();
       show("Saved", name ? `Minecraft: ${name}` : "Minecraft username cleared.");
@@ -148,7 +152,7 @@ function SettingsContent() {
         await refresh();
         show("Admin unlocked", "Welcome to the admin team. 🔑");
       } else {
-        show("Wrong code", data.error ?? "That admin code isn't right.");
+        show("Wrong code", data.error ?? "That admin code isn't right.", "error");
       }
     } catch {
       show("Couldn't check code", "Try again in a moment.", "error");
@@ -163,7 +167,7 @@ function SettingsContent() {
       const res = await fetch("/api/auth/discord/verify", { method: "POST" });
       if (!res.ok) {
         setVerifyState("idle");
-        show("Couldn't verify", "Something went wrong — try again in a moment.");
+        show("Couldn't verify", "Something went wrong — try again in a moment.", "error");
         return;
       }
       const data = (await res.json()) as { configured: boolean; verified: boolean };
@@ -183,7 +187,7 @@ function SettingsContent() {
       }
     } catch {
       setVerifyState("idle");
-      show("Couldn't reach the server", "Check your connection and try again.");
+      show("Couldn't reach the server", "Check your connection and try again.", "error");
     }
   };
 
@@ -264,6 +268,10 @@ function SettingsContent() {
           </p>
           <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
             {mcSkin ? (
+              // A remote Minotar render at a fixed 56px. next/image adds
+              // wrapper markup for no gain here: images.unoptimized is on in
+              // next.config.ts, so nothing optimizes the request anyway.
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={mcSkin}
                 alt="Minecraft skin"

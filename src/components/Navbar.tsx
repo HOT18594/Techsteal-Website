@@ -180,7 +180,13 @@ export function Navbar() {
         <div
           id="profile-popover"
           ref={profileRef}
-          role="menu"
+          // NOT role="menu": that contract requires every child to be a
+          // role="menuitem" and arrow-key navigation between them. This
+          // popover's children are ordinary links plus an identity header, so
+          // screen readers announced "menu, 0 items" and skipped the lot.
+          // role="group" + a label announces it correctly and keeps Tab
+          // working the way the markup already behaves.
+          role="group"
           aria-label="Profile menu"
           aria-hidden={!profileOpen}
           inert={!profileOpen}

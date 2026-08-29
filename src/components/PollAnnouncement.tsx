@@ -45,7 +45,11 @@ export function PollAnnouncement() {
   const { user, loading } = useSession();
   const { show } = useToast();
   const [poll, setPoll] = useState<ActivePoll | null>(null);
-  const [ready, setReady] = useState(loading);
+  // Starts false and is set once the session is known and the fetch settles.
+  // It used to be seeded from `loading`, which meant "ready" was true on the
+  // very first render (while the session was still loading) and false after —
+  // backwards, and only harmless because `visible` also tests `!loading`.
+  const [ready, setReady] = useState(false);
   // Polls this session already engaged with (voted in). The myVote guard
   // below must only hide polls that were voted in BEFORE the page loaded —
   // without this, voting inline would set myVote and instantly close the
@@ -102,14 +106,21 @@ export function PollAnnouncement() {
   // checked `poll`, so a fetched-but-hidden poll (already voted/dismissed,
   // guarded during render AFTER hooks) locked body scroll with nothing
   // rendered to close it.
+  //
+  // `poll` is non-null past the `!!poll` test, so the two later clauses don't
+  // re-test it: the redundant `poll !== null &&` guards read as if the value
+  // could change mid-expression.
   const visible =
     ready && !loading && !!user && !!poll &&
     // Already voted in this poll BEFORE this page load → not an
     // announcement for them anymore. (Votes cast inside this popup keep it
     // open via `engaged` so the user sees the results.)
-    !(poll !== null && poll.myVote && !engaged.has(poll.id)) &&
-    // Dismissed earlier → stays dismissed until a NEW poll starts.
-    !(poll !== null && dismissed !== null && dismissed.has(String(poll.id)));
+    !(poll.myVote && !engaged.has(poll.id)) &&
+    // Dismissed earlier → stays dismissed until a NEW poll starts. `null`
+    // means localStorage hasn't been read yet — hold off rather than flash
+    // an announcement the user already dismissed.
+    dismissed !== null &&
+    !dismissed.has(String(poll.id));
 
   // Lock body scroll while the announcement is up. Escape is handled by
   // <Modal> itself (topmost-overlay rule) — a second listener here would

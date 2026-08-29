@@ -111,13 +111,18 @@ export function Modal({ label, onClose, cardClassName = "", children }: ModalPro
         if (backdropPressed.current && e.target === e.currentTarget) onClose();
         backdropPressed.current = false;
       }}
-      role="dialog"
-      aria-modal="true"
-      aria-label={label}
     >
+      {/* The dialog role belongs on the CARD, not the backdrop. On the
+          backdrop, aria-modal="true" scoped the accessible subtree to the
+          whole overlay — including the click-to-close scrim — and the
+          dialog's accessible name applied to an element the user can't
+          reach, while the focused card itself was an unnamed generic. */}
       <div
         ref={cardRef}
         tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={label}
         className={`card ${cardClassName}`}
         onClick={(e) => e.stopPropagation()}
         style={{ outline: "none" }}

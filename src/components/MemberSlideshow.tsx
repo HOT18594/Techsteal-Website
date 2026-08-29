@@ -146,7 +146,12 @@ export function MemberSlideshow({ members }: { members: Member[] }) {
               className={`h-1.5 rounded-full transition-all duration-300 ${
                 i === safeIndex ? "w-4 bg-[var(--accent)]" : "w-1.5 bg-[var(--muted-2)]/60 hover:bg-[var(--muted-2)]"
               }`}
-              onClick={() => {
+              onClick={(e) => {
+                // The home tile wraps this whole slideshow in a <Link
+                // href="/members">, so a bare dot click bubbled up and
+                // navigated away — you could never actually pick a member.
+                e.preventDefault();
+                e.stopPropagation();
                 setIndex(i);
                 pauseTemporarily();
               }}

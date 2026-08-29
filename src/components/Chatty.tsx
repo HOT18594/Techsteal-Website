@@ -8,10 +8,11 @@
 // lives in localStorage; the 3-dot indicator only shows before the first
 // event arrives.
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { siteConfig } from "@/lib/site";
 import { Avatar } from "@/components/Avatar";
+import { Markdown } from "@/components/Markdown";
 import { useToast } from "@/components/Toast";
 import { useSession } from "@/lib/use-session";
 
@@ -465,7 +466,7 @@ export function Chatty() {
       await navigator.clipboard.writeText(text);
       show("Copied to clipboard");
     } catch {
-      show("Couldn't copy");
+      show("Couldn't copy", "Your browser blocked clipboard access.", "error");
     }
   };
 
@@ -539,9 +540,18 @@ export function Chatty() {
         }}
         className="flex-1 min-h-0 overflow-y-auto"
         id="chat-messages"
-        aria-live="polite"
       >
-        <div className="px-4 sm:px-6 py-6 space-y-5">
+        {/* role="log" + aria-relevant="additions text" announces only what is
+            ADDED or changed. The scroll container itself used to carry a bare
+            aria-live="polite", which made screen readers re-read the entire
+            conversation — welcome hero, every prior bubble, the timestamps —
+            on each streamed token. */}
+        <div
+          className="px-4 sm:px-6 py-6 space-y-5"
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions text"
+        >
           {/* Welcome hero — only when fresh. Compact prompt pills cover
               touch/small screens where the sidebar rail isn't rendered. */}
           {isEmpty && !typing ? (
@@ -788,9 +798,12 @@ export function Chatty() {
 }
 
 // ------------------------------------------------------------------
-// Safe markdown-ish renderer (no dangerouslySetInnerHTML): **bold**,
-// `code`, ```fenced blocks``` with a copy button, # headings, lists,
-// blockquotes, and [text](https://…) links.
+// Fenced code blocks in AI replies keep a Copy button — otherwise the
+// shared <Markdown> renderer (components/Markdown.tsx) does the work.
+// This file used to carry its own renderText/renderBlocks/inlineFormat
+// trio, which drifted: it never supported italics, strikethrough,
+// spoilers, images, numbered lists, horizontal rules or bare-URL
+// autolinking, and it rendered EVERY line of a paragraph as its own <p>.
 // ------------------------------------------------------------------
 
 function CodeBlock({ code, lang }: { code: string; lang?: string }) {
@@ -800,7 +813,7 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
       await navigator.clipboard.writeText(code);
       show("Code copied");
     } catch {
-      show("Couldn't copy");
+      show("Couldn't copy", "Your browser blocked clipboard access.", "error");
     }
   };
   return (
@@ -816,141 +829,9 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
   );
 }
 
-function renderText(text: string): ReactNode[] {
-  // Split on fenced code blocks first so nothing else touches their contents.
-  // The language capture allows non-word chars (c++, c#, node.js) — a plain
-  // \w* stopped at the first symbol and leaked the rest into the code body.
-  const parts = text.split(/```([\w+#.-]*)\n?([\s\S]*?)(?:```|$)/g);
-  const out: ReactNode[] = [];
-  parts.forEach((part, i) => {
-    if (i % 3 === 1) return; // language capture — used below
-    if (i % 3 === 2) {
-      const lang = parts[i - 1];
-      out.push(<CodeBlock key={`code-${i}`} code={part.replace(/\n$/, "")} lang={lang || undefined} />);
-      return;
-    }
-    out.push(...renderBlocks(part, `b-${i}`));
-  });
-  return out;
-}
-
-function renderBlocks(text: string, keyPrefix: string): ReactNode[] {
-  return text
-    .split(/\n{2,}/)
-    .filter((b) => b.trim().length > 0)
-    .map((block, bi) => {
-      const lines = block.split("\n");
-
-      // Heading — # / ## / ###
-      const heading = block.match(/^(#{1,3})\s+(.*)$/);
-      if (heading && lines.length === 1) {
-        const level = heading[1].length;
-        const cls =
-          level === 1
-            ? "font-display text-lg font-bold"
-            : level === 2
-              ? "font-display text-base font-bold"
-              : "font-semibold";
-        return (
-          <div key={`${keyPrefix}-h-${bi}`} className={`${cls} text-[var(--fg)] mt-2 mb-1`}>
-            {inlineFormat(heading[2])}
-          </div>
-        );
-      }
-
-      // List — consecutive "- " / "• " lines
-      if (lines.every((l) => /^\s*[-•]\s+/.test(l) || l.trim() === "")) {
-        const items = lines.filter((l) => /^\s*[-•]\s+/.test(l));
-        if (items.length > 0) {
-          return (
-            <ul key={`${keyPrefix}-ul-${bi}`} className="list-none space-y-1 my-2">
-              {items.map((li, i) => (
-                <li key={i} className="flex items-start gap-2">
-                  <span className="text-[var(--accent)] mt-[3px] text-xs">▸</span>
-                  <span>{inlineFormat(li.replace(/^\s*[-•]\s+/, ""))}</span>
-                </li>
-              ))}
-            </ul>
-          );
-        }
-      }
-
-      // Blockquote — "> " lines
-      if (lines.every((l) => /^\s*>\s?/.test(l) || l.trim() === "")) {
-        return (
-          <blockquote
-            key={`${keyPrefix}-q-${bi}`}
-            className="border-l-2 border-[var(--accent)]/50 pl-3 my-2 text-[var(--muted)]"
-          >
-            {lines.map((l, i) => (
-              <div key={i}>{inlineFormat(l.replace(/^\s*>\s?/, ""))}</div>
-            ))}
-          </blockquote>
-        );
-      }
-
-      // Paragraph(s)
-      return (
-        <div key={`${keyPrefix}-p-${bi}`}>
-          {lines.map((line, i) => (
-            <p key={i} className="my-1">
-              {line.trim() ? inlineFormat(line) : <br />}
-            </p>
-          ))}
-        </div>
-      );
-    });
-}
-
-function inlineFormat(line: string): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  // Tokenize: `code` | **bold** | [text](url) — code first so links inside
-  // code stay literal.
-  const parts = line.split(/(`[^`]+`)/g);
-  parts.forEach((part, i) => {
-    if (part.startsWith("`") && part.endsWith("`") && part.length > 1) {
-      nodes.push(
-        <code
-          key={i}
-          className="bg-[var(--bg)] border border-[var(--border)] rounded px-1.5 py-0.5 text-[13px] font-mono text-[var(--accent-bright)]"
-        >
-          {part.slice(1, -1)}
-        </code>
-      );
-      return;
-    }
-    const linkParts = part.split(/(\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g);
-    linkParts.forEach((lp, j) => {
-      const link = lp.match(/^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/);
-      if (link) {
-        nodes.push(
-          <a
-            key={`${i}-${j}`}
-            href={link[2]}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[var(--accent-bright)] underline decoration-[var(--accent)]/40 hover:decoration-[var(--accent)] break-words"
-          >
-            {/* The label is formatted too — [**bold**](url) must not show
-                its literal asterisks inside the anchor text. */}
-            {link[1] ? inlineFormat(link[1]) : link[2]}
-          </a>
-        );
-        return;
-      }
-      const boldParts = lp.split(/(\*\*[^*]+\*\*)/g);
-      boldParts.forEach((bp, k) => {
-        if (bp.startsWith("**") && bp.endsWith("**") && bp.length > 4) {
-          nodes.push(
-            <strong key={`${i}-${j}-${k}`} className="font-semibold text-[var(--fg)]">
-              {bp.slice(2, -2)}
-            </strong>
-          );
-        } else if (bp) {
-          nodes.push(<span key={`${i}-${j}-${k}`}>{bp}</span>);
-        }
-      });
-    });
-  });
-  return nodes;
+function renderText(text: string) {
+  // `md-body` carries the block spacing/typography the renderer's classes
+  // expect; `chat-md` only trims the first/last child margins so a bubble
+  // doesn't gain padding it wasn't designed for.
+  return <Markdown text={text} className="md-body chat-md" codeBlock={CodeBlock} />;
 }

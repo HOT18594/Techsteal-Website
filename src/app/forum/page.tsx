@@ -9,7 +9,7 @@ import { Avatar } from "@/components/Avatar";
 import { SubPage } from "@/components/SubPage";
 import { Modal } from "@/components/Modal";
 import { RichEditor } from "@/components/RichEditor";
-import { EMPTY_POLL_DRAFT, PollBuilder, pollDraftPayload, pollDraftValid, type PollDraft } from "@/components/Poll";
+import { emptyPollDraft, PollBuilder, pollDraftPayload, pollDraftValid, type PollDraft } from "@/components/Poll";
 import { useToast } from "@/components/Toast";
 import { useSession } from "@/lib/use-session";
 import { timeAgo } from "@/lib/time";
@@ -125,7 +125,7 @@ export default function ForumPage() {
   const [content, setContent] = useState("");
   const [category, setCategory] = useState("General");
   const [withPoll, setWithPoll] = useState(false);
-  const [pollDraft, setPollDraft] = useState<PollDraft>(EMPTY_POLL_DRAFT);
+  const [pollDraft, setPollDraft] = useState<PollDraft>(emptyPollDraft);
   const [submitting, setSubmitting] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
 
@@ -170,7 +170,7 @@ export default function ForumPage() {
         setTitle("");
         setContent("");
         setWithPoll(false);
-        setPollDraft(EMPTY_POLL_DRAFT);
+        setPollDraft(emptyPollDraft());
         show("Posted", "Your thread is live.");
         // Straight to the new thread — it may have a poll to admire.
         if (created.id) router.push(`/forum/${created.id}`);
@@ -185,7 +185,7 @@ export default function ForumPage() {
         show("Couldn't create thread", data.error ?? "The server rejected the request.", "error");
       }
     } catch {
-      show("Couldn't create thread", "Check your connection and try again.");
+      show("Couldn't create thread", "Check your connection and try again.", "error");
     } finally {
       setSubmitting(false);
     }
@@ -224,7 +224,7 @@ export default function ForumPage() {
             });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        show("Couldn't update", data.error ?? "The server rejected the request.");
+        show("Couldn't update", data.error ?? "The server rejected the request.", "error");
         return;
       }
       show(
@@ -237,7 +237,7 @@ export default function ForumPage() {
       );
       void load();
     } catch {
-      show("Couldn't update", "Check your connection and try again.");
+      show("Couldn't update", "Check your connection and try again.", "error");
     } finally {
       setBusyThread(null);
     }
@@ -367,12 +367,18 @@ export default function ForumPage() {
                       {/* The whole post opens the thread (X-style feed). The
                           link is the hit target; the visual row opts out of
                           pointer events so hover still lands on this wrapper
-                          and .thread-row:hover / group-hover styles apply. */}
-                      <Link
-                        href={`/forum/${t.id ?? ""}`}
-                        className="absolute inset-0 z-0 rounded-xl"
-                        aria-label={`Open thread: ${t.title}`}
-                      />
+                          and .thread-row:hover / group-hover styles apply.
+                          A row without an id (fallback data, or a thread the
+                          API returned mid-write) gets NO overlay: `/forum/${""}`
+                          navigated to the list itself, which read as a dead
+                          click that scrolled back to the top. */}
+                      {t.id ? (
+                        <Link
+                          href={`/forum/${t.id}`}
+                          className="absolute inset-0 z-0 rounded-xl"
+                          aria-label={`Open thread: ${t.title}`}
+                        />
+                      ) : null}
                       <div className="relative z-10 flex items-start gap-4 p-4 sm:p-5 pointer-events-none">
                       <Avatar name={t.author} src={t.avatarUrl} size="md" color={t.color} />
                       <div className="flex-1 min-w-0">

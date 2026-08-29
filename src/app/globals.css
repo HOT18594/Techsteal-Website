@@ -1414,7 +1414,10 @@ body.scrolled .site-nav {
 }
 .toast.error {
   border-color: var(--redstone);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 30px rgba(229, 57, 70, 0.18);
+  /* Was rgba(229, 57, 70, …) — a hardcoded red left over from an older
+     palette. --redstone is #f43f5e (244, 63, 94), so the glow was a
+     visibly different hue from the border it was meant to match. */
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 30px rgba(244, 63, 94, 0.18);
 }
 .toast.show {
   transform: translateX(0);

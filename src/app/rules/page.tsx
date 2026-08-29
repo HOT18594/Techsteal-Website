@@ -8,11 +8,14 @@ import { fallbackRules } from "@/lib/fallback-data";
 import type { RuleSection } from "@/types";
 import { useApi } from "@/lib/use-api";
 
-/** Party burst: launches a shower of 🎉🎊🔥✨💥 from a point on screen. */
-function emojiBurst(x: number, y: number, count: number) {
+/** Party burst: launches a shower of 🎉🎊🔥✨💥 from a point on screen.
+ *  Returns a cancel function that clears the removal timer and detaches the
+ *  wrapper immediately — navigating away mid-burst used to leave the pieces
+ *  animating over the next page until the 1800 ms timer fired on its own. */
+function emojiBurst(x: number, y: number, count: number): () => void {
   // Respect reduced motion — the CSS neutralizes the animation, but don't
   // even build the DOM nodes.
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return () => {};
   const EMOJIS = ["🎉", "🎊", "🔥", "✨", "💥"];
   const wrap = document.createElement("div");
   wrap.className = "confetti-wrap";
@@ -34,14 +37,35 @@ function emojiBurst(x: number, y: number, count: number) {
     wrap.appendChild(piece);
   }
 
-  window.setTimeout(() => wrap.remove(), 1800);
+  const timer = window.setTimeout(() => wrap.remove(), 1800);
+  return () => {
+    window.clearTimeout(timer);
+    wrap.remove();
+  };
 }
 
 export default function RulesPage() {
   const { show } = useToast();
   const { data: sections, loading, error, refetch } = useApi<RuleSection[]>("/api/rules", fallbackRules);
-  const [acknowledged, setAcknowledged] = useState(false);
+  // `null` = localStorage not read yet. The button renders disabled until the
+  // stored value is known: seeding `false` made an already-acknowledged
+  // visitor see a live "🔥 Acknowledge" button for one frame before it
+  // flipped to "Acknowledged", which looked like the click had been lost.
+  const [acknowledged, setAcknowledged] = useState<boolean | null>(null);
   const ackRef = useRef<HTMLButtonElement>(null);
+  // Cancel functions for confetti bursts still on screen — a burst outliving
+  // the page kept animating over whatever the user navigated to.
+  const burstsRef = useRef<Array<() => void>>([]);
+  const burstTimersRef = useRef<number[]>([]);
+  useEffect(
+    () => () => {
+      for (const t of burstTimersRef.current) window.clearTimeout(t);
+      for (const cancel of burstsRef.current) cancel();
+      burstTimersRef.current = [];
+      burstsRef.current = [];
+    },
+    []
+  );
 
   const totalRules = sections.reduce((n, s) => n + (s.rules?.length ?? 0), 0);
 
@@ -50,14 +74,14 @@ export default function RulesPage() {
   // hydration mismatch.
   useEffect(() => {
     try {
-      if (localStorage.getItem("techsteal-rules-ack") === "1") {
-        setAcknowledged(true);
-      }
-    } catch {}
+      setAcknowledged(localStorage.getItem("techsteal-rules-ack") === "1");
+    } catch {
+      setAcknowledged(false);
+    }
   }, []);
 
   const acknowledge = () => {
-    if (acknowledged) return;
+    if (acknowledged !== false) return;
     setAcknowledged(true);
     try {
       localStorage.setItem("techsteal-rules-ack", "1");
@@ -67,9 +91,10 @@ export default function RulesPage() {
     if (btn) {
       const cx = btn.left + btn.width / 2;
       const cy = btn.top + btn.height / 2;
-      emojiBurst(cx, cy, 28);
-      window.setTimeout(() => emojiBurst(cx, cy, 18), 160);
-      window.setTimeout(() => emojiBurst(cx, cy, 12), 340);
+      const fire = (count: number) => burstsRef.current.push(emojiBurst(cx, cy, count));
+      fire(28);
+      burstTimersRef.current.push(window.setTimeout(() => fire(18), 160));
+      burstTimersRef.current.push(window.setTimeout(() => fire(12), 340));
     }
   };
 
@@ -150,7 +175,9 @@ export default function RulesPage() {
             ref={ackRef}
             className={`btn-primary ${acknowledged ? "opacity-90" : ""}`}
             onClick={acknowledge}
-            disabled={acknowledged}
+            // `null` (stored value still unknown) disables too — see the state
+            // comment above.
+            disabled={acknowledged !== false}
           >
             {acknowledged ? (
               <>

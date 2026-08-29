@@ -12,6 +12,7 @@ import { forumReplies, forumThreads, galleryItems, profiles, ruleSections, timel
 import { getLiveStatus } from "./live-status";
 import { formatSearchResults, webSearch } from "./web-search";
 import { formatModrinthResults, searchModrinth } from "./modrinth";
+import { parseRouteId } from "./route-ids";
 
 export interface ChattyToolDef {
   type: "function";
@@ -69,8 +70,7 @@ export const CHATTY_TOOLS: ChattyToolDef[] = [
         "The server's season/event timeline (most recent first). Use for history, seasons, eras, and milestone questions.",
       parameters: {
         type: "object",
-        properties: { era: { type: "string", description: "Optional era name to filter to." },
-      },
+        properties: { era: { type: "string", description: "Optional era name to filter to." } },
       },
     },
   },
@@ -181,9 +181,12 @@ function escapeLike(q: string): string {
 }
 
 async function runTool(name: string, args: Record<string, unknown>): Promise<ChattyToolResult> {
+  // One lookup for every branch: each case used to re-declare its own literal
+  // label, so the chip the UI shows while a tool runs could (and did) drift
+  // from TOOL_LABELS, which is what the finished trace renders from.
+  const label = toolLabel(name);
   switch (name) {
     case "get_server_status": {
-      const label = "Checking live status";
       try {
         const status = await getLiveStatus();
         if (status.source !== "live") {
@@ -204,7 +207,6 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
     }
 
     case "search_members": {
-      const label = "Searching members";
       const db = getDb();
       if (!db) return { ok: true, label, content: NO_DB };
       const q = typeof args.query === "string" ? args.query.trim().slice(0, 60) : "";
@@ -246,7 +248,6 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
     }
 
     case "get_rules": {
-      const label = "Reading the rules";
       const db = getDb();
       if (!db) return { ok: true, label, content: NO_DB };
       const sections = await db.select().from(ruleSections).orderBy(asc(ruleSections.id)).limit(5);
@@ -257,7 +258,6 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
     }
 
     case "get_server_history": {
-      const label = "Looking up history";
       const db = getDb();
       if (!db) return { ok: true, label, content: NO_DB };
       const era = typeof args.era === "string" ? args.era.trim().slice(0, 60) : "";
@@ -281,7 +281,6 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
     }
 
     case "search_gallery": {
-      const label = "Searching the gallery";
       const db = getDb();
       if (!db) return { ok: true, label, content: NO_DB };
       const q = typeof args.query === "string" ? args.query.trim().slice(0, 60) : "";
@@ -311,7 +310,6 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
     }
 
     case "search_forum": {
-      const label = "Searching the forum";
       const db = getDb();
       if (!db) return { ok: true, label, content: NO_DB };
       const q = typeof args.query === "string" ? args.query.trim().slice(0, 80) : "";
@@ -344,11 +342,15 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
     }
 
     case "read_forum_thread": {
-      const label = "Reading a thread";
       const db = getDb();
       if (!db) return { ok: true, label, content: NO_DB };
-      const id = Number(args.id);
-      if (!Number.isInteger(id)) return { ok: false, label, content: "A numeric thread id is required." };
+      // The model sometimes passes the id as a string. Number.isInteger() alone
+      // accepted 0 and negatives, which reached the database as a guaranteed
+      // miss; the shared rule rejects them here instead.
+      const id = typeof args.id === "number" ? args.id : parseRouteId(typeof args.id === "string" ? args.id : null);
+      if (id === null || !Number.isSafeInteger(id) || id <= 0) {
+        return { ok: false, label, content: "A positive numeric thread id is required." };
+      }
       const [thread] = await db.select().from(forumThreads).where(eq(forumThreads.id, id)).limit(1);
       if (!thread) return { ok: true, label, content: `Thread #${id} doesn't exist.` };
       const replies = await db
@@ -368,7 +370,6 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
     }
 
     case "get_site_stats": {
-      const label = "Counting site stats";
       const db = getDb();
       if (!db) return { ok: true, label, content: NO_DB };
       const [[memberCount], [threadCount], [replyCount], [buildCount], [eventCount]] = await Promise.all([
@@ -386,7 +387,6 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
     }
 
     case "search_mods": {
-      const label = "Searching mods";
       const q = typeof args.query === "string" ? args.query.trim().slice(0, 100) : "";
       if (!q) return { ok: false, label, content: "A mod name or keywords are required." };
       const hits = await searchModrinth(q);
@@ -400,7 +400,6 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
     }
 
     case "web_search": {
-      const label = "Searching the web";
       const q = typeof args.query === "string" ? args.query.trim().slice(0, 200) : "";
       if (!q) return { ok: false, label, content: "A search query is required." };
       const results = await webSearch(q);

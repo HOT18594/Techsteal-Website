@@ -162,12 +162,16 @@ function inlineNodes(src: string, keyPrefix: string, depth = 0): ReactNode[] {
     switch (tok.kind) {
       case "text": {
         // Coalesce the whole plain-text run until the next special char.
+        // `_` is deliberately NOT a break char: no scanInline branch handles
+        // it (underscore emphasis is unsupported on purpose so snake_case
+        // identifiers survive), so breaking on it only split every run into
+        // one-char fragments. `___` rules are matched at the block level.
         let j = i + 1;
         while (j < src.length) {
           const c = src[j];
           // startsWith(offset form) — no per-position substring copy.
           if (
-            "`*~|[_!".includes(c) ||
+            "`*~|[!".includes(c) ||
             ((c === "h" && (src.startsWith("http://", j) || src.startsWith("https://", j))))
           )
             break;
@@ -306,14 +310,33 @@ const IMAGE_ONLY = new RegExp(`^!\\[([^\\]]*)\\]\\(${LINK_TARGET}\\)\\s*$`);
  * parseBlocks, and a pathological ">>>>>>…" line must not recurse per char. */
 const MAX_QUOTE_DEPTH = 8;
 
-export function Markdown({ text }: { text: string }) {
+/** Optional replacement for the default fenced-code-block rendering.
+ *  Chatty Jr. supplies one so its blocks keep their Copy button; forum
+ *  content uses the plain default. */
+export type CodeBlockRenderer = (props: { code: string; lang?: string }) => ReactNode;
+
+export function Markdown({
+  text,
+  className = "md-body",
+  codeBlock,
+}: {
+  text: string;
+  /** Root class — chat bubbles pass their own wrapper class. */
+  className?: string;
+  codeBlock?: CodeBlockRenderer;
+}) {
   const src = (text ?? "").replace(/\r\n/g, "\n").trim();
   if (!src) return null;
-  return <div className="md-body">{parseBlocks(src, "md")}</div>;
+  return <div className={className}>{parseBlocks(src, "md", 0, codeBlock)}</div>;
 }
 
 /** Parse one markdown document (or quote body) into block-level nodes. */
-function parseBlocks(src: string, keyPrefix: string, depth = 0): ReactNode[] {
+function parseBlocks(
+  src: string,
+  keyPrefix: string,
+  depth = 0,
+  codeBlock?: CodeBlockRenderer
+): ReactNode[] {
   const lines = src.split("\n");
   const blocks: ReactNode[] = [];
   let i = 0;
@@ -322,11 +345,16 @@ function parseBlocks(src: string, keyPrefix: string, depth = 0): ReactNode[] {
   const flushParagraph = (para: string[]) => {
     if (para.length === 0) return;
     const joined = para.join("\n").trim();
+    // One id per block, captured BEFORE the counter moves: writing `key++` in
+    // the key and then reading `key` for the inline prefix gave the inline
+    // fragments the *next* block's number, so two sibling blocks handed the
+    // same prefix to their children.
+    const id = key++;
     // A paragraph that is exactly one image becomes a standalone figure.
     const img = IMAGE_ONLY.exec(joined);
     if (img && safeUrl(img[2])) {
       blocks.push(
-        <figure key={`${keyPrefix}-f${key++}`} className="md-figure">
+        <figure key={`${keyPrefix}-f${id}`} className="md-figure">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={img[2]} alt={img[1]} title={img[1] || undefined} loading="lazy" decoding="async" />
           {img[1] ? <figcaption>{img[1]}</figcaption> : null}
@@ -335,8 +363,8 @@ function parseBlocks(src: string, keyPrefix: string, depth = 0): ReactNode[] {
       return;
     }
     blocks.push(
-      <p key={`${keyPrefix}-p${key++}`} className="md-p">
-        {inlineNodes(joined, `${keyPrefix}-p${key}`)}
+      <p key={`${keyPrefix}-p${id}`} className="md-p">
+        {inlineNodes(joined, `${keyPrefix}-p${id}`)}
       </p>
     );
   };
@@ -345,7 +373,9 @@ function parseBlocks(src: string, keyPrefix: string, depth = 0): ReactNode[] {
   while (i < lines.length) {
     const line = lines[i];
 
-    // Fenced code block.
+    // Fenced code block. An unterminated fence (the model is still streaming
+    // its closing ```) renders what has arrived so far rather than swallowing
+    // the rest of the message.
     if (line.startsWith("```")) {
       flushParagraph(para);
       para = [];
@@ -357,13 +387,19 @@ function parseBlocks(src: string, keyPrefix: string, depth = 0): ReactNode[] {
         i++;
       }
       i++; // closing fence (or EOF)
+      const code = body.join("\n");
+      const id = key++;
       blocks.push(
-        <div key={`${keyPrefix}-code${key++}`} className="md-codeblock">
-          {lang ? <span className="md-codeblock-lang">{lang}</span> : null}
-          <pre>
-            <code>{body.join("\n")}</code>
-          </pre>
-        </div>
+        codeBlock ? (
+          <Fragment key={`${keyPrefix}-code${id}`}>{codeBlock({ code, lang: lang || undefined })}</Fragment>
+        ) : (
+          <div key={`${keyPrefix}-code${id}`} className="md-codeblock">
+            {lang ? <span className="md-codeblock-lang">{lang}</span> : null}
+            <pre>
+              <code>{code}</code>
+            </pre>
+          </div>
+        )
       );
       continue;
     }
@@ -374,10 +410,11 @@ function parseBlocks(src: string, keyPrefix: string, depth = 0): ReactNode[] {
       flushParagraph(para);
       para = [];
       const level = heading[1].length;
+      const id = key++;
       const Tag = (level === 1 ? "h3" : level === 2 ? "h4" : "h5") as "h3" | "h4" | "h5";
       blocks.push(
-        <Tag key={`${keyPrefix}-h${key++}`} className={`md-heading md-heading-${level}`}>
-          {inlineNodes(heading[2], `${keyPrefix}-h${key}`)}
+        <Tag key={`${keyPrefix}-h${id}`} className={`md-heading md-heading-${level}`}>
+          {inlineNodes(heading[2], `${keyPrefix}-h${id}`)}
         </Tag>
       );
       i++;
@@ -404,11 +441,12 @@ function parseBlocks(src: string, keyPrefix: string, depth = 0): ReactNode[] {
         quote.push(lines[i].replace(/^>\s?/, ""));
         i++;
       }
+      const id = key++;
       blocks.push(
-        <blockquote key={`${keyPrefix}-q${key++}`} className="md-quote">
+        <blockquote key={`${keyPrefix}-q${id}`} className="md-quote">
           {depth < MAX_QUOTE_DEPTH
-            ? parseBlocks(quote.join("\n"), `${keyPrefix}-q${key}`, depth + 1)
-            : inlineNodes(quote.join("\n"), `${keyPrefix}-q${key}d`)}
+            ? parseBlocks(quote.join("\n"), `${keyPrefix}-q${id}`, depth + 1, codeBlock)
+            : inlineNodes(quote.join("\n"), `${keyPrefix}-q${id}d`)}
         </blockquote>
       );
       continue;
@@ -423,10 +461,11 @@ function parseBlocks(src: string, keyPrefix: string, depth = 0): ReactNode[] {
         items.push(lines[i].replace(/^\s*[-*]\s+/, ""));
         i++;
       }
+      const id = key++;
       blocks.push(
-        <ul key={`${keyPrefix}-ul${key++}`} className="md-list">
+        <ul key={`${keyPrefix}-ul${id}`} className="md-list">
           {items.map((item, n) => (
-            <li key={n}>{inlineNodes(item, `${keyPrefix}-ul${key}-${n}`)}</li>
+            <li key={n}>{inlineNodes(item, `${keyPrefix}-ul${id}-${n}`)}</li>
           ))}
         </ul>
       );
@@ -442,10 +481,11 @@ function parseBlocks(src: string, keyPrefix: string, depth = 0): ReactNode[] {
         items.push(lines[i].replace(/^\s*\d+[.)]\s+/, ""));
         i++;
       }
+      const id = key++;
       blocks.push(
-        <ol key={`${keyPrefix}-ol${key++}`} className="md-list md-list-ordered">
+        <ol key={`${keyPrefix}-ol${id}`} className="md-list md-list-ordered">
           {items.map((item, n) => (
-            <li key={n}>{inlineNodes(item, `${keyPrefix}-ol${key}-${n}`)}</li>
+            <li key={n}>{inlineNodes(item, `${keyPrefix}-ol${id}-${n}`)}</li>
           ))}
         </ol>
       );

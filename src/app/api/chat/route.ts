@@ -55,20 +55,29 @@ export async function POST(request: NextRequest) {
   if (gate.status === "db_error") {
     return new Response(ACCOUNT_DB_ERROR_MESSAGE, { headers: TEXT_HEADERS, status: 503 });
   }
-  const account = gate.status === "ok" ? gate.account : null;
+  if (gate.status === "unconfigured") {
+    // Same answer every other gated route gives when there's no database:
+    // without it the permission grant can't be read and every one of Chatty's
+    // lookups returns "not available" anyway. Falling through on the cookie
+    // alone made this the one route that answered 200 with a crippled
+    // assistant while /api/upload and /api/gallery correctly said 503.
+    return new Response(
+      "Chatty Jr. needs the site database, which isn't configured yet.",
+      { headers: TEXT_HEADERS, status: 503 }
+    );
+  }
+  const account = gate.account;
 
   // Every message runs searches + LLM calls, so a hammering client burns
   // the AI budget — 10 messages/minute per member. Admins are exempt.
-  if ((account?.role ?? user.role) !== "admin" && isRateLimited(`chat:${user.id}`, 10, 60_000)) {
+  if (account.role !== "admin" && isRateLimited(`chat:${user.id}`, 10, 60_000)) {
     return new Response(
       "You're sending messages a bit fast — give me a minute to catch up! ⏳",
       { headers: TEXT_HEADERS, status: 429 }
     );
   }
 
-  const allowed = account
-    ? canUseAiAssistant(account)
-    : user.role === "admin" || user.permissions.includes("ai_access");
+  const allowed = canUseAiAssistant(account);
   if (!allowed) {
     return new Response(
       "Verify you're in the official Discord server to chat with me — it's a member perk. 🔐",
@@ -93,11 +102,11 @@ export async function POST(request: NextRequest) {
       message,
       request.signal,
       {
-        username: account?.username ?? user.username,
-        role: account?.role ?? user.role,
-        minecraftUsername: account?.minecraftUsername ?? null,
-        discordVerified: account?.discordVerified ?? user.discordVerified ?? false,
-        memberSince: account?.createdAt ?? null,
+        username: account.username,
+        role: account.role,
+        minecraftUsername: account.minecraftUsername ?? null,
+        discordVerified: account.discordVerified ?? false,
+        memberSince: account.createdAt ?? null,
       },
       history
     );

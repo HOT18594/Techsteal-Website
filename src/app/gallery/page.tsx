@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fallbackGallery } from "@/lib/fallback-data";
 import { GALLERY_CATEGORIES } from "@/lib/storage";
 import { compressImage, MAX_UPLOAD_BYTES } from "@/lib/imaging";
+import { xhrUpload } from "@/lib/xhr-upload";
 import { categoryClass } from "@/lib/forum-categories";
 import { Markdown } from "@/components/Markdown";
 import { RichEditor } from "@/components/RichEditor";
@@ -108,7 +109,12 @@ export default function GalleryPage() {
     }
     // Featured always floats first; then the chosen sort.
     return [...list].sort((a, b) => {
-      if (Boolean(b.featured) !== Boolean(a.featured)) return Number(Boolean(b.featured)) - Number(a.featured);
+      if (Boolean(b.featured) !== Boolean(a.featured)) {
+        // Both sides must go through Boolean(): `Number(undefined)` is NaN, and
+        // a NaN comparator result made Array#sort leave the order untouched, so
+        // featured posts stayed wherever they happened to be.
+        return Number(Boolean(b.featured)) - Number(Boolean(a.featured));
+      }
       if (sort === "liked") return (b.likes ?? 0) - (a.likes ?? 0);
       if (sort === "viewed") return (b.views ?? 0) - (a.views ?? 0);
       return (b.id ?? 0) - (a.id ?? 0);
@@ -130,9 +136,15 @@ export default function GalleryPage() {
   // Blob previews must not leak when the page unmounts mid-compose.
   const pendingRef = useRef<PendingImage[]>([]);
   pendingRef.current = pending;
+  // In-flight uploads, aborted on unmount so a navigation away doesn't leave
+  // requests running against a component that no longer exists.
+  const inflightUploads = useRef<Set<XMLHttpRequest>>(new Set());
   useEffect(() => {
+    const inflight = inflightUploads.current;
     return () => {
       for (const p of pendingRef.current) URL.revokeObjectURL(p.preview);
+      for (const xhr of inflight) xhr.abort();
+      inflight.clear();
     };
   }, []);
 
@@ -228,12 +240,12 @@ export default function GalleryPage() {
         show("Unsupported image", `${f.name}: use JPG, PNG, WebP or GIF.`, "error");
         continue;
       }
-      if (f.size > MAX_UPLOAD_BYTES) {
+      // GIFs can't be recompressed without losing the animation, so their gate
+      // is the raw file. Everything else is checked after compressImage below.
+      if (f.type === "image/gif" && f.size > MAX_UPLOAD_BYTES) {
         show(
           "Image too large",
-          f.type === "image/gif"
-            ? `${f.name}: GIFs must be under 4 MB (animations can't be compressed).`
-            : `${f.name}: keep uploads under 4 MB.`,
+          `${f.name}: GIFs must be under 4 MB (animations can't be compressed).`,
           "error"
         );
         continue;
@@ -253,11 +265,19 @@ export default function GalleryPage() {
       void (async () => {
         try {
           const compressed = await compressImage(f, 1920, 0.85);
-          const url = await xhrUpload("/api/upload", compressed, (pct) =>
-            setPending((prev) => prev.map((p) => (p.key === key ? { ...p, progress: pct } : p)))
+          if (compressed.size > MAX_UPLOAD_BYTES) {
+            throw new Error("Still over 4 MB after compression — try a smaller image.");
+          }
+          const url = await xhrUpload(
+            compressed,
+            (pct) =>
+              setPending((prev) => prev.map((p) => (p.key === key ? { ...p, progress: pct } : p))),
+            inflightUploads.current
           );
           setPending((prev) => prev.map((p) => (p.key === key ? { ...p, url, progress: 100 } : p)));
         } catch (err) {
+          // An abort is unmount cleanup, not a failure worth rendering.
+          if (err instanceof Error && err.message === "aborted") return;
           setPending((prev) =>
             prev.map((p) =>
               p.key === key
@@ -377,7 +397,7 @@ export default function GalleryPage() {
       setItemsLocal(g.id ?? 0, { featured: !g.featured });
       show(g.featured ? "Unfeatured" : "Featured", `"${g.title}" ${g.featured ? "returned to the grid" : "now floats to the top"}.`);
     } catch {
-      show("Couldn't update", "Check your connection and try again.");
+      show("Couldn't update", "Check your connection and try again.", "error");
     } finally {
       setBusyItem(null);
     }
@@ -398,7 +418,7 @@ export default function GalleryPage() {
       show("Deleted", `"${g.title}" was removed.`);
       void refetch();
     } catch {
-      show("Couldn't delete", "Check your connection and try again.");
+      show("Couldn't delete", "Check your connection and try again.", "error");
     } finally {
       setBusyItem(null);
     }
@@ -1021,31 +1041,4 @@ export default function GalleryPage() {
       ) : null}
     </SubPage>
   );
-}
-
-/** Upload with real progress events (fetch has none for request bodies).
- *  A hard timeout keeps a hung connection from spinning "Uploading…" forever. */
-function xhrUpload(url: string, file: File, onProgress: (pct: number) => void): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const body = new FormData();
-    body.set("image", file);
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", url);
-    xhr.timeout = 60_000;
-    xhr.ontimeout = () => reject(new Error("Upload timed out — try again."));
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
-    };
-    xhr.onload = () => {
-      try {
-        const data = JSON.parse(xhr.responseText) as { url?: string; error?: string };
-        if (xhr.status >= 200 && xhr.status < 300 && data.url) resolve(data.url);
-        else reject(new Error(data.error ?? `Upload failed (${xhr.status})`));
-      } catch {
-        reject(new Error("Upload failed"));
-      }
-    };
-    xhr.onerror = () => reject(new Error("Upload failed — check your connection."));
-    xhr.send(body);
-  });
 }

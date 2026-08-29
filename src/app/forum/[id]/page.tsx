@@ -129,7 +129,7 @@ export default function ThreadPage() {
       }
     } catch {
       if (threadId === idRef.current) {
-        show("Couldn't reply", "Check your connection and try again.");
+        show("Couldn't reply", "Check your connection and try again.", "error");
       }
     } finally {
       setReplying(false);
@@ -158,7 +158,7 @@ export default function ThreadPage() {
       show("Deleted", "Reply removed.");
     } catch {
       if (threadId === idRef.current) {
-        show("Couldn't delete", "Check your connection and try again.");
+        show("Couldn't delete", "Check your connection and try again.", "error");
       }
     } finally {
       setBusyReply(null);
@@ -253,13 +253,17 @@ export default function ThreadPage() {
   // ------------------------------------------------------------------
 
   const castVote = async (optionId: string) => {
-    const res = await fetch(`/api/forum/${idRef.current}/vote`, {
+    // Capture the thread id BEFORE awaiting: `idRef.current` is reassigned on
+    // every render, so comparing it to `id` afterwards compared the value to
+    // itself and never detected a navigation.
+    const threadId = id;
+    const res = await fetch(`/api/forum/${threadId}/vote`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ optionId }),
     });
     const data = (await res.json().catch(() => ({}))) as { poll?: ForumPoll; error?: string };
-    if (idRef.current !== id) return; // navigated away mid-vote — drop it
+    if (idRef.current !== threadId) return; // navigated away mid-vote — drop it
     if (!res.ok || !data.poll) {
       throw new Error(data.error ?? "Couldn't vote — try again.");
     }
@@ -314,7 +318,7 @@ export default function ThreadPage() {
           : `Replies are ${updated.locked ? "closed" : "open"} again.`
       );
     } catch {
-      show("Couldn't update", "Check your connection and try again.");
+      show("Couldn't update", "Check your connection and try again.", "error");
     } finally {
       setBusyThreadAction(false);
     }
@@ -340,7 +344,7 @@ export default function ThreadPage() {
       show(updated.pinned ? "Pinned" : "Unpinned", `Comment ${updated.pinned ? "pinned" : "unpinned"}.`);
     } catch {
       if (threadId === idRef.current) {
-        show("Couldn't update", "Check your connection and try again.");
+        show("Couldn't update", "Check your connection and try again.", "error");
       }
     } finally {
       setBusyReply(null);
@@ -407,7 +411,10 @@ export default function ThreadPage() {
       setEditing(null);
       show("Saved", "Your edit is live.");
     } catch {
-      show("Couldn't save", "Check your connection and try again.");
+      // Same navigation guard as the success path — a failure that lands after
+      // the user opened another thread must not toast over that thread.
+      if (threadId !== idRef.current) return;
+      show("Couldn't save", "Check your connection and try again.", "error");
     } finally {
       setSavingEdit(false);
     }

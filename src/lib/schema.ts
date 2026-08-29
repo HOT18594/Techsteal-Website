@@ -13,20 +13,12 @@ import {
 
 // NOTE: `createdAt` is only used for ordering. Every other field is edited
 // in place, so content changes in the DB show up on the site immediately.
-
-/** @deprecated Unused demo table — the member roster reads `profiles`
- * (and fallback data). Kept so no migration drops data; do not seed. */
-export const members = pgTable("members", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  role: text("role").notNull().default("Member"),
-  icon: text("icon").notNull().default("fa-user"),
-  avatar: text("avatar").notNull(),
-  color: text("color").notNull().default("avatar-1"),
-  status: text("status").notNull().default("offline"),
-  joined: text("joined").notNull().default("Day 1"),
-  playtime: text("playtime").notNull().default("0h"),
-});
+//
+// The `members` demo table that used to sit here has been removed: the member
+// roster reads `profiles` (plus fallback data), nothing in src/ ever imported
+// it, and seed.ts never touched it. If the physical table still exists in a
+// database, drizzle-kit push will now offer to drop it — that is intentional,
+// but check it really is empty first.
 
 export const forumThreads = pgTable("forum_threads", {
   id: serial("id").primaryKey(),

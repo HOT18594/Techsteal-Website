@@ -150,18 +150,20 @@ export async function updateAccount(
 // recreates accounts on login, so a deleted row would just let the user
 // back in. A banned row denies login and all capabilities until an admin
 // restores it.
+//
+// The ban flag alone is the enforcement point — `accountGate`, `checkAdmin`,
+// every `can*` helper and `findOrCreateDiscordAccount` all refuse a banned
+// row. It used to ALSO wipe role/permissions/verification, which made the
+// Manage Panel's "Restore" button lossy: the restored account came back as a
+// permissionless, unverified member and an admin had to rebuild it by hand
+// (and re-verify their Discord). Keeping the columns makes remove/restore a
+// true round-trip while changing nothing about what a banned account can do.
 export async function removeAccount(id: string): Promise<boolean> {
   const db = getDb();
   if (!db) return false;
   const rows = await db
     .update(profiles)
-    .set({
-      banned: true,
-      role: "member",
-      permissions: [],
-      discordVerified: false,
-      onboarded: false,
-    })
+    .set({ banned: true })
     .where(eq(profiles.id, id))
     .returning();
   return rows.length > 0;

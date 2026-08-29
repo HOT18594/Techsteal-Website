@@ -18,7 +18,7 @@ import { desc, eq } from "drizzle-orm";
 import { siteConfig } from "./site";
 import { getDb } from "./db";
 import { forumThreads, galleryItems, profiles, ruleSections, timelineEvents } from "./schema";
-import { CHATTY_TOOLS, executeChattyTool, toolLabel } from "./chatty-tools";
+import { CHATTY_TOOLS, executeChattyTool, TOOL_LABELS, toolLabel } from "./chatty-tools";
 import { formatSearchResults, webSearch } from "./web-search";
 import { formatModrinthResults, searchModrinth, type ModrinthHit } from "./modrinth";
 
@@ -315,6 +315,30 @@ interface PartialToolCall {
 }
 
 /**
+ * Accumulate a streamed function name.
+ *
+ * The OpenAI streaming contract splits `arguments` across deltas but sends the
+ * `name` once — several OpenRouter upstreams (and the current Chatty base model)
+ * instead REPEAT the whole name in every delta for the same call index. Blind
+ * concatenation produced "get_rulesget_rules", which then failed dispatch and
+ * the model was told the tool didn't exist.
+ *
+ * So: keep the first complete name we recognise, and only concatenate when the
+ * pieces are genuinely partial (a real split, e.g. "get_" + "rules").
+ */
+function appendToolName(current: string, incoming: string): string {
+  if (!current) return incoming;
+  if (current === incoming) return current;
+  // A repeat of an already-complete name, or a repeated prefix of it.
+  if (current.startsWith(incoming)) return current;
+  const joined = current + incoming;
+  // A genuine split only ever grows toward a real tool name.
+  if (TOOL_LABELS[joined]) return joined;
+  if (TOOL_LABELS[current]) return current;
+  return joined;
+}
+
+/**
  * One completion round: POST /chat/completions (SSE), parse it, stream text
  * deltas through `emit`, and return any tool calls the model made.
  * Resolves null when the client aborted mid-round.
@@ -395,7 +419,7 @@ async function completionRound(opts: {
         const i = tc.index ?? 0;
         const acc = calls.get(i) ?? { id: "", name: "", args: "" };
         if (tc.id) acc.id = tc.id;
-        if (tc.function?.name) acc.name = acc.name ? acc.name + tc.function.name : tc.function.name;
+        if (tc.function?.name) acc.name = appendToolName(acc.name, tc.function.name);
         if (tc.function?.arguments) acc.args += tc.function.arguments;
         calls.set(i, acc);
       }

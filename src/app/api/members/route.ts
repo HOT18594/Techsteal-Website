@@ -4,7 +4,7 @@ import { getDb } from "@/lib/db";
 import { profiles } from "@/lib/schema";
 import { fallbackMembers } from "@/lib/fallback-data";
 import { getLiveStatus } from "@/lib/live-status";
-import { minotarUrl } from "@/lib/forum-avatars";
+import { minotarUrl, colorFor } from "@/lib/forum-avatars";
 import type { Member } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -62,11 +62,15 @@ async function memberRoster(db: Exclude<ReturnType<typeof getDb>, null>): Promis
 
   const members: Member[] = rows
     .filter((row) => Boolean(row.minecraftUsername?.trim()))
-    .map((row, i) => {
+    .map((row) => {
       const mcName = row.minecraftUsername!.trim();
       const online = onlineNames.has(mcName.toLowerCase());
       return {
-        id: i + 1,
+        // The account id, not the array position: positional ids changed
+        // whenever the roster reordered (it's sorted by username, and the
+        // online filter runs first), so React reused the wrong rows and the
+        // slideshow's `key` pointed at a different member after any rename.
+        id: row.id,
         name: row.username,
         role: row.role === "admin" ? "Admin" : "Member",
         icon: row.role === "admin" ? "fa-shield-halved" : "fa-user",
@@ -92,22 +96,4 @@ function formatJoined(iso: string | null): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
-const COLORS = [
-  "avatar-1",
-  "avatar-2",
-  "avatar-3",
-  "avatar-4",
-  "avatar-5",
-  "avatar-6",
-  "avatar-7",
-  "avatar-8",
-];
-
-/** Deterministic letter-tile color for an account id. */
-function colorFor(id: string): string {
-  let h = 0;
-  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) % 997;
-  return COLORS[h % COLORS.length];
 }

@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { listAccounts, updateAccount, removeAccount, checkAdmin } from "@/lib/accounts";
+import {
+  addPermissions,
+  checkAdmin,
+  listAccounts,
+  removeAccount,
+  removePermissions,
+  updateAccount,
+} from "@/lib/accounts";
 import { getSessionUser } from "@/lib/auth";
 import type { Permission } from "@/types";
 
@@ -51,8 +58,15 @@ export async function GET() {
   });
 }
 
-// Update an account's role/permissions (admin only).
-// Body: { id, role?, permissions? }
+// Update an account's role and/or permissions (admin only).
+//
+// Body: { id, role?, grant?: Permission[], revoke?: Permission[], permissions? }
+//
+// `grant`/`revoke` are the preferred form and are applied as SQL deltas
+// (addPermissions/removePermissions), so two admins toggling different perks
+// on the same member at the same time — or a member re-verifying Discord
+// mid-toggle — can't clobber each other. `permissions` (the whole array) is
+// still accepted for a deliberate "set exactly these" write.
 export async function POST(request: Request) {
   const guard = await requireAdmin();
   if (!guard.ok) return denyResponse(guard);
@@ -71,18 +85,34 @@ export async function POST(request: Request) {
   const patch: Parameters<typeof updateAccount>[1] = {};
   if (body.role === "admin" || body.role === "member") patch.role = body.role;
   if (Array.isArray(body.permissions)) patch.permissions = sanitizePermissions(body.permissions);
-
-  // An empty patch would emit a malformed `UPDATE … SET  WHERE id = …`.
-  if (Object.keys(patch).length === 0) {
+  const grant = sanitizePermissions(body.grant);
+  const revoke = sanitizePermissions(body.revoke);
+  // A perk in both lists is a contradictory request, not something to guess at.
+  const conflict = grant.find((p) => revoke.includes(p));
+  if (conflict) {
     return NextResponse.json(
-      { error: "Nothing to update — send role and/or permissions." },
+      { error: `"${conflict}" can't be granted and revoked in the same request.` },
       { status: 400 }
     );
   }
 
-  let updated: Awaited<ReturnType<typeof updateAccount>>;
+  // An empty patch would emit a malformed `UPDATE … SET  WHERE id = …`.
+  if (Object.keys(patch).length === 0 && grant.length === 0 && revoke.length === 0) {
+    return NextResponse.json(
+      { error: "Nothing to update — send role, permissions, grant or revoke." },
+      { status: 400 }
+    );
+  }
+
+  let updated: Awaited<ReturnType<typeof updateAccount>> = null;
   try {
-    updated = await updateAccount(id, patch);
+    if (Object.keys(patch).length > 0) {
+      updated = await updateAccount(id, patch);
+      // Report a missing account before spending more round-trips on it.
+      if (!updated) return NextResponse.json({ error: "Account not found" }, { status: 404 });
+    }
+    if (grant.length > 0) updated = await addPermissions(id, grant);
+    if (revoke.length > 0) updated = await removePermissions(id, revoke);
   } catch {
     return NextResponse.json(DB_DOWN, { status: 503 });
   }
@@ -116,6 +146,9 @@ export async function DELETE(request: Request) {
 }
 
 // Restore a banned account (admin only). Body: { id }
+//
+// Clearing the ban flag is the whole restore: removeAccount no longer wipes
+// role/permissions/verification, so the account comes back exactly as it was.
 export async function PUT(request: Request) {
   const guard = await requireAdmin();
   if (!guard.ok) return denyResponse(guard);

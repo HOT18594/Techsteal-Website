@@ -12,6 +12,13 @@ const PERMISSION_LABELS: Record<Permission, { label: string; icon: string }> = {
   gallery_post: { label: "Gallery Post", icon: "fa-image" },
 };
 
+/** What POST /api/admin/members accepts. Permission changes go as deltas. */
+type AdminPatch = {
+  role?: Account["role"];
+  grant?: Permission[];
+  revoke?: Permission[];
+};
+
 export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
   const { show } = useToast();
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -22,12 +29,20 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/members");
-      if (!res.ok) throw new Error();
-      const data = (await res.json()) as { accounts: Account[]; bannedAccounts?: Account[] };
-      setAccounts(data.accounts);
+      const data = (await res.json().catch(() => ({}))) as {
+        accounts?: Account[];
+        bannedAccounts?: Account[];
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error || "Are you signed in as an admin?");
+      setAccounts(data.accounts ?? []);
       setBanned(data.bannedAccounts ?? []);
-    } catch {
-      show("Failed to load members", "Are you signed in as an admin?", "error");
+    } catch (err) {
+      show(
+        "Failed to load members",
+        err instanceof Error ? err.message : "Are you signed in as an admin?",
+        "error"
+      );
     } finally {
       setLoading(false);
     }
@@ -37,7 +52,8 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
     void load();
   }, [load]);
 
-  const save = async (id: string, patch: Partial<Account>) => {
+  /** POST a patch to /api/admin/members and refresh from the response. */
+  const save = async (id: string, patch: AdminPatch) => {
     setBusyId(id);
     try {
       const res = await fetch("/api/admin/members", {
@@ -45,11 +61,15 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, ...patch }),
       });
-      if (!res.ok) throw new Error();
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      // The server explains WHY ("You can't demote yourself.", a 503 during a
+      // pooler blip); throwing a bare Error discarded that and every failure
+      // read "Something went wrong."
+      if (!res.ok) throw new Error(data.error || "Something went wrong.");
       await load();
       show("Saved", "Member updated.");
-    } catch {
-      show("Couldn't save", "Something went wrong.");
+    } catch (err) {
+      show("Couldn't save", err instanceof Error ? err.message : "Something went wrong.", "error");
     } finally {
       setBusyId(null);
     }
@@ -59,11 +79,13 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
     void save(account.id, { role: account.role === "admin" ? "member" : "admin" });
 
   const togglePermission = (account: Account, permission: Permission) => {
+    // Send the DELTA, not the recomputed whole array: the array came from
+    // render state, so two quick toggles (or another admin's change landing
+    // between the render and the click) wrote back a list that had already
+    // gone stale and silently reverted the other change. The server applies
+    // grant/revoke in SQL against the current row.
     const has = account.permissions.includes(permission);
-    const next = has
-      ? account.permissions.filter((p) => p !== permission)
-      : [...account.permissions, permission];
-    void save(account.id, { permissions: next });
+    void save(account.id, has ? { revoke: [permission] } : { grant: [permission] });
   };
 
   const remove = async (account: Account) => {
@@ -77,11 +99,12 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: account.id }),
       });
-      if (!res.ok) throw new Error();
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Something went wrong.");
       await load();
       show("Removed", `${account.username} was removed.`);
-    } catch {
-      show("Couldn't remove", "Something went wrong.", "error");
+    } catch (err) {
+      show("Couldn't remove", err instanceof Error ? err.message : "Something went wrong.", "error");
     } finally {
       setBusyId(null);
     }
@@ -95,11 +118,12 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: account.id }),
       });
-      if (!res.ok) throw new Error();
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Something went wrong.");
       await load();
       show("Restored", `${account.username} can sign in again.`);
-    } catch {
-      show("Couldn't restore", "Something went wrong.", "error");
+    } catch (err) {
+      show("Couldn't restore", err instanceof Error ? err.message : "Something went wrong.", "error");
     } finally {
       setBusyId(null);
     }

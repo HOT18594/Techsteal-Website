@@ -25,7 +25,12 @@ export type Db = PostgresJsDatabase<typeof schema>;
 // Cache on globalThis: Next.js dev hot-reload re-evaluates modules, so a
 // plain module-level let would create a NEW postgres pool on every edit
 // while the old one keeps its sockets open — until the pooler maxes out.
-const g = globalThis as unknown as { __techstealDb?: Db };
+//
+// Keyed by the resolved connection string: the cache used to be a single slot,
+// so `createDb(otherUrl)` silently handed back the client for whatever URL got
+// there first and connected to the wrong database (the seed script passes an
+// explicit URL).
+const g = globalThis as unknown as { __techstealDb?: Map<string, Db> };
 
 /**
  * Route session-pooler URLs (port 5432) to Supabase's TRANSACTION pooler
@@ -51,8 +56,11 @@ export function toTransactionPooler(url: string): string {
 
 export function createDb(url = process.env.DATABASE_URL): Db {
   if (!url) throw new Error("DATABASE_URL is not set");
-  if (g.__techstealDb) return g.__techstealDb;
-  const client = postgres(toTransactionPooler(url), {
+  const resolved = toTransactionPooler(url);
+  const cache = (g.__techstealDb ??= new Map<string, Db>());
+  const cached = cache.get(resolved);
+  if (cached) return cached;
+  const client = postgres(resolved, {
     // Required for the transaction pooler: it doesn't support session-level
     // prepared statements.
     prepare: false,
@@ -62,7 +70,7 @@ export function createDb(url = process.env.DATABASE_URL): Db {
     connect_timeout: 10,
   });
   const db = drizzle(client, { schema });
-  g.__techstealDb = db;
+  cache.set(resolved, db);
   return db;
 }
 

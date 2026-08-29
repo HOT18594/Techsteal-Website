@@ -13,18 +13,40 @@ import type { ForumPoll } from "@/types";
 
 export interface PollDraft {
   question: string;
-  options: string[];
+  /** Options carry a stable key so the inputs aren't keyed by index. */
+  options: PollDraftOption[];
   /** ISO timestamp. */
   endsAt: string;
 }
 
-export const EMPTY_POLL_DRAFT: PollDraft = { question: "", options: ["", ""], endsAt: "" };
+export interface PollDraftOption {
+  /** Stable across reorders/removals — used as the React key. */
+  key: string;
+  text: string;
+}
+
+/** The server's cap; the builder enforces the same number so a draft that
+ *  can't be submitted says so instead of being silently truncated. */
+export const MAX_POLL_OPTIONS = 10;
+
+let optionSeq = 0;
+function newOption(text = ""): PollDraftOption {
+  return { key: `o${++optionSeq}`, text };
+}
+
+/** A fresh draft. Not a shared constant: the options array is mutable state,
+ *  and every caller reusing one object meant a reset re-adopted the keys (and
+ *  in dev, React's double-invoke shared them across two composers). */
+export function emptyPollDraft(): PollDraft {
+  return { question: "", options: [newOption(), newOption()], endsAt: "" };
+}
 
 export function pollDraftValid(d: PollDraft): boolean {
-  const filled = d.options.map((o) => o.trim()).filter(Boolean);
+  const filled = d.options.map((o) => o.text.trim()).filter(Boolean);
   return (
     d.question.trim().length > 0 &&
     filled.length >= 2 &&
+    filled.length <= MAX_POLL_OPTIONS &&
     Boolean(d.endsAt) &&
     new Date(d.endsAt).getTime() > Date.now()
   );
@@ -33,7 +55,11 @@ export function pollDraftValid(d: PollDraft): boolean {
 export function pollDraftPayload(d: PollDraft): { question: string; options: string[]; endsAt: string } {
   return {
     question: d.question.trim(),
-    options: d.options.map((o) => o.trim()).filter(Boolean).slice(0, 10),
+    // No .slice(): silently dropping the 11th option swallowed the server's
+    // "at most ten options." error and the admin never learned an option was
+    // missing. The builder caps adding, and pollDraftValid rejects an
+    // over-long draft, so this just reports what's there.
+    options: d.options.map((o) => o.text.trim()).filter(Boolean),
     endsAt: new Date(d.endsAt).toISOString(),
   };
 }
@@ -45,8 +71,11 @@ export function PollBuilder({
   draft: PollDraft;
   onChange: (d: PollDraft) => void;
 }) {
-  const setOption = (i: number, v: string) =>
-    onChange({ ...draft, options: draft.options.map((o, n) => (n === i ? v : o)) });
+  const setOption = (key: string, v: string) =>
+    onChange({
+      ...draft,
+      options: draft.options.map((o) => (o.key === key ? { ...o, text: v } : o)),
+    });
 
   const preset = (days: number) => {
     const d = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
@@ -69,14 +98,18 @@ export function PollBuilder({
       />
       <div className="space-y-2">
         {draft.options.map((opt, i) => (
-          <div key={i} className="flex items-center gap-2">
+          // Keyed by the option's own id, not its position: removing a middle
+          // option re-pointed every later key at different text, so React
+          // moved the DOM nodes and the focused input (and any in-progress
+          // IME composition) jumped to another row.
+          <div key={opt.key} className="flex items-center gap-2">
             <span className="w-6 text-center text-xs text-[var(--muted-2)] flex-shrink-0">{i + 1}</span>
             <input
               className="input"
               placeholder={`Option ${i + 1}`}
-              value={opt}
+              value={opt.text}
               maxLength={80}
-              onChange={(e) => setOption(i, e.target.value)}
+              onChange={(e) => setOption(opt.key, e.target.value)}
               aria-label={`Poll option ${i + 1}`}
             />
             {draft.options.length > 2 ? (
@@ -84,7 +117,7 @@ export function PollBuilder({
                 type="button"
                 className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--redstone)] hover:text-[var(--redstone)] transition"
                 onClick={() =>
-                  onChange({ ...draft, options: draft.options.filter((_, n) => n !== i) })
+                  onChange({ ...draft, options: draft.options.filter((o) => o.key !== opt.key) })
                 }
                 aria-label={`Remove option ${i + 1}`}
               >
@@ -93,15 +126,19 @@ export function PollBuilder({
             ) : null}
           </div>
         ))}
-        {draft.options.length < 10 ? (
+        {draft.options.length < MAX_POLL_OPTIONS ? (
           <button
             type="button"
             className="btn-ghost btn-sm"
-            onClick={() => onChange({ ...draft, options: [...draft.options, ""] })}
+            onClick={() => onChange({ ...draft, options: [...draft.options, newOption()] })}
           >
             <i className="fa-solid fa-plus" /> Add option
           </button>
-        ) : null}
+        ) : (
+          <p className="text-xs text-[var(--muted-2)]">
+            That&apos;s the maximum of {MAX_POLL_OPTIONS} options.
+          </p>
+        )}
       </div>
       <div>
         <label className="block text-xs text-[var(--muted)] mb-1.5" htmlFor="poll-ends">
@@ -148,9 +185,18 @@ function localInputValue(d: Date): string {
 // Viewer
 // ---------------------------------------------------------------------------
 
+/** Parse a poll deadline, or null when the server sent something unusable. */
+function deadline(endsAt: string): number | null {
+  const t = new Date(endsAt).getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
 function countdown(endsAt: string): string {
-  const ms = new Date(endsAt).getTime() - Date.now();
-  if (Number.isNaN(ms)) return "";
+  const end = deadline(endsAt);
+  // An unparseable deadline used to return "" while `ended` stayed false, so
+  // the badge rendered as a lone hourglass icon with no text next to it.
+  if (end === null) return "No end date";
+  const ms = end - Date.now();
   if (ms <= 0) return "Final results";
   const mins = Math.floor(ms / 60_000);
   if (mins < 1) return "Ends in under a minute";
@@ -186,8 +232,10 @@ export function PollViewer({
 
   // Compute ended from endsAt NOW, not from the (possibly stale) server
   // snapshot — a poll sitting open in a tab must close itself at the
-  // deadline without a refetch.
-  const ended = new Date(poll.endsAt).getTime() <= Date.now();
+  // deadline without a refetch. An unparseable date is treated as "open"
+  // rather than "ended" so a bad row doesn't silently lock out voting.
+  const end = deadline(poll.endsAt);
+  const ended = end !== null && end <= Date.now();
   const total = useMemo(
     () => poll.totalVotes ?? Object.values(poll.counts ?? {}).reduce((a, b) => a + b, 0),
     [poll]
@@ -222,7 +270,7 @@ export function PollViewer({
           }`}
         >
           <i className={`fa-solid ${ended ? "fa-flag-checkered" : "fa-hourglass-half"} text-[10px]`} />
-          {countdown(poll.endsAt) || (ended ? "Final results" : "")}
+          {countdown(poll.endsAt)}
         </span>
       </div>
 

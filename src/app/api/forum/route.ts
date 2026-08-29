@@ -7,19 +7,26 @@ import { getSessionUser } from "@/lib/auth";
 import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, checkAdmin } from "@/lib/accounts";
 import { isRateLimited } from "@/lib/rate-limit";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
+import { CATEGORY_LIST } from "@/lib/forum-categories";
 import { parsePollInput, pollOptionRows } from "@/lib/polls";
 import { publicRow } from "@/lib/public-row";
+import { parseRouteId } from "@/lib/route-ids";
 
 export const dynamic = "force-dynamic";
 
-const CATEGORIES = ["General", "Announcements", "Ideas", "Builds", "Redstone", "Technical", "Off-topic"];
+// The client renders the same list from lib/forum-categories — two copies had
+// already drifted into different orders, and a category the client offered but
+// this list didn't know silently fell back to "General".
+const CATEGORIES: readonly string[] = CATEGORY_LIST;
 const SORTS = ["new", "top", "hot", "views"] as const;
 const PER_PAGE = 15;
 
-/** Parse a thread/reply id from a JSON body, rejecting null/""/0. */
+/** Parse a thread/reply id from a JSON body, rejecting null/""/0/negatives. */
 function parseId(value: unknown): number | null {
-  const id = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
-  return Number.isInteger(id) && id > 0 ? id : null;
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+  return parseRouteId(typeof value === "string" ? value : null);
 }
 
 /** Escape LIKE wildcards so user input can't match everything. */
@@ -230,35 +237,51 @@ export async function POST(request: NextRequest) {
 
   // Author name comes from the live account, not the (up to 7-day-old)
   // session cookie, so renamed users post under their current name.
-  const username = account?.username ?? user.username;
+  const username = account.username;
   const now = new Date();
 
-  const created = await getDb()!.transaction(async (tx) => {
-    const [thread] = await tx
-      .insert(forumThreads)
-      .values({
-        title,
-        content,
-        author: username,
-        authorId: user.id,
-        category,
-        avatar: username.slice(0, 1).toUpperCase(),
-        tagClass: "tag-accent",
-        last: now.toISOString(),
-        createdAt: now,
-      })
-      .returning();
-    if (pollInput) {
-      await tx.insert(forumPolls).values({
-        threadId: thread.id,
-        question: pollInput.question,
-        options: pollOptionRows(pollInput.options),
-        endsAt: pollInput.endsAt,
-        createdAt: now,
-      });
-    }
-    return thread;
-  });
+  // `gate.status === "ok"` above already proved the database is configured;
+  // keep the narrowing explicit instead of a non-null assertion.
+  const db = getDb();
+  if (!db) {
+    return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+  }
+
+  let created;
+  try {
+    created = await db.transaction(async (tx) => {
+      const [thread] = await tx
+        .insert(forumThreads)
+        .values({
+          title,
+          content,
+          author: username,
+          authorId: user.id,
+          category,
+          avatar: username.slice(0, 1).toUpperCase(),
+          tagClass: "tag-accent",
+          last: now.toISOString(),
+          createdAt: now,
+        })
+        .returning();
+      if (pollInput) {
+        await tx.insert(forumPolls).values({
+          threadId: thread.id,
+          question: pollInput.question,
+          options: pollOptionRows(pollInput.options),
+          endsAt: pollInput.endsAt,
+          createdAt: now,
+        });
+      }
+      return thread;
+    });
+  } catch (err) {
+    // A pooler blip here used to escape as Next's generic 500 and the composer
+    // showed "The server rejected the request." — a 503 is truthful and tells
+    // the client this is worth retrying.
+    console.error("api/forum POST: insert failed", err);
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
 
   const avatars = await resolveAuthorAvatars([created]);
   const info = avatarInfoFor(avatars, created);
@@ -305,8 +328,8 @@ export async function PUT(request: NextRequest) {
   if (!db) return NextResponse.json({ error: "Database not configured" }, { status: 503 });
 
   // Live-account gate for the OWNER path: a removed member's unexpired
-  // cookie must not keep editing content. (Admins pass isAdminUser, which
-  // already re-reads the DB and rejects banned accounts.)
+  // cookie must not keep editing content. (The admin path below calls
+  // checkAdmin(), which re-reads the DB and rejects banned accounts.)
   const gate = await accountGate(user.id);
   if (gate.status === "missing" || gate.status === "banned") {
     return NextResponse.json(

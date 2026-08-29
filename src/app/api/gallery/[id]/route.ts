@@ -7,38 +7,18 @@ import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, checkAdmin } from "@/lib/account
 import { isRateLimited, rateLimitIp } from "@/lib/rate-limit";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { publicRow } from "@/lib/public-row";
+import { parseRouteId } from "@/lib/route-ids";
+import { shouldCountView } from "@/lib/view-counter";
+import { deleteImagesByUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
-// View-count dedupe: one count per viewer per item per 6h.
-const VIEW_SEEN = new Map<string, number>();
-const VIEW_TTL = 6 * 60 * 60_000;
-
-function countView(itemId: number, viewer: string): boolean {
-  const now = Date.now();
-  if (VIEW_SEEN.size > 5000) {
-    for (const [k, ts] of VIEW_SEEN) {
-      if (now - ts > VIEW_TTL) VIEW_SEEN.delete(k);
-    }
-    // Still over cap (flood of unique viewers within one TTL window):
-    // hard-evict oldest-inserted keys — bounded memory beats perfect counts.
-    while (VIEW_SEEN.size > 4500) {
-      const oldest = VIEW_SEEN.keys().next();
-      if (oldest.done) break;
-      VIEW_SEEN.delete(oldest.value);
-    }
-  }
-  const key = `${itemId}:${viewer}`;
-  const last = VIEW_SEEN.get(key);
-  if (last !== undefined && now - last < VIEW_TTL) return false;
-  VIEW_SEEN.set(key, now);
-  return true;
-}
-
-/** Parse an id from a JSON body, rejecting null/""/0. */
+/** Parse an id from a JSON body, rejecting null/""/0/negatives. */
 function parseId(value: unknown): number | null {
-  const id = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
-  return Number.isInteger(id) && id > 0 ? id : null;
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+  return parseRouteId(typeof value === "string" ? value : null);
 }
 
 // Gallery item detail: the post + its comments. Bumps the view counter
@@ -48,8 +28,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const itemId = Number(id);
-  if (!Number.isInteger(itemId)) {
+  const itemId = parseRouteId(id);
+  if (itemId === null) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
   const db = getDb();
@@ -67,7 +47,7 @@ export async function GET(
   // rateLimitIp takes the LAST x-forwarded-for entry (our own edge's) —
   // deduping on the client-controlled first entry let anyone inflate views.
   const viewer = user?.id ?? rateLimitIp(request);
-  if (countView(itemId, viewer)) {
+  if (shouldCountView("gallery", itemId, viewer)) {
     const [bumped] = await db
       .update(galleryItems)
       .set({ views: sql`${galleryItems.views} + 1` })
@@ -89,10 +69,14 @@ export async function GET(
     ...publicRow(item),
     liked: user ? ((item.likedBy ?? []) as string[]).includes(user.id) : false,
     builderAvatar: builderInfo?.avatarUrl ?? null,
+    // Authoritative count for the lightbox header. Without it the header read
+    // the (possibly stale) grid value and showed 0 while comments rendered
+    // right below it.
+    commentCount: comments.length,
   };
   const enriched = comments.map((c) => {
     const info = avatarInfoFor(avatars, c);
-    return { ...c, avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? "avatar-1" };
+    return { ...publicRow(c), avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? "avatar-1" };
   });
 
   return NextResponse.json({ item: itemOut, comments: enriched });
@@ -128,12 +112,17 @@ export async function POST(
   }
 
   const { id } = await params;
-  const itemId = Number(id);
-  if (!Number.isInteger(itemId)) {
+  const itemId = parseRouteId(id);
+  if (itemId === null) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
 
-  const db = getDb()!;
+  // `gate.status === "ok"` above already proved the database is configured,
+  // but keep the narrowing explicit instead of a non-null assertion.
+  const db = getDb();
+  if (!db) {
+    return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+  }
 
   const [item] = await db
     .select({ id: galleryItems.id })
@@ -153,7 +142,7 @@ export async function POST(
     return NextResponse.json({ error: "Comments can be at most 2,000 characters." }, { status: 400 });
   }
 
-  const username = account?.username ?? user.username;
+  const username = account.username;
   const [created] = await db
     .insert(galleryComments)
     .values({ itemId, content, author: username, authorId: user.id })
@@ -164,7 +153,7 @@ export async function POST(
   // `color` resolved like GET returns (gallery_comments stores none of its
   // own), so the freshly-appended comment matches after a reload.
   return NextResponse.json(
-    { ...created, avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? "avatar-1" },
+    { ...publicRow(created), avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? "avatar-1" },
     { status: 201 }
   );
 }
@@ -182,8 +171,8 @@ export async function DELETE(
   }
 
   const { id } = await params;
-  const itemId = Number(id);
-  if (!Number.isInteger(itemId)) {
+  const itemId = parseRouteId(id);
+  if (itemId === null) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
   const body = await request.json().catch(() => ({}));
@@ -231,7 +220,11 @@ export async function DELETE(
   }
 
   const [item] = await db
-    .select({ authorId: galleryItems.authorId })
+    .select({
+      authorId: galleryItems.authorId,
+      image: galleryItems.image,
+      images: galleryItems.images,
+    })
     .from(galleryItems)
     .where(eq(galleryItems.id, itemId))
     .limit(1);
@@ -253,6 +246,11 @@ export async function DELETE(
     await tx.delete(galleryComments).where(eq(galleryComments.itemId, itemId));
     await tx.delete(galleryItems).where(eq(galleryItems.id, itemId));
   });
+  // Only once the rows are really gone: drop the stored images too, otherwise
+  // every deleted post left its files in the bucket forever. Best-effort by
+  // design — deleteImagesByUrl logs and returns instead of throwing, so a
+  // storage hiccup can't fail a delete that already succeeded.
+  await deleteImagesByUrl([item.image, ...(item.images ?? [])]);
   return NextResponse.json({ ok: true });
 }
 
@@ -270,8 +268,8 @@ export async function PATCH(
     return NextResponse.json({ error: "Admins only." }, { status: 403 });
   }
   const { id } = await params;
-  const itemId = Number(id);
-  if (!Number.isInteger(itemId)) {
+  const itemId = parseRouteId(id);
+  if (itemId === null) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
   const body = await request.json().catch(() => ({}));

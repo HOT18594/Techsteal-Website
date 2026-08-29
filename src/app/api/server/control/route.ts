@@ -23,7 +23,21 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const user = await getSessionUser();
-  const outcome = await canControlNow(user?.id ?? null);
+  // Signed out can't control anything — answer from the cookie alone and skip
+  // the account lookup entirely.
+  if (!user) {
+    return NextResponse.json({ configured: getExarotonConfig() !== null, allowed: false });
+  }
+  // The status page polls this alongside /api/status (and re-probes on every
+  // manual refresh), and each probe was an unthrottled `findAccount`. Cap it
+  // generously: enough for normal polling, not enough to hammer the pooler.
+  if (isRateLimited(`controlget:${user.id}`, 30, 60_000)) {
+    return NextResponse.json(
+      { configured: getExarotonConfig() !== null, allowed: false, error: "Too many requests — slow down." },
+      { status: 429 }
+    );
+  }
+  const outcome = await canControlNow(user.id);
   if (outcome === "db_error") {
     // A pooler outage must not read as "not allowed" — the UI would hide
     // the panel from verified members and tell them to re-verify.

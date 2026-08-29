@@ -44,7 +44,11 @@ async function fetchLiveStatus(): Promise<ServerStatus> {
       max: snap.max,
       playerList: snap.playerList,
       version: snap.version ?? undefined,
-      hostname: process.env.MINECRAFT_SERVER ?? undefined,
+      // The public address players type into Minecraft — the same value every
+      // other branch and the Connection card report. MINECRAFT_SERVER is the
+      // exaroton *panel* identifier, which isn't always the join address, so
+      // the two sources could disagree about what to connect to.
+      hostname: process.env.MINECRAFT_SERVER ?? siteConfig.address,
       serverName: snap.serverName,
       motd: snap.motd,
       software: snap.software,

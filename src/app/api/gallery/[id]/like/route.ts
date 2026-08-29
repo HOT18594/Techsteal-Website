@@ -5,6 +5,7 @@ import { galleryItems } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
 import { ACCOUNT_DB_ERROR_MESSAGE, accountGate } from "@/lib/accounts";
 import { publicRow } from "@/lib/public-row";
+import { parseRouteId } from "@/lib/route-ids";
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +22,8 @@ export async function POST(
   }
 
   const { id } = await params;
-  const itemId = Number(id);
-  if (!Number.isInteger(itemId)) {
+  const itemId = parseRouteId(id);
+  if (itemId === null) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
 

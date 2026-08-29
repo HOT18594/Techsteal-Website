@@ -44,6 +44,10 @@ export function Avatar({
       title={name}
     >
       {showImage ? (
+        // Sized entirely by the .avatar wrapper's CSS (SIZES), so there are no
+        // intrinsic width/height to hand next/image, and images.unoptimized is
+        // on in next.config.ts — <img> is the right primitive here.
+        // eslint-disable-next-line @next/next/no-img-element
         <img src={src ?? ""} alt="" loading="lazy" onError={() => setFailedSrc(src ?? null)} />
       ) : (
         <span className="avatar-fallback" aria-hidden="true">

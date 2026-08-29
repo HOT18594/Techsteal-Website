@@ -2,50 +2,30 @@
 
 import Image from "next/image";
 import type { CSSProperties } from "react";
-import { useEffect, useRef, useState } from "react";
 import { siteConfig } from "@/lib/site";
 import { fallbackMembers, fallbackGallery, fallbackStatus } from "@/lib/fallback-data";
 import type { GalleryItem, Member, ServerStatus } from "@/types";
 import { MemberSlideshow } from "@/components/MemberSlideshow";
-import { useToast } from "@/components/Toast";
+import { useCopyAddress } from "@/components/CopyIpButton";
 import { useApi } from "@/lib/use-api";
 import Link from "next/link";
 
 export function HeroClient() {
-  const { show } = useToast();
   // Live previews for the three feature tiles (console style — no slideshow).
   const { data: status } = useApi<ServerStatus>("/api/status", fallbackStatus);
   const { data: members } = useApi<Member[]>("/api/members", fallbackMembers);
   const { data: gallery } = useApi<GalleryItem[]>("/api/gallery", fallbackGallery);
 
-  // "Copied!" flash handled in React state so BOTH copy buttons (the hero
-  // kicker pill and the Copy IP button) get their own feedback, instead of
-  // DOM surgery that always rewrote one button and raced its own timer.
-  const [copied, setCopied] = useState(false);
-  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Clear the pending "Copied!" timer on unmount — setState after unmount.
-  useEffect(() => {
-    return () => {
-      if (copiedTimer.current) clearTimeout(copiedTimer.current);
-    };
-  }, []);
+  // The site-wide copy-address hook (used by /join and /status too). The hero
+  // used to hand-roll this — same toast, same 2s "Copied!" flash, same unmount
+  // timer cleanup — so the shared implementation was quietly dead here. Both
+  // hero copy affordances (the kicker pill and the Copy IP button) read the
+  // one `copied` flag, so they still flash together.
+  const { copied, copy: copyIP } = useCopyAddress();
 
   // Never present fallback status numbers as live — same guard as the
   // Navbar and Status page use.
   const statusLive = status.source === "live";
-
-  const copyIP = async () => {
-    try {
-      await navigator.clipboard.writeText(siteConfig.address);
-      show("Server address copied", siteConfig.address);
-      if (copiedTimer.current) clearTimeout(copiedTimer.current);
-      setCopied(true);
-      copiedTimer.current = setTimeout(() => setCopied(false), 2000);
-    } catch {
-      show("Couldn't copy address", siteConfig.address);
-    }
-  };
 
   return (
     <>
@@ -258,6 +238,10 @@ export function HeroClient() {
                           key={g.id ?? g.title}
                           className="relative rounded-lg overflow-hidden border border-[var(--border)]"
                         >
+                          {/* Grid-cell sized (no intrinsic dimensions) and
+                              images.unoptimized is on in next.config.ts, so
+                              next/image would only add wrapper markup. */}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={g.image}
                             alt={g.title}

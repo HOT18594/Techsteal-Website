@@ -21,7 +21,7 @@ export interface AuthorAvatar {
   color: string;
 }
 
-const COLORS = [
+export const AVATAR_COLORS = [
   "avatar-1",
   "avatar-2",
   "avatar-3",
@@ -30,12 +30,15 @@ const COLORS = [
   "avatar-6",
   "avatar-7",
   "avatar-8",
-];
+] as const;
 
-function colorFor(id: string): string {
+/** Deterministic letter-tile color for an account id. Exported because the
+ *  member directory needs the SAME color a user's forum posts get — the two
+ *  used to hold independent copies of this function and could drift. */
+export function colorFor(id: string): string {
   let h = 0;
   for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) % 997;
-  return COLORS[h % COLORS.length];
+  return AVATAR_COLORS[h % AVATAR_COLORS.length];
 }
 
 /**

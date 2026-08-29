@@ -123,23 +123,38 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Posts can have at most ${MAX_IMAGES} images.` }, { status: 400 });
   }
 
-  const [created] = await getDb()!
-    .insert(galleryItems)
-    .values({
-      title,
-      // Live account name, not the (up to 7-day-old) cookie — same rule as
-      // forum threads, so renamed users post under their current name.
-      builder: account?.username ?? user.username,
-      authorId: user.id,
-      category,
-      description,
-      likes: 0,
-      image: images[0],
-      images,
-      height: "medium",
-      createdAt: new Date(),
-    })
-    .returning();
+  // `gate.status === "ok"` above already proved the database is configured;
+  // keep the narrowing explicit instead of a non-null assertion.
+  const db = getDb();
+  if (!db) {
+    return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+  }
+
+  let created;
+  try {
+    [created] = await db
+      .insert(galleryItems)
+      .values({
+        title,
+        // Live account name, not the (up to 7-day-old) cookie — same rule as
+        // forum threads, so renamed users post under their current name.
+        builder: account.username,
+        authorId: user.id,
+        category,
+        description,
+        likes: 0,
+        image: images[0],
+        images,
+        height: "medium",
+        createdAt: new Date(),
+      })
+      .returning();
+  } catch (err) {
+    // A pooler blip escaped as Next's generic 500 and the composer reported
+    // "The server rejected the request." — 503 is truthful and retryable.
+    console.error("api/gallery POST: insert failed", err);
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
 
   return NextResponse.json({ ...publicRow(created), liked: false, commentCount: 0 }, { status: 201 });
 }

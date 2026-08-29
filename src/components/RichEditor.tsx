@@ -18,6 +18,7 @@ import {
 } from "react";
 import { Markdown } from "./Markdown";
 import { compressImage, MAX_UPLOAD_BYTES } from "@/lib/imaging";
+import { xhrUpload } from "@/lib/xhr-upload";
 
 interface RichEditorProps {
   value: string;
@@ -93,6 +94,16 @@ const TOOLS: ToolButton[] = [
   { icon: "fa-link", label: "Link", key: "k", run: (wrap) => wrap("[", "](https://)", "link text") },
   { icon: "fa-grip-lines", label: "Divider (---)", run: (wrap) => wrap("", "\n\n---\n\n") },
 ];
+
+/** Which line-prefix family a string starts with, or null for none. Used to
+ *  toggle list/heading/quote prefixes by KIND rather than exact text. */
+function prefixKind(text: string): "heading" | "bullet" | "ordered" | "quote" | null {
+  if (/^#{1,3}\s+/.test(text)) return "heading";
+  if (/^[-*]\s+/.test(text)) return "bullet";
+  if (/^\d+[.)]\s+/.test(text)) return "ordered";
+  if (/^>\s?/.test(text)) return "quote";
+  return null;
+}
 
 export function RichEditor({
   value,
@@ -200,7 +211,10 @@ export function RichEditor({
         const block = value.slice(lineStart, lineEnd);
         // Toggle: applying the same prefix again removes it.
         const stripped = block.replace(/^(#{1,3}\s+|[-*]\s+|\d+[.)]\s+|>\s?)/, "");
-        const already = block.startsWith(prefix);
+        // Compare the KIND of prefix, not the literal text: the numbered-list
+        // button always sends "1. ", so a line already rendered as "2. " never
+        // matched startsWith() and the toggle turned it into "1. 2. ".
+        const already = prefixKind(block) !== null && prefixKind(block) === prefixKind(prefix);
         const nextBlock = already ? stripped : prefix + stripped;
         const delta = nextBlock.length - block.length;
         return {
@@ -230,16 +244,24 @@ export function RichEditor({
 
   const uploadFile = useCallback(
     async (file: File) => {
-      if (disabled || uploadingCount.current >= 4) return;
+      if (disabled) return;
+      if (uploadingCount.current >= 4) {
+        // Silently dropping the file here looked like the editor had simply
+        // ignored the paste/drop.
+        onUploadError?.("Four uploads are already running — wait for one to finish.");
+        return;
+      }
       if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type)) {
         onUploadError?.("Only JPG, PNG, WebP and GIF images can be embedded.");
         return;
       }
-      if (file.size > MAX_UPLOAD_BYTES) {
+      // GIFs can't be recompressed without losing the animation, so their
+      // size gate is the raw file. Everything else is measured AFTER
+      // compression below — a 6 MB Minecraft screenshot usually lands a few
+      // hundred KB, and rejecting it up front was needless.
+      if (file.type === "image/gif" && file.size > MAX_UPLOAD_BYTES) {
         onUploadError?.(
-          file.type === "image/gif"
-            ? "GIFs must be under 4 MB (they can't be compressed without losing the animation)."
-            : "Images must be under 4 MB — try a smaller screenshot."
+          "GIFs must be under 4 MB (they can't be compressed without losing the animation)."
         );
         return;
       }
@@ -251,6 +273,9 @@ export function RichEditor({
         // Downscale/compress in the browser first — screenshots straight out
         // of Minecraft are often 3–8 MB PNGs for no visual benefit.
         const compressed = await compressImage(file, 1920, 0.85);
+        if (compressed.size > MAX_UPLOAD_BYTES) {
+          throw new Error("Images must be under 4 MB — try a smaller screenshot.");
+        }
         const url = await xhrUpload(compressed, (pct) => pushProgress(uploadId, pct), inflightUploads.current);
         const snippet = `\n![${compressed.name.replace(/[^\w.-]/g, "").slice(0, 60) || "image"}](${url})\n`;
         if (taRef.current) {
@@ -423,8 +448,15 @@ export function RichEditor({
           <kbd className="rich-kbd">Ctrl+K</kbd> · paste/drag to embed
         </span>
         {counter < 500 ? (
-          <span className={`text-[11px] ${counter < 0 ? "text-[var(--redstone)]" : "text-[var(--muted-2)]"}`}>
-            {counter.toLocaleString()} left
+          // `counter < 0` was unreachable: the textarea's own maxLength and
+          // applyEdit's slice both cap the value at maxLength, so the count
+          // bottoms out at exactly 0. Warn AT the cap instead — that's the
+          // moment typing silently stops having any effect, which is what the
+          // red text needs to explain.
+          <span
+            className={`text-[11px] ${counter <= 0 ? "text-[var(--redstone)]" : "text-[var(--muted-2)]"}`}
+          >
+            {counter <= 0 ? "Character limit reached" : `${counter.toLocaleString()} left`}
           </span>
         ) : null}
       </div>
@@ -444,50 +476,4 @@ export function RichEditor({
       />
     </div>
   );
-}
-
-/** Upload with real progress events (fetch has none for request bodies).
- *  A hard timeout keeps a hung connection from spinning the progress bar
- *  forever. When `registry` is given the request is tracked there so the
- *  owner can abort it (unmount cleanup); aborting rejects with "aborted". */
-function xhrUpload(
-  file: File,
-  onProgress: (pct: number) => void,
-  registry?: Set<XMLHttpRequest>
-): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const body = new FormData();
-    body.set("image", file);
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/upload");
-    xhr.timeout = 60_000;
-    const settle = () => registry?.delete(xhr);
-    xhr.ontimeout = () => {
-      settle();
-      reject(new Error("Upload timed out — try again."));
-    };
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
-    };
-    xhr.onload = () => {
-      settle();
-      try {
-        const data = JSON.parse(xhr.responseText) as { url?: string; error?: string };
-        if (xhr.status >= 200 && xhr.status < 300 && data.url) resolve(data.url);
-        else reject(new Error(data.error ?? `Upload failed (${xhr.status})`));
-      } catch {
-        reject(new Error("Upload failed"));
-      }
-    };
-    xhr.onerror = () => {
-      settle();
-      reject(new Error("Upload failed — check your connection."));
-    };
-    xhr.onabort = () => {
-      settle();
-      reject(new Error("aborted"));
-    };
-    registry?.add(xhr);
-    xhr.send(body);
-  });
 }
