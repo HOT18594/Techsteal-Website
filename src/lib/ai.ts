@@ -18,7 +18,14 @@ import { desc, eq } from "drizzle-orm";
 import { siteConfig } from "./site";
 import { getDb } from "./db";
 import { forumThreads, galleryItems, profiles, ruleSections, timelineEvents } from "./schema";
-import { CHATTY_TOOLS, executeChattyTool, TOOL_LABELS, toolLabel } from "./chatty-tools";
+import {
+  CHATTY_TOOLS,
+  executeChattyTool,
+  TOOL_LABELS,
+  toolDoneLabel,
+  toolLabel,
+  type ChattyToolResult,
+} from "./chatty-tools";
 import { formatSearchResults, webSearch } from "./web-search";
 import { formatModrinthResults, searchModrinth, type ModrinthHit } from "./modrinth";
 
@@ -33,6 +40,15 @@ const RATE_LIMITED_MESSAGE =
 
 /** Max model round-trips (a round = completion → maybe tool calls → results). */
 const MAX_ROUNDS = 4;
+const MAX_TOOL_CALLS_PER_ROUND = 6;
+
+/** Default OpenRouter cascade, in priority order. Environment values can
+ * override it without removing the safety net behind them. */
+export const DEFAULT_AI_MODELS = [
+  "poolside/laguna-s-2.1:free",
+  "nvidia/nemotron-3.5-lightning:free",
+  "minimax/minimax-m3:free",
+] as const;
 
 /** Wall-clock budgets (ms), measured from when the event stream starts.
  * /api/chat sets `maxDuration = 60` and Vercel KILLS the function at that
@@ -43,7 +59,7 @@ const MAX_ROUNDS = 4;
 const TOOL_BUDGET_MS = 30_000;
 const FINAL_ANSWER_MS = 20_000;
 /** Per-round upstream timeout (also bounds the pre-tool cascade). */
-const ROUND_TIMEOUT_MS = 20_000;
+const ROUND_TIMEOUT_MS = 14_000;
 /** Web searches actually executed per answer. The free models love to
  * re-search over and over when results are thin — the cap turns the 4th
  * call into a "wrap it up" instruction instead of another slow failure. */
@@ -62,6 +78,59 @@ const MAX_WEB_SEARCHES = 2;
  */
 const SERVER_QUESTION_HINTS =
   /\b(rul|hac|cheat|grief|raid|spawn|member|staff|admin|build|gallery|history|timeline|era|season|whitelist|join|address|status|online|player|forum|discord|server|techsteal|how do i join|can i)|\b(ip)\b/i;
+
+interface PlannedToolCall {
+  id: string;
+  name: string;
+  args: string;
+}
+
+/** High-confidence routing fetches obvious live facts before the first model
+ * round. This makes status/rules/count questions reliable even when a free
+ * model has flaky function-calling support. The model can still call any tool. */
+function planLiveContext(message: string): PlannedToolCall[] {
+  const planned: Array<Omit<PlannedToolCall, "id">> = [];
+  if (/\b(status|online|offline|who(?:'s| is) online|players? online|server up)\b/i.test(message)) {
+    planned.push({ name: "get_server_status", args: "{}" });
+  }
+  if (/\b(rules?|allowed|banned|hacking|cheating|griefing|raiding)\b/i.test(message)) {
+    planned.push({ name: "get_rules", args: "{}" });
+  }
+  if (/\b(how many|counts?|stats?|statistics)\b/i.test(message)) {
+    planned.push({ name: "get_site_stats", args: "{}" });
+  }
+  if (/\b(history|timeline|seasons?|eras?|milestones?)\b/i.test(message)) {
+    planned.push({ name: "get_server_history", args: "{}" });
+  }
+  if (/\b(gallery|builds?)\b/i.test(message)) {
+    planned.push({ name: "search_gallery", args: "{}" });
+  }
+  return planned.slice(0, 2).map((call, index) => ({ ...call, id: `live_${index}_${call.name}` }));
+}
+
+function resolveModelCascade(): string[] {
+  const primary = process.env.AI_MODEL?.trim() || DEFAULT_AI_MODELS[0];
+  const configuredFallbacks = (
+    process.env.AI_FALLBACK_MODELS ?? process.env.AI_FALLBACK_MODEL ?? ""
+  )
+    .split(",")
+    .map((model) => model.trim())
+    .filter(Boolean);
+  return [...new Set([primary, ...configuredFallbacks, ...DEFAULT_AI_MODELS.slice(1)])];
+}
+
+function toolCacheKey(name: string, rawArgs: string): string {
+  try {
+    const parsed = JSON.parse(rawArgs || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const sorted = Object.fromEntries(Object.entries(parsed).sort(([a], [b]) => a.localeCompare(b)));
+      return `${name}:${JSON.stringify(sorted)}`;
+    }
+  } catch {
+    /* use the raw arguments below */
+  }
+  return `${name}:${rawArgs || "{}"}`;
+}
 
 /** What the assistant knows about the logged-in user it's talking to. */
 export interface ChatUserContext {
@@ -129,9 +198,10 @@ function buildSystemPrompt(opts: {
     `- search_gallery — find builds by title/builder/category`,
     `- search_forum + read_forum_thread — find and read discussions`,
     `- get_site_stats — member/thread/build/event counts`,
+    `- search_site — search members, builds, forum posts, history, and rules together when the question spans the site or the right section is unclear`,
     `- search_mods — Modrinth, the mod repository: LIVE data on specific mods/modpacks/shaders (author, description, downloads, versions, link). For ANY question about a specific mod or modpack, call search_mods FIRST.`,
     `- web_search — general Minecraft knowledge only (mechanics, crafting, updates), or NEWS about a mod search_mods couldn't find (unreleased/announced). NEVER for server-specific facts. LIMITED to 2 searches per answer — if the first results are thin, say so and answer from your own knowledge instead of searching again.`,
-    `Rules of thumb: greeting/FAQ you already know → answer directly. Anything about current players, specific members/builds/threads, counts, or anything the snapshot doesn't fully cover → call the matching tool first, then answer from the result. You may chain tools (search_forum → read_forum_thread). Don't call tools you don't need.`,
+    `Rules of thumb: greeting/FAQ you already know → answer directly. Anything about current players, specific members/builds/threads, counts, or anything the snapshot doesn't fully cover → call the matching tool first, then answer from the result. When independent lookups are all needed, request them together so they can run in parallel. You may chain dependent tools (search_forum → read_forum_thread). Don't call tools you don't need.`,
     ``,
     `=== TRUTH HIERARCHY (always follow in this order) ===`,
     `1. TOOL RESULTS — the freshest source of truth for anything about ${c.name}.`,
@@ -487,9 +557,7 @@ export async function streamChatReply(
 ): Promise<ReadableStream<Uint8Array>> {
   const apiKey = process.env.AI_API_KEY;
   const baseUrl = (process.env.AI_BASE_URL ?? "https://openrouter.ai/api/v1").replace(/\/+$/, "");
-  // Primary + fallback so a rate-limited free model doesn't strand the reply.
-  const model = process.env.AI_MODEL ?? "minimax/minimax-m3:free";
-  const fallbackModel = process.env.AI_FALLBACK_MODEL ?? "nvidia/nemotron-3-super-120b-a12b:free";
+  const modelCascade = resolveModelCascade();
 
   if (!apiKey) return messageStream(NOT_CONFIGURED(message));
 
@@ -499,11 +567,14 @@ export async function streamChatReply(
   // made it say "I'm not certain" before.
   const isModQuestion =
     /\b(mods?|modpacks?|shaders?|resource\s*packs?|datapacks?)\b/i.test(message);
+  const needsGeneralResearch =
+    !isServerQuestion &&
+    /\b(how|where|when|which|what|recipe|craft|find|farm|mechanic|version|update|best|fastest)\b/i.test(message);
   const [results, modHits, snapshot] = await Promise.all([
     // Free web search pre-attached for general questions (saves a tool
     // round); pure server questions get tools instead. Mod questions keep
     // web results too — news complements the Modrinth data.
-    isServerQuestion && !isModQuestion ? Promise.resolve([]) : webSearch(message),
+    needsGeneralResearch || isModQuestion ? webSearch(message) : Promise.resolve([]),
     isModQuestion ? searchModrinth(message) : Promise.resolve([] as ModrinthHit[]),
     buildKnowledgeSnapshot(),
   ]);
@@ -551,87 +622,141 @@ export async function streamChatReply(
   ];
 
   return eventStream(async (emit) => {
-    // Budgets run from stream start (the pre-stream prefetch — attached web
-    // results + knowledge snapshot — is separate but small).
     const startedAt = Date.now();
-    // The forced final answer must be able to tell whether ANY text ever
-    // reached the client, so model-emitted events flow through this tracer.
     let streamedText = false;
-    const trackEmit = (ev: Record<string, string>) => {
-      if (ev.t === "text" && ev.v) streamedText = true;
-      emit(ev);
+    const trackEmit = (event: Record<string, string>) => {
+      if (event.t === "text" && event.v) streamedText = true;
+      emit(event);
     };
 
-    /**
-     * One model attempt (with one 429 retry). Returns the round result, or
-     * null if the client aborted. Throws upstream errors for the caller to
-     * classify. `withTools` false = prompt-only mode for models that reject
-     * the tools parameter (the knowledge snapshot still backs answers).
-     */
-    const attemptRound = async (
-      m: string,
-      withTools: boolean,
-      timeoutMs?: number
-    ): Promise<{ toolCalls: { id: string; name: string; args: string }[] } | null> => {
-      const run = () =>
-        completionRound({ baseUrl, model: m, apiKey, messages, withTools, signal, timeoutMs, emit: trackEmit });
-      try {
-        return await run();
-      } catch (err) {
-        const status = (err as { status?: number }).status;
-        if (status === 429) {
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-          if (signal?.aborted) return null;
-          return await run();
-        }
-        throw err;
-      }
-    };
-
-    let round: { toolCalls: { id: string; name: string; args: string }[] } | null = null;
-    let lastError: unknown = null;
-    // Track tool rejection PER MODEL: the primary model 400-ing on `tools`
-    // says nothing about the fallback model's capabilities.
+    type Round = { toolCalls: { id: string; name: string; args: string }[] };
     const rejectsTools = new Set<string>();
-    let activeModel = model;
+    const toolCache = new Map<string, Promise<ChattyToolResult>>();
 
-    // Model cascade: primary (tools → no-tools) then fallback (tools → no-tools).
-    for (const m of [model, fallbackModel]) {
-      for (const withTools of [true, false]) {
-        if (withTools && rejectsTools.has(m)) continue;
+    const attemptRound = (
+      model: string,
+      withTools: boolean,
+      timeoutMs = ROUND_TIMEOUT_MS
+    ): Promise<Round | null> =>
+      completionRound({
+        baseUrl,
+        model,
+        apiKey,
+        messages,
+        withTools,
+        signal,
+        timeoutMs,
+        emit: trackEmit,
+      });
+
+    /** Try every tool-capable model first, then prompt-only mode. A 429 now
+     * moves directly to the next model instead of spending two seconds retrying
+     * the same saturated free endpoint. The cascade is reused on every round. */
+    const attemptCascade = async (
+      allowTools: boolean,
+      preferredModel?: string,
+      totalBudgetMs = 28_000
+    ): Promise<{ round: Round | null; model: string }> => {
+      const orderedModels = [
+        ...new Set([preferredModel, ...modelCascade].filter((model): model is string => Boolean(model))),
+      ];
+      const candidates = allowTools
+        ? [
+            ...orderedModels.map((model) => ({ model, withTools: true })),
+            ...orderedModels.map((model) => ({ model, withTools: false })),
+          ]
+        : orderedModels.map((model) => ({ model, withTools: false }));
+      const cascadeStartedAt = Date.now();
+      let lastError: unknown = null;
+
+      for (const candidate of candidates) {
+        if (signal?.aborted) return { round: null, model: candidate.model };
+        if (candidate.withTools && rejectsTools.has(candidate.model)) continue;
+        const remaining = totalBudgetMs - (Date.now() - cascadeStartedAt);
+        if (remaining <= 0) break;
         try {
-          round = await attemptRound(m, withTools);
-          lastError = null;
-          activeModel = m;
-          break; // round succeeded (possibly null = client aborted)
-        } catch (err) {
-          lastError = err;
-          const status = (err as { status?: number }).status;
-          if (withTools && (status === 400 || status === 404)) {
-            // Most likely "tools not supported" — retry this model without them.
-            rejectsTools.add(m);
-            continue;
+          const round = await attemptRound(
+            candidate.model,
+            candidate.withTools,
+            Math.min(ROUND_TIMEOUT_MS, Math.max(3_000, remaining))
+          );
+          return { round, model: candidate.model };
+        } catch (error) {
+          lastError = error;
+          const status = (error as { status?: number }).status;
+          if (candidate.withTools && (status === 400 || status === 404 || status === 422)) {
+            rejectsTools.add(candidate.model);
           }
-          break; // auth/config/5xx — try the next model in the cascade
         }
       }
-      if (lastError === null) break;
+      throw lastError ?? new Error("model cascade exhausted");
+    };
+
+    const runCachedTool = (call: PlannedToolCall): Promise<ChattyToolResult> => {
+      const key = toolCacheKey(call.name, call.args);
+      const cached = toolCache.get(key);
+      if (cached) return cached;
+      const pending = executeChattyTool(call.name, call.args);
+      toolCache.set(key, pending);
+      return pending;
+    };
+
+    const runToolWithTrace = async (call: PlannedToolCall): Promise<ChattyToolResult> => {
+      const toolStartedAt = Date.now();
+      emit({
+        t: "tool",
+        id: call.id,
+        name: call.name,
+        label: toolLabel(call.name),
+        phase: "start",
+      });
+      const result = await runCachedTool(call);
+      emit({
+        t: "tool",
+        id: call.id,
+        name: call.name,
+        label: toolDoneLabel(call.name),
+        phase: "done",
+        ok: String(result.ok),
+        ms: String(Date.now() - toolStartedAt),
+      });
+      return result;
+    };
+
+    // Fetch obvious live context up front so weak tool-calling support never
+    // turns a status/rules/count question into a guess.
+    const proactiveCalls = planLiveContext(message);
+    if (proactiveCalls.length > 0) {
+      const proactiveResults = await Promise.all(
+        proactiveCalls.map(async (call) => ({ call, result: await runToolWithTrace(call) }))
+      );
+      const latestUserMessage = messages[messages.length - 1] as { content?: string };
+      latestUserMessage.content =
+        `${latestUserMessage.content ?? ""}\n\n` +
+        "PROACTIVELY FETCHED LIVE CONTEXT (fresh; use it as the source of truth and do not repeat these same lookups):\n\n" +
+        proactiveResults
+          .map(({ call, result }) => `${call.name}:\n${result.content}`)
+          .join("\n\n");
     }
 
-    if (round === null && lastError !== null) {
-      const status = (lastError as { status?: number }).status;
+    let round: Round | null;
+    let activeModel = modelCascade[0];
+    try {
+      const initial = await attemptCascade(true, activeModel);
+      round = initial.round;
+      activeModel = initial.model;
+    } catch (error) {
+      const status = (error as { status?: number }).status;
       console.error(
         "chatty: all models failed",
         status,
-        String((lastError as { body?: string }).body ?? "").slice(0, 300)
+        String((error as { body?: string }).body ?? "").slice(0, 300)
       );
       emit({ t: "text", v: status === 429 ? RATE_LIMITED_MESSAGE : ERROR_MESSAGE });
       return;
     }
-    if (round === null) return; // client aborted — stream nothing
+    if (round === null) return;
 
-    // Tool loop: execute calls, append results, run another round. Every
-    // tool emits a live activity event the client shows as a chip.
     let roundNum = 1;
     let webSearches = 0;
     while (
@@ -639,67 +764,70 @@ export async function streamChatReply(
       roundNum < MAX_ROUNDS &&
       Date.now() - startedAt < TOOL_BUDGET_MS
     ) {
-      // Record what the assistant "said" this round (its tool calls), then
-      // answer each one. Content streamed before a tool call reads as
-      // "Let me check…" — that's fine, it flows into the tool chips.
       messages.push({
         role: "assistant",
         content: null,
-        tool_calls: round.toolCalls.map((c) => ({
-          id: c.id,
+        tool_calls: round.toolCalls.map((call) => ({
+          id: call.id,
           type: "function",
-          function: { name: c.name, arguments: c.args || "{}" },
+          function: { name: call.name, arguments: call.args || "{}" },
         })),
       });
 
-      for (const call of round.toolCalls) {
-        // Search cap: thin results made the model search again and again
-        // until the platform killed the function. Past the cap the call is
-        // answered with a wrap-it-up instruction instead of executing.
-        if (call.name === "web_search" && webSearches >= MAX_WEB_SEARCHES) {
-          emit({ t: "tool", name: call.name, label: "Wrapping up" });
-          messages.push({
-            role: "tool",
-            tool_call_id: call.id,
-            content:
-              "Search limit reached (max 2 per answer). Do NOT search again — write your final answer NOW using the results you already have. If they're thin, say so and answer from general knowledge.",
-          });
-          continue;
-        }
-        if (call.name === "web_search") webSearches++;
-
-        emit({ t: "tool", name: call.name, label: toolLabel(call.name) });
-        const result = await executeChattyTool(call.name, call.args);
-        messages.push({
-          role: "tool",
-          tool_call_id: call.id,
-          content: result.content,
-        });
+      // Independent calls run together. Results are appended in the model's
+      // original order so every tool_call_id stays paired with its answer.
+      const toolResults = await Promise.all(
+        round.toolCalls.map(async (call, index) => {
+          if (index >= MAX_TOOL_CALLS_PER_ROUND) {
+            return {
+              call,
+              result: {
+                ok: false,
+                label: "Tool limit reached",
+                content: `This round requested more than ${MAX_TOOL_CALLS_PER_ROUND} tools. Use the results already returned and answer now.`,
+              } satisfies ChattyToolResult,
+            };
+          }
+          if (call.name === "web_search" && webSearches >= MAX_WEB_SEARCHES) {
+            return {
+              call,
+              result: {
+                ok: false,
+                label: "Search limit reached",
+                content:
+                  "Search limit reached (max 2 per answer). Do not search again; answer from the results already available and be honest about any gaps.",
+              } satisfies ChattyToolResult,
+            };
+          }
+          if (call.name === "web_search") webSearches++;
+          return { call, result: await runToolWithTrace(call) };
+        })
+      );
+      for (const { call, result } of toolResults) {
+        messages.push({ role: "tool", tool_call_id: call.id, content: result.content });
       }
 
       try {
-        round = await attemptRound(activeModel, !rejectsTools.has(activeModel));
-      } catch (err) {
-        console.error("chatty: follow-up round failed", err);
-        if (!streamedText) {
-          emit({ t: "text", v: ERROR_MESSAGE });
-        }
+        const remainingToolBudget = Math.max(4_000, TOOL_BUDGET_MS - (Date.now() - startedAt));
+        const next = await attemptCascade(true, activeModel, remainingToolBudget);
+        round = next.round;
+        activeModel = next.model;
+      } catch (error) {
+        console.error("chatty: follow-up model cascade failed", error);
+        if (!streamedText) emit({ t: "text", v: ERROR_MESSAGE });
         return;
       }
-      if (round === null) return; // aborted or the follow-up failed
+      if (round === null) return;
       roundNum++;
     }
 
-    // Round cap / wall-clock budget reached while the model still wanted
-    // tools: run one final no-tools completion so the pending calls aren't
-    // silently dropped and the user ALWAYS gets a textual answer.
     if (round.toolCalls.length > 0) {
       const elapsed = Date.now() - startedAt;
-      const finalTimeout = Math.min(FINAL_ANSWER_MS, Math.max(10_000, 55_000 - elapsed));
+      const finalTimeout = Math.min(FINAL_ANSWER_MS, Math.max(6_000, 55_000 - elapsed));
       try {
-        await attemptRound(activeModel, false, finalTimeout);
-      } catch (err) {
-        console.error("chatty: final forced answer failed", err);
+        await attemptCascade(false, activeModel, finalTimeout);
+      } catch (error) {
+        console.error("chatty: final forced answer failed", error);
         if (!streamedText) {
           emit({
             t: "text",

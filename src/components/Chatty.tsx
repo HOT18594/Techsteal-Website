@@ -17,8 +17,11 @@ import { useToast } from "@/components/Toast";
 import { useSession } from "@/lib/use-session";
 
 interface ToolTrace {
+  id: string;
   name: string;
   label: string;
+  status: "running" | "complete" | "error";
+  durationMs?: number;
 }
 
 /** NDJSON events the chat API streams (one JSON object per line). */
@@ -27,6 +30,10 @@ interface StreamEvent {
   v?: string;
   name?: string;
   label?: string;
+  id?: string;
+  phase?: "start" | "done";
+  ok?: string;
+  ms?: string;
 }
 
 interface ChatMessage {
@@ -64,6 +71,7 @@ const TOOL_ICONS: Record<string, string> = {
   read_forum_thread: "fa-comment-dots",
   get_site_stats: "fa-chart-simple",
   search_mods: "fa-puzzle-piece",
+  search_site: "fa-magnifying-glass",
   web_search: "fa-globe",
 };
 
@@ -113,6 +121,7 @@ export function Chatty() {
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
   const [dots, setDots] = useState(false); // 3-dot indicator while waiting for the first event
+  const [streamStarted, setStreamStarted] = useState(false);
   const [activeTools, setActiveTools] = useState<ToolTrace[]>([]); // tools used by the reply in flight
   const [hydrated, setHydrated] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -260,6 +269,7 @@ export function Chatty() {
     }
     setTyping(true);
     setDots(true);
+    setStreamStarted(false);
     activeToolsRef.current = [];
     setActiveTools([]);
 
@@ -348,6 +358,7 @@ export function Chatty() {
         if (ev && ev.t === "text" && ev.v) {
           if (firstTokenAt === null) firstTokenAt = Date.now();
           setDots(false); // first word arrived — drop the 3-dot indicator
+          setStreamStarted(true);
           acc += ev.v;
           chars += ev.v.length;
           const now2 = Date.now();
@@ -357,10 +368,24 @@ export function Chatty() {
           lastTextAt = now2;
           updateAssistant(acc);
         } else if (ev && ev.t === "tool" && ev.name) {
-          const trace = { name: ev.name, label: ev.label ?? "Working…" };
-          activeToolsRef.current = [...activeToolsRef.current, trace];
+          const traceId = ev.id ?? `${ev.name}-${activeToolsRef.current.length}`;
+          const existing = activeToolsRef.current.findIndex((tool) => tool.id === traceId);
+          const status: ToolTrace["status"] =
+            ev.phase === "done" ? (ev.ok === "false" ? "error" : "complete") : "running";
+          const trace: ToolTrace = {
+            id: traceId,
+            name: ev.name,
+            label: ev.label ?? "Working…",
+            status,
+            durationMs: ev.ms ? Number(ev.ms) : undefined,
+          };
+          activeToolsRef.current =
+            existing >= 0
+              ? activeToolsRef.current.map((tool, index) => (index === existing ? trace : tool))
+              : [...activeToolsRef.current, trace];
           setActiveTools(activeToolsRef.current);
           setDots(false); // real activity to show instead of dots
+          if (assistantId !== null) updateAssistant(acc);
         } else if (ev && ev.t === "error" && ev.v) {
           failed = true;
           updateAssistant(acc ? `${acc}\n\n${ev.v}` : ev.v, true, text);
@@ -425,6 +450,7 @@ export function Chatty() {
       if (gen === genRef.current) {
         setTyping(false);
         setDots(false);
+        setStreamStarted(false);
         setActiveTools([]);
       }
       // Only clear OUR controller — a newer send may have installed its own
@@ -439,6 +465,7 @@ export function Chatty() {
     controllerRef.current?.abort();
     setTyping(false);
     setDots(false);
+    setStreamStarted(false);
     setActiveTools([]);
   };
 
@@ -447,6 +474,7 @@ export function Chatty() {
     controllerRef.current?.abort();
     setTyping(false);
     setDots(false);
+    setStreamStarted(false);
     setActiveTools([]);
     setMessages([
       {
@@ -489,48 +517,38 @@ export function Chatty() {
   const canRegenerate =
     !typing && lastMsg?.role === "assistant" && !lastMsg?.error && messages.length > 1;
 
-  // Gate screens share one shell.
-  const gateClass = "min-h-[24rem]";
+  const gateClass = "assistant-gate";
 
-  // ------------------------------------------------------------------
-  // The console: gates when gated, otherwise the chat card.
-  // ------------------------------------------------------------------
   const consoleBody = sessionLoading ? (
-    <div className={`card p-8 text-center flex items-center justify-center ${gateClass}`}>
-      <p className="text-sm text-[var(--muted)]">Checking session…</p>
+    <div className={gateClass}>
+      <div className="assistant-gate-icon is-loading"><i className="fa-solid fa-circle-notch fa-spin" /></div>
+      <h2>Preparing your assistant</h2>
+      <p>Connecting your account and Techsteal knowledge…</p>
     </div>
   ) : !user ? (
-    <div className={`card p-8 text-center flex flex-col items-center justify-center ${gateClass}`}>
-      <div className="w-14 h-14 rounded-2xl bg-[#5865F2] text-white flex items-center justify-center text-2xl mb-4 shadow-[0_10px_30px_-10px_rgba(88,101,242,0.7)]">
-        <i className="fa-brands fa-discord" />
-      </div>
-      <h2 className="font-display text-xl font-bold mb-2">Sign in to chat with {ai.name}</h2>
-      <p className="text-sm text-[var(--muted)] mb-6 max-w-sm">
-        {ai.name} is a member perk — log in with Discord to start chatting.
-      </p>
+    <div className={gateClass}>
+      <div className="assistant-gate-icon is-discord"><i className="fa-brands fa-discord" /></div>
+      <p className="assistant-eyebrow">Member access</p>
+      <h2>Sign in to chat with {ai.name}</h2>
+      <p>{ai.name} is included for Techsteal members. Log in with Discord to open your conversation.</p>
       <Link href="/login" className="btn-primary justify-center">
         <i className="fa-brands fa-discord" />
         Log in with Discord
       </Link>
     </div>
   ) : !hasAccess ? (
-    <div className={`card p-8 text-center flex flex-col items-center justify-center ${gateClass}`}>
-      <div className="w-14 h-14 rounded-2xl bg-[var(--accent-dim)] border border-[var(--border-strong)] text-[var(--accent)] flex items-center justify-center text-2xl mb-4">
-        <i className="fa-solid fa-lock" />
-      </div>
-      <h2 className="font-display text-xl font-bold mb-2">Not verified yet</h2>
-      <p className="text-sm text-[var(--muted)] max-w-sm">
-        Verify you&apos;re in the official Discord server to unlock the AI assistant,
-        Gallery posting, and Server Control.
-      </p>
-      <Link href="/settings" className="btn-primary justify-center mt-6">
+    <div className={gateClass}>
+      <div className="assistant-gate-icon"><i className="fa-solid fa-shield-halved" /></div>
+      <p className="assistant-eyebrow">One step left</p>
+      <h2>Verify your membership</h2>
+      <p>Verify that you&apos;re in the official Discord to unlock the assistant, Gallery posting, and Server Control.</p>
+      <Link href="/settings" className="btn-primary justify-center">
         <i className="fa-solid fa-user-check" />
         Verify in Settings
       </Link>
     </div>
   ) : (
-    <div className="card flex flex-col overflow-hidden h-[calc(100dvh-13rem)] min-h-[26rem]">
-      {/* Messages */}
+    <div className="assistant-chat-frame">
       <div
         ref={scrollRef}
         onScroll={() => {
@@ -538,261 +556,313 @@ export function Chatty() {
           if (!el) return;
           stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
         }}
-        className="flex-1 min-h-0 overflow-y-auto"
+        className="assistant-chat-scroll"
         id="chat-messages"
       >
-        {/* role="log" + aria-relevant="additions text" announces only what is
-            ADDED or changed. The scroll container itself used to carry a bare
-            aria-live="polite", which made screen readers re-read the entire
-            conversation — welcome hero, every prior bubble, the timestamps —
-            on each streamed token. */}
-        <div
-          className="px-4 sm:px-6 py-6 space-y-5"
-          role="log"
-          aria-live="polite"
-          aria-relevant="additions text"
-        >
-          {/* Welcome hero — only when fresh. Compact prompt pills cover
-              touch/small screens where the sidebar rail isn't rendered. */}
+        <div className="assistant-thread" role="log" aria-live="polite" aria-relevant="additions text">
           {isEmpty && !typing ? (
-            <div className="pb-6 flex flex-col items-center text-center">
-              <div className="relative mb-4">
-                <div className="w-20 h-20 text-3xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white rounded-2xl shadow-[0_14px_40px_-14px_var(--accent-glow)]">
-                  <i className="fa-solid fa-robot" />
-                </div>
-                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-[var(--emerald)] border-2 border-[var(--card)] rounded-full shadow-[0_0_10px_var(--emerald-glow)]" />
+            <div className="assistant-welcome">
+              <div className="assistant-welcome-mark" aria-hidden="true">
+                <i className="fa-solid fa-sparkles" />
+                <span />
               </div>
-              <h2 className="font-display font-bold text-2xl">
-                Hey{user?.username ? ` ${user.username}` : ""} — I&apos;m {ai.name}
-              </h2>
-              <p className="text-sm text-[var(--muted)] mt-1.5 max-w-md">
-                Your guide to {siteConfig.name}. I pull live server data, look
-                anything up on the site, and search the web for general
-                Minecraft questions.
+              <p className="assistant-eyebrow">Your Techsteal copilot</p>
+              <h2>What can I help you find{user?.username ? `, ${user.username}` : ""}?</h2>
+              <p className="assistant-welcome-copy">
+                Ask about the live server, community activity, rules, builds, mods, or Minecraft itself.
+                I&apos;ll pull in the right source while you watch.
               </p>
-              {/* Fresh-state prompt pills — quick starts, every screen size. */}
-              <div className="flex flex-wrap justify-center gap-1.5 mt-4 max-w-md">
-                {SUGGESTIONS.map((s) => (
+              <div className="assistant-prompt-grid">
+                {SUGGESTIONS.map((suggestion) => (
                   <button
-                    key={s.title}
+                    key={suggestion.title}
                     type="button"
-                    className="chat-cap-chip hover:border-[var(--accent)] transition disabled:opacity-50"
-                    onClick={() => void send(s.text)}
+                    onClick={() => void send(suggestion.text)}
                     disabled={typing}
                   >
-                    <i className={`fa-solid ${s.icon}`} aria-hidden="true" />
-                    {s.title}
+                    <i className={`fa-solid ${suggestion.icon}`} aria-hidden="true" />
+                    <span>
+                      <strong>{suggestion.title}</strong>
+                      <small>{suggestion.hint}</small>
+                    </span>
+                    <i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" />
                   </button>
                 ))}
+              </div>
+              <div className="assistant-trust-row" aria-label="Assistant capabilities">
+                <span><i className="fa-solid fa-bolt" /> Live answers</span>
+                <span><i className="fa-solid fa-database" /> Site knowledge</span>
+                <span><i className="fa-solid fa-shield-halved" /> Read-only</span>
               </div>
             </div>
           ) : null}
 
-          {messages.map((m) => (
-            <div key={m.id} className="group">
-              {m.role === "assistant" ? (
-                <div className="flex gap-3">
-                  <div className="w-8 h-8 mt-1 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white text-xs flex-shrink-0 rounded-lg">
-                    <i className="fa-solid fa-robot" />
-                  </div>
-                  <div className="max-w-[88%] min-w-0">
-                    {/* Tool trace — what the assistant checked to answer */}
-                    {m.tools && m.tools.length > 0 && !(m.id === 0) ? (
-                      <div className="flex flex-wrap gap-1.5 mb-1.5">
-                        {m.tools.map((t, ti) => (
-                          <span key={`${t.name}-${ti}`} className="chat-tool-chip" title={t.name}>
-                            <i className={`fa-solid ${TOOL_ICONS[t.name] ?? "fa-gear"}`} aria-hidden="true" />
-                            {t.label}
-                          </span>
-                        ))}
+          {!isEmpty
+            ? messages.map((messageItem) => (
+                <article
+                  key={messageItem.id}
+                  className={`assistant-message ${
+                    messageItem.role === "assistant" ? "is-assistant" : "is-user"
+                  }`}
+                >
+                  {messageItem.role === "assistant" ? (
+                    <>
+                      <div className="assistant-message-avatar" aria-hidden="true">
+                        <i className="fa-solid fa-sparkles" />
                       </div>
-                    ) : null}
-                    <div
-                      className={`chat-bubble-ai px-4 py-3 ${
-                        m.error ? "border-[var(--redstone)]/40! bg-[var(--redstone)]/5!" : ""
-                      }`}
-                    >
-                      <div className="chat-md text-[15px] leading-relaxed text-[var(--fg-2)]">
-                        {renderText(m.text)}
+                      <div className="assistant-message-main">
+                        <div className="assistant-message-meta">
+                          <strong>{ai.name}</strong>
+                          <span>{messageItem.time}</span>
+                        </div>
+                        {messageItem.tools && messageItem.tools.length > 0 && messageItem.id !== 0 ? (
+                          <div className="assistant-tool-trace" aria-label="Sources checked">
+                            {messageItem.tools.map((tool, toolIndex) => {
+                              const status = tool.status ?? "complete";
+                              return (
+                                <span
+                                  key={tool.id ?? `${tool.name}-${toolIndex}`}
+                                  className={`is-${status}`}
+                                  title={tool.name}
+                                >
+                                  <i
+                                    className={`fa-solid ${
+                                      status === "running"
+                                        ? "fa-circle-notch fa-spin"
+                                        : status === "error"
+                                          ? "fa-triangle-exclamation"
+                                          : "fa-check"
+                                    }`}
+                                    aria-hidden="true"
+                                  />
+                                  {tool.label}
+                                  {tool.durationMs ? <small>{(tool.durationMs / 1000).toFixed(1)}s</small> : null}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                        <div className={`assistant-answer ${messageItem.error ? "is-error" : ""}`}>
+                          <div className="chat-md">{renderText(messageItem.text)}</div>
+                          {messageItem.error && messageItem.retry ? (
+                            <button
+                              className="assistant-retry"
+                              onClick={
+                                messageItem.id === lastMsg?.id
+                                  ? regenerate
+                                  : () => void send(messageItem.retry)
+                              }
+                            >
+                              <i className="fa-solid fa-rotate-right" /> Retry
+                            </button>
+                          ) : null}
+                        </div>
+                        <div className="assistant-message-actions">
+                          {messageItem.stats ? <span>{messageItem.stats}</span> : <span />}
+                          <button onClick={() => void copyMessage(messageItem.text)}>
+                            <i className="fa-regular fa-copy" /> Copy
+                          </button>
+                          {canRegenerate && messageItem.id === lastMsg?.id ? (
+                            <button onClick={regenerate}>
+                              <i className="fa-solid fa-rotate-right" /> Regenerate
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
-                      {m.error && m.retry ? (
-                        <button
-                          className="mt-2 text-xs font-semibold text-[var(--redstone)] hover:text-[var(--fg)] transition inline-flex items-center gap-1.5"
-                          onClick={m.id === lastMsg?.id ? regenerate : () => void send(m.retry)}
-                        >
-                          <i className="fa-solid fa-rotate-right" />
-                          Retry
-                        </button>
-                      ) : null}
-                    </div>
-                    {m.stats ? (
-                      <div className="text-[10px] text-[var(--muted-2)] mt-0.5 px-1">
-                        {m.stats}
+                    </>
+                  ) : (
+                    <>
+                      <div className="assistant-message-main">
+                        <div className="assistant-message-meta is-user-meta">
+                          <span>{messageItem.time}</span>
+                          <strong>You</strong>
+                        </div>
+                        <div className="assistant-user-bubble">{messageItem.text}</div>
+                        <div className="assistant-message-actions is-user-actions">
+                          <button onClick={() => void copyMessage(messageItem.text)}>
+                            <i className="fa-regular fa-copy" /> Copy
+                          </button>
+                        </div>
                       </div>
-                    ) : null}
-                    <div className="flex items-center gap-3 mt-1.5 px-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
-                      <span className="text-[11px] text-[var(--muted-2)]">{m.time}</span>
-                      <button
-                        className="text-[11px] text-[var(--muted)] hover:text-[var(--accent)] transition"
-                        onClick={() => void copyMessage(m.text)}
-                      >
-                        <i className="fa-regular fa-copy mr-1" />
-                        Copy
-                      </button>
-                      {canRegenerate && m.id === lastMsg?.id ? (
-                        <button
-                          className="text-[11px] text-[var(--muted)] hover:text-[var(--accent)] transition"
-                          onClick={regenerate}
-                        >
-                          <i className="fa-solid fa-rotate-right mr-1" />
-                          Regenerate
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex gap-3 justify-end">
-                  <div className="max-w-[88%]">
-                    <div className="chat-bubble-user px-4 py-3">
-                      <div className="text-[15px] leading-relaxed text-[var(--fg)] whitespace-pre-wrap">
-                        {m.text}
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-end gap-3 mt-1.5 px-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
-                      <span className="text-[11px] text-[var(--muted-2)]">{m.time}</span>
-                      <button
-                        className="text-[11px] text-[var(--muted)] hover:text-[var(--accent)] transition"
-                        onClick={() => void copyMessage(m.text)}
-                      >
-                        <i className="fa-regular fa-copy mr-1" />
-                        Copy
-                      </button>
-                    </div>
-                  </div>
-                  <Avatar
-                    name={user?.username ?? "You"}
-                    src={user?.avatarUrl}
-                    size="sm"
-                    className="w-8! h-8! mt-1 flex-shrink-0"
-                  />
-                </div>
-              )}
-            </div>
-          ))}
+                      <Avatar
+                        name={user?.username ?? "You"}
+                        src={user?.avatarUrl}
+                        size="sm"
+                        className="assistant-user-avatar w-9! h-9! flex-shrink-0"
+                      />
+                    </>
+                  )}
+                </article>
+              ))
+            : null}
 
-          {/* Live activity — 3-dot indicator until the first event, then
-              real tool chips while the agent works. Hides once the reply
-              text itself is streaming (unless tools ran, which keep
-              spinning as a "still generating" affordance). */}
-          {typing && (dots || activeTools.length > 0) ? (
-            <div className="flex gap-3">
-              <div className="w-8 h-8 mt-1 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white text-xs flex-shrink-0 rounded-lg">
-                <i className="fa-solid fa-robot" />
+          {typing && !streamStarted ? (
+            <article className="assistant-message is-assistant">
+              <div className="assistant-message-avatar" aria-hidden="true">
+                <i className="fa-solid fa-sparkles" />
               </div>
-              <div className="chat-bubble-ai px-4 py-3 flex items-center gap-2 flex-wrap">
-                {activeTools.length === 0 ? (
-                  <>
-                    <span className="text-[12px] text-[var(--fg-2)] italic">Thinking</span>
-                    <span className="typing-dot" />
-                    <span className="typing-dot" />
-                    <span className="typing-dot" />
-                  </>
-                ) : (
-                  activeTools.map((t, i) => (
-                    <span key={`${t.name}-${i}`} className="chat-tool-chip live">
-                      <i className={`fa-solid ${TOOL_ICONS[t.name] ?? "fa-gear"} fa-spin`} aria-hidden="true" />
-                      {t.label}…
-                    </span>
-                  ))
-                )}
+              <div className="assistant-message-main">
+                <div className="assistant-message-meta"><strong>{ai.name}</strong><span>Working now</span></div>
+                <div className="assistant-thinking-card">
+                  {dots && activeTools.length === 0 ? (
+                    <div className="assistant-thinking-label">
+                      <span>Thinking</span>
+                      <span className="typing-dot" />
+                      <span className="typing-dot" />
+                      <span className="typing-dot" />
+                    </div>
+                  ) : (
+                    <div className="assistant-live-tools">
+                      {activeTools.map((tool, index) => (
+                        <div key={tool.id ?? `${tool.name}-${index}`} className={`is-${tool.status ?? "running"}`}>
+                          <i
+                            className={`fa-solid ${
+                              tool.status === "complete"
+                                ? "fa-check"
+                                : tool.status === "error"
+                                  ? "fa-triangle-exclamation"
+                                  : `${TOOL_ICONS[tool.name] ?? "fa-gear"} fa-spin`
+                            }`}
+                            aria-hidden="true"
+                          />
+                          <span>{tool.label}</span>
+                          {tool.durationMs ? <small>{(tool.durationMs / 1000).toFixed(1)}s</small> : null}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            </article>
           ) : null}
         </div>
       </div>
 
-      {/* Composer — unified pill container: textarea grows inside, action
-          button docked bottom-right. */}
-      <div className="flex-shrink-0 border-t border-[var(--border)] p-4 sm:p-5">
-        <div className="flex items-end gap-2 rounded-2xl border border-[var(--border)] bg-[var(--bg-2)] p-2 transition focus-within:border-[var(--accent)]">
+      <div className="assistant-composer-area">
+        <div className="assistant-composer">
           <textarea
             ref={inputRef}
             rows={1}
             value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              e.target.style.height = "auto";
-              e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
+            maxLength={2000}
+            onChange={(event) => {
+              setInput(event.target.value);
+              event.target.style.height = "auto";
+              event.target.style.height = `${Math.min(event.target.scrollHeight, 180)}px`;
             }}
-            onKeyDown={(e) => {
-              // isComposing: Enter that CONFIRMS an IME conversion (CJK
-              // input) must send nothing — the user is still typing.
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault();
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
                 void send();
               }
             }}
-            placeholder={`Ask ${ai.name} anything…`}
+            placeholder={`Message ${ai.name}…`}
             aria-label="Chat message"
-            className="flex-1 bg-transparent outline-none resize-none px-3 py-2 text-[15px] leading-relaxed placeholder:text-[var(--muted-2)] max-h-40"
           />
-          {typing ? (
-            <button
-              onClick={stop}
-              className="w-10 h-10 mb-0.5 mr-0.5 flex items-center justify-center rounded-xl bg-[var(--redstone)]/15 text-[var(--redstone)] hover:bg-[var(--redstone)]/25 transition flex-shrink-0"
-              aria-label="Stop generating"
-            >
-              <i className="fa-solid fa-stop text-sm" />
-            </button>
-          ) : (
-            <button
-              onClick={() => void send()}
-              disabled={!input.trim()}
-              className="w-10 h-10 mb-0.5 mr-0.5 flex items-center justify-center rounded-xl bg-[var(--accent)] text-white hover:bg-[var(--accent-bright)] transition disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
-              aria-label="Send"
-            >
-              <i className="fa-solid fa-paper-plane text-sm" />
-            </button>
-          )}
+          <div className="assistant-composer-footer">
+            <div className="assistant-composer-context">
+              <span><i className="fa-solid fa-wand-magic-sparkles" /> Live tools ready</span>
+              {input.length > 1600 ? <small>{input.length}/2000</small> : null}
+            </div>
+            {typing ? (
+              <button type="button" onClick={stop} className="assistant-send is-stop" aria-label="Stop generating">
+                <i className="fa-solid fa-stop" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void send()}
+                disabled={!input.trim()}
+                className="assistant-send"
+                aria-label="Send message"
+              >
+                <i className="fa-solid fa-arrow-up" />
+              </button>
+            )}
+          </div>
         </div>
-        <p className="text-center text-xs text-[var(--muted-2)] mt-2.5">
-          {ai.name} can make mistakes ·{" "}
-          <span className="hidden sm:inline">
-            <kbd className="chat-kbd">/</kbd> to focus · <kbd className="chat-kbd">Shift+Enter</kbd>{" "}
-            for a new line
-          </span>
+        <p className="assistant-composer-caption">
+          {ai.name} can make mistakes. Check important info. <span><kbd>/</kbd> focus · <kbd>Shift+Enter</kbd> new line</span>
         </p>
       </div>
     </div>
   );
 
   return (
-    <div className="w-full flex flex-col min-h-0 flex-1">
-      {/* Header — identity + status + New chat. */}
-      <div className="mb-5 flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="w-11 h-11 bg-gradient-to-br from-[var(--accent)] to-[var(--accent-bright)] flex items-center justify-center text-white rounded-xl">
-              <i className="fa-solid fa-robot text-lg" />
-            </div>
-            <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-[var(--emerald)] border-2 border-[var(--bg)] rounded-full" />
+    <div className="assistant-workspace">
+      <aside className="assistant-rail">
+        <div className="assistant-rail-brand">
+          <div className="assistant-orb" aria-hidden="true">
+            <i className="fa-solid fa-sparkles" />
+            <span />
           </div>
           <div>
-            <h1 className="font-display text-2xl font-bold">{ai.name}</h1>
-            <div className="text-xs text-[var(--emerald)] flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 bg-[var(--emerald)] rounded-full" />
-              Online · knows the server live
-            </div>
+            <p className="assistant-eyebrow">Techsteal intelligence</p>
+            <h1>{ai.name}</h1>
+            <p>Server-aware help, in one place.</p>
           </div>
         </div>
-        <button className="btn-ghost py-2! px-3!" onClick={clear} aria-label="New chat">
-          <i className="fa-solid fa-rotate-right" />
-          <span className="hidden sm:inline">New chat</span>
-        </button>
-      </div>
 
-      {consoleBody}
+        <div className="assistant-presence">
+          <span className="assistant-presence-dot" aria-hidden="true" />
+          <div>
+            <strong>Connected to Techsteal</strong>
+            <span>Live site knowledge available</span>
+          </div>
+        </div>
+
+        <div className="assistant-rail-section">
+          <div className="assistant-rail-heading">
+            <span>Quick starts</span>
+            <i className="fa-solid fa-bolt" aria-hidden="true" />
+          </div>
+          <div className="assistant-quick-list">
+            {SUGGESTIONS.slice(0, 5).map((suggestion) => (
+              <button
+                key={suggestion.title}
+                type="button"
+                onClick={() => void send(suggestion.text)}
+                disabled={typing || !hasAccess}
+              >
+                <i className={`fa-solid ${suggestion.icon}`} aria-hidden="true" />
+                <span>
+                  <strong>{suggestion.title}</strong>
+                  <small>{suggestion.hint}</small>
+                </span>
+                <i className="fa-solid fa-chevron-right" aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="assistant-rail-note">
+          <i className="fa-solid fa-shield-halved" aria-hidden="true" />
+          <p>
+            <strong>Safe, read-only access</strong>
+            <span>Chatty can look things up, but never changes your account or server.</span>
+          </p>
+        </div>
+      </aside>
+
+      <section className="assistant-console">
+        <div className="assistant-console-bar">
+          <div className="assistant-console-title">
+            <div className="assistant-mobile-orb" aria-hidden="true">
+              <i className="fa-solid fa-sparkles" />
+            </div>
+            <div>
+              <p>Current conversation</p>
+              <strong>{ai.name}</strong>
+            </div>
+          </div>
+          <button className="assistant-new-chat" onClick={clear} aria-label="Start a new chat">
+            <i className="fa-solid fa-plus" />
+            <span>New chat</span>
+          </button>
+        </div>
+
+        {consoleBody}
+      </section>
     </div>
   );
 }

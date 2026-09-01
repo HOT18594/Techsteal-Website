@@ -124,6 +124,21 @@ export const CHATTY_TOOLS: ChattyToolDef[] = [
   {
     type: "function",
     function: {
+      name: "search_site",
+      description:
+        "Search across Techsteal members, gallery builds, forum posts, history, and published rules in one call. Use for broad requests like 'find anything about spawn' when the user did not name one specific section.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "A short name, topic, build, event, or keyword to find across the site." },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "search_mods",
       description:
         "Search Minecraft mods, modpacks, shaders and resource packs on Modrinth (the main mod repository) — live title, author, description, download counts, supported versions and link. Use this FIRST for ANY question about a specific mod or modpack, or to recommend mods.",
@@ -163,12 +178,32 @@ export const TOOL_LABELS: Record<string, string> = {
   search_forum: "Searching the forum",
   read_forum_thread: "Reading a thread",
   get_site_stats: "Counting site stats",
+  search_site: "Searching Techsteal",
   search_mods: "Searching mods",
   web_search: "Searching the web",
 };
 
+/** Finished-state labels keep the UI from looking stuck after a tool returns. */
+export const TOOL_DONE_LABELS: Record<string, string> = {
+  get_server_status: "Live status checked",
+  search_members: "Members checked",
+  get_rules: "Rules checked",
+  get_server_history: "History checked",
+  search_gallery: "Gallery checked",
+  search_forum: "Forum searched",
+  read_forum_thread: "Thread read",
+  get_site_stats: "Site stats checked",
+  search_site: "Techsteal searched",
+  search_mods: "Modrinth checked",
+  web_search: "Web sources checked",
+};
+
 export function toolLabel(name: string): string {
   return TOOL_LABELS[name] ?? "Working";
+}
+
+export function toolDoneLabel(name: string): string {
+  return TOOL_DONE_LABELS[name] ?? "Check complete";
 }
 
 function cap(s: string, max = 1800): string {
@@ -383,6 +418,95 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
         ok: true,
         label,
         content: `Site stats: ${memberCount.n} registered members, ${threadCount.n} forum threads, ${replyCount.n} forum replies, ${buildCount.n} gallery builds, ${eventCount.n} history events.`,
+      };
+    }
+
+    case "search_site": {
+      const db = getDb();
+      if (!db) return { ok: true, label, content: NO_DB };
+      const q = typeof args.query === "string" ? args.query.trim().slice(0, 80) : "";
+      if (!q) return { ok: false, label, content: "A site search keyword is required." };
+      const pattern = `%${escapeLike(q)}%`;
+      const [memberRows, galleryRows, threadRows, historyRows, sections] = await Promise.all([
+        db
+          .select({ username: profiles.username, minecraftUsername: profiles.minecraftUsername, role: profiles.role })
+          .from(profiles)
+          .where(
+            and(
+              eq(profiles.banned, false),
+              or(ilike(profiles.username, pattern), ilike(profiles.minecraftUsername, pattern))
+            )
+          )
+          .orderBy(profiles.username)
+          .limit(5),
+        db
+          .select({ id: galleryItems.id, title: galleryItems.title, builder: galleryItems.builder, category: galleryItems.category })
+          .from(galleryItems)
+          .where(
+            or(
+              ilike(galleryItems.title, pattern),
+              ilike(galleryItems.builder, pattern),
+              ilike(galleryItems.category, pattern),
+              ilike(galleryItems.description, pattern)
+            )
+          )
+          .orderBy(desc(galleryItems.id))
+          .limit(5),
+        db
+          .select({ id: forumThreads.id, title: forumThreads.title, category: forumThreads.category, replies: forumThreads.replies })
+          .from(forumThreads)
+          .where(
+            or(
+              ilike(forumThreads.title, pattern),
+              ilike(forumThreads.content, pattern),
+              ilike(forumThreads.category, pattern)
+            )
+          )
+          .orderBy(desc(forumThreads.createdAt))
+          .limit(5),
+        db
+          .select({ date: timelineEvents.date, title: timelineEvents.title, era: timelineEvents.era })
+          .from(timelineEvents)
+          .where(
+            or(
+              ilike(timelineEvents.title, pattern),
+              ilike(timelineEvents.era, pattern),
+              ilike(timelineEvents.description, pattern)
+            )
+          )
+          .orderBy(desc(timelineEvents.id))
+          .limit(5),
+        db.select().from(ruleSections).orderBy(asc(ruleSections.id)).limit(8),
+      ]);
+
+      const needle = q.toLowerCase();
+      const ruleMatches = sections.flatMap((section) =>
+        (section.rules ?? [])
+          .filter((rule) => section.title.toLowerCase().includes(needle) || rule.toLowerCase().includes(needle))
+          .slice(0, 4)
+          .map((rule) => `${section.title}: ${rule}`)
+      ).slice(0, 6);
+      const chunks = [
+        memberRows.length
+          ? `MEMBERS (/members):\n${memberRows.map((member) => `- ${member.username}${member.minecraftUsername ? ` (MC: ${member.minecraftUsername})` : ""} — ${member.role}`).join("\n")}`
+          : "",
+        galleryRows.length
+          ? `GALLERY (/gallery):\n${galleryRows.map((item) => `- ${item.title} — ${item.category}, by ${item.builder}`).join("\n")}`
+          : "",
+        threadRows.length
+          ? `FORUM:\n${threadRows.map((thread) => `- /forum/${thread.id} — ${thread.title} (${thread.category}, ${thread.replies} replies)`).join("\n")}`
+          : "",
+        historyRows.length
+          ? `HISTORY (/history):\n${historyRows.map((event) => `- ${event.date} — ${event.title} (${event.era})`).join("\n")}`
+          : "",
+        ruleMatches.length ? `RULES (/rules):\n${ruleMatches.map((rule) => `- ${rule}`).join("\n")}` : "",
+      ].filter(Boolean);
+      return {
+        ok: true,
+        label,
+        content: chunks.length
+          ? cap(`Site-wide results for "${q}":\n\n${chunks.join("\n\n")}`, 2600)
+          : `No Techsteal content matches "${q}".`,
       };
     }
 

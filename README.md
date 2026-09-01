@@ -140,7 +140,7 @@ Any Postgres works (Supabase, Neon, RDS, local) — the driver is
 | API | Where | How |
 | --- | ----- | --- |
 | **Minecraft status** | `/api/status` | Set `MINECRAFT_SERVER` / `MINECRAFT_PORT`. Uses free [mcsrvstat.us](https://mcsrvstat.us). Works with any Minecraft (Java) server address. |
-| **AI assistant** | `/api/chat` | Set `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`. Any OpenAI-compatible endpoint works. The key never leaves the server. Leave empty to run in "not connected" mode. |
+| **AI assistant** | `/api/chat` | Set `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, and optionally `AI_FALLBACK_MODELS`. Any OpenAI-compatible endpoint works. The key never leaves the server. Leave empty to run in "not connected" mode. |
 | **Forum / content DB** | `/api/forum` etc. | Handled by `DATABASE_URL`. The "New Thread" button already POSTs to `/api/forum`. |
 | **Auth (login/admin)** | `/api/auth/*`, `/api/admin/*` | Discord OAuth (sign in with Discord). Accounts are created on first login; the session cookie is a JWT signed with `SESSION_SECRET`. The admin role is unlocked with the admin code in onboarding/profile settings. |
 
@@ -165,7 +165,7 @@ bun run build      # production build
    `.env.local`:
    - `DATABASE_URL`
    - `MINECRAFT_SERVER`, `MINECRAFT_PORT`
-   - `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`
+   - `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `AI_FALLBACK_MODELS`
    - `SESSION_SECRET`
 5. Deploy. Every push to `main` redeploys automatically.
 
@@ -178,7 +178,8 @@ bun run build      # production build
 | `MINECRAFT_PORT` | no | Server port |
 | `AI_API_KEY` | for AI chat | API key for an OpenAI-compatible endpoint |
 | `AI_BASE_URL` | no | Endpoint base URL (default OpenRouter) |
-| `AI_MODEL` | no | Model name (default `minimax/minimax-m3:free`) |
+| `AI_MODEL` | no | Primary model (default `poolside/laguna-s-2.1:free`) |
+| `AI_FALLBACK_MODELS` | no | Ordered, comma-separated backups (defaults to `nvidia/nemotron-3.5-lightning:free,minimax/minimax-m3:free`) |
 | `SESSION_SECRET` | **yes (prod)** | Strong random value signing the session cookie. Falls back to a dev secret locally — set a real one before deploying or sessions can be forged. |
 | `ADMIN_CODE` | **yes (prod)** | Code that promotes a member to admin. In production the site refuses to unlock admin without this variable (it used to be a hardcoded constant — that was a security hole). |
 | `DISCORD_CLIENT_ID` | for Discord login | OAuth client id |

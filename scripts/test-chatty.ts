@@ -19,6 +19,7 @@ async function testTools() {
     ["search_members", '{"query":"a"}'],
     ["search_gallery", "{}"],
     ["search_forum", '{"query":"the"}'],
+    ["search_site", '{"query":"spawn"}'],
     ["web_search", '{"query":"minecraft 1.21 pale garden"}'],
   ];
   for (const [name, args] of calls) {
