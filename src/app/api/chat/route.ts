@@ -3,6 +3,7 @@ import { streamChatReply, type ChatTurn } from "@/lib/ai";
 import { getSessionUser } from "@/lib/auth";
 import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, canUseAiAssistant } from "@/lib/accounts";
 import { isRateLimited } from "@/lib/rate-limit";
+import { isChatModelId } from "@/lib/chat-models";
 
 export const runtime = "nodejs";
 // Tool-using agent: each round-trip can involve model calls + tool execution
@@ -92,6 +93,11 @@ export async function POST(request: NextRequest) {
         (t) => t && (t.role === "user" || t.role === "assistant") && typeof t.content === "string"
       )
     : [];
+  const preferences = {
+    model: isChatModelId(body.model) ? body.model : undefined,
+    // Default-on keeps the existing behavior for older clients.
+    webSearchEnabled: body.webSearchEnabled !== false,
+  };
 
   try {
     // request.signal aborts when the client disconnects (Stop / leave),
@@ -108,7 +114,8 @@ export async function POST(request: NextRequest) {
         discordVerified: account.discordVerified ?? false,
         memberSince: account.createdAt ?? null,
       },
-      history
+      history,
+      preferences
     );
     return new Response(stream, { headers: TEXT_HEADERS });
   } catch (err) {

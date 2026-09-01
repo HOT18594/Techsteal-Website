@@ -10,11 +10,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { siteConfig } from "@/lib/site";
 import { Avatar } from "@/components/Avatar";
 import { Markdown } from "@/components/Markdown";
 import { useToast } from "@/components/Toast";
 import { useSession } from "@/lib/use-session";
+import {
+  CHAT_MODELS,
+  DEFAULT_CHAT_MODEL,
+  isChatModelId,
+  type ChatModelId,
+} from "@/lib/chat-models";
 
 interface ToolTrace {
   id: string;
@@ -76,6 +83,7 @@ const TOOL_ICONS: Record<string, string> = {
 };
 
 const STORAGE_KEY = "techsteal-nova-chat-v1";
+const PREFERENCES_KEY = "techsteal-chatty-preferences-v1";
 
 function nowTime(): string {
   const d = new Date();
@@ -91,6 +99,18 @@ function loadHistory(): ChatMessage[] | null {
   } catch {
     return null;
   }
+}
+
+function ChattyLogo({ size, className = "" }: { size: number; className?: string }) {
+  return (
+    <Image
+      src="/chatty-jr-logo.png"
+      alt=""
+      width={size}
+      height={size}
+      className={`chatty-logo-image ${className}`}
+    />
+  );
 }
 
 export function Chatty() {
@@ -124,6 +144,8 @@ export function Chatty() {
   const [streamStarted, setStreamStarted] = useState(false);
   const [activeTools, setActiveTools] = useState<ToolTrace[]>([]); // tools used by the reply in flight
   const [hydrated, setHydrated] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<ChatModelId>(DEFAULT_CHAT_MODEL);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const nextId = useRef(1);
@@ -163,8 +185,33 @@ export function Chatty() {
       // (client-only, so it can never mismatch the server-rendered frame).
       setMessages((m) => m.map((msg) => (msg.id === 0 ? { ...msg, time: nowTime() } : msg)));
     }
+    try {
+      const rawPreferences = localStorage.getItem(PREFERENCES_KEY);
+      if (rawPreferences) {
+        const preferences = JSON.parse(rawPreferences) as {
+          model?: unknown;
+          webSearchEnabled?: unknown;
+        };
+        if (isChatModelId(preferences.model)) setSelectedModel(preferences.model);
+        if (typeof preferences.webSearchEnabled === "boolean") {
+          setWebSearchEnabled(preferences.webSearchEnabled);
+        }
+      }
+    } catch {
+      // Keep the suggested defaults if stored preferences are malformed.
+    }
     setHydrated(true);
   }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(
+        PREFERENCES_KEY,
+        JSON.stringify({ model: selectedModel, webSearchEnabled })
+      );
+    } catch {}
+  }, [hydrated, selectedModel, webSearchEnabled]);
 
   // Persist history — throttled. Streaming fires dozens of setMessages per
   // second; a stringify-plus-localStorage write on every token janks the
@@ -317,7 +364,12 @@ export function Chatty() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history: priorTurns }),
+        body: JSON.stringify({
+          message: text,
+          history: priorTurns,
+          model: selectedModel,
+          webSearchEnabled,
+        }),
         signal: controller.signal,
       });
       if (!res.ok) {
@@ -516,6 +568,8 @@ export function Chatty() {
   const lastMsg = messages[messages.length - 1];
   const canRegenerate =
     !typing && lastMsg?.role === "assistant" && !lastMsg?.error && messages.length > 1;
+  const selectedModelOption =
+    CHAT_MODELS.find((model) => model.id === selectedModel) ?? CHAT_MODELS[0];
 
   const gateClass = "assistant-gate";
 
@@ -563,7 +617,7 @@ export function Chatty() {
           {isEmpty && !typing ? (
             <div className="assistant-welcome">
               <div className="assistant-welcome-mark" aria-hidden="true">
-                <i className="fa-solid fa-sparkles" />
+                <ChattyLogo size={72} />
                 <span />
               </div>
               <p className="assistant-eyebrow">Your Techsteal copilot</p>
@@ -592,7 +646,10 @@ export function Chatty() {
               <div className="assistant-trust-row" aria-label="Assistant capabilities">
                 <span><i className="fa-solid fa-bolt" /> Live answers</span>
                 <span><i className="fa-solid fa-database" /> Site knowledge</span>
-                <span><i className="fa-solid fa-shield-halved" /> Read-only</span>
+                <span>
+                  <i className={`fa-solid ${webSearchEnabled ? "fa-globe" : "fa-shield-halved"}`} />
+                  {webSearchEnabled ? "Web search on" : "Web search off"}
+                </span>
               </div>
             </div>
           ) : null}
@@ -608,7 +665,7 @@ export function Chatty() {
                   {messageItem.role === "assistant" ? (
                     <>
                       <div className="assistant-message-avatar" aria-hidden="true">
-                        <i className="fa-solid fa-sparkles" />
+                        <ChattyLogo size={36} />
                       </div>
                       <div className="assistant-message-main">
                         <div className="assistant-message-meta">
@@ -699,7 +756,7 @@ export function Chatty() {
           {typing && !streamStarted ? (
             <article className="assistant-message is-assistant">
               <div className="assistant-message-avatar" aria-hidden="true">
-                <i className="fa-solid fa-sparkles" />
+                <ChattyLogo size={36} />
               </div>
               <div className="assistant-message-main">
                 <div className="assistant-message-meta"><strong>{ai.name}</strong><span>Working now</span></div>
@@ -761,7 +818,13 @@ export function Chatty() {
           />
           <div className="assistant-composer-footer">
             <div className="assistant-composer-context">
-              <span><i className="fa-solid fa-wand-magic-sparkles" /> Live tools ready</span>
+              <span>
+                <i className={`fa-solid ${webSearchEnabled ? "fa-globe" : "fa-database"}`} />
+                {webSearchEnabled ? "Web search on" : "Site tools only"}
+              </span>
+              <span className="assistant-composer-model">
+                <i className="fa-solid fa-bolt" /> {selectedModelOption.label}
+              </span>
               {input.length > 1600 ? <small>{input.length}/2000</small> : null}
             </div>
             {typing ? (
@@ -793,7 +856,7 @@ export function Chatty() {
       <aside className="assistant-rail">
         <div className="assistant-rail-brand">
           <div className="assistant-orb" aria-hidden="true">
-            <i className="fa-solid fa-sparkles" />
+            <ChattyLogo size={46} />
             <span />
           </div>
           <div>
@@ -848,17 +911,52 @@ export function Chatty() {
         <div className="assistant-console-bar">
           <div className="assistant-console-title">
             <div className="assistant-mobile-orb" aria-hidden="true">
-              <i className="fa-solid fa-sparkles" />
+              <ChattyLogo size={32} />
             </div>
             <div>
               <p>Current conversation</p>
               <strong>{ai.name}</strong>
             </div>
           </div>
-          <button className="assistant-new-chat" onClick={clear} aria-label="Start a new chat">
-            <i className="fa-solid fa-plus" />
-            <span>New chat</span>
-          </button>
+          <div className="assistant-console-actions">
+            <label className="assistant-model-picker">
+              <i className="fa-solid fa-microchip" aria-hidden="true" />
+              <span className="sr-only">Assistant model</span>
+              <select
+                value={selectedModel}
+                onChange={(event) => {
+                  if (isChatModelId(event.target.value)) setSelectedModel(event.target.value);
+                }}
+                disabled={typing}
+                aria-label="Assistant model"
+              >
+                {CHAT_MODELS.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.label}{model.suggested ? " · Suggested" : ""}
+                  </option>
+                ))}
+              </select>
+              <i className="fa-solid fa-chevron-down" aria-hidden="true" />
+            </label>
+            <button
+              type="button"
+              className={`assistant-search-toggle ${webSearchEnabled ? "is-on" : ""}`}
+              onClick={() => setWebSearchEnabled((enabled) => !enabled)}
+              disabled={typing}
+              aria-pressed={webSearchEnabled}
+              aria-label={`Web search ${webSearchEnabled ? "on" : "off"}`}
+              title="Allow Chatty Jr. to search public web sources"
+            >
+              <i className="fa-solid fa-globe" aria-hidden="true" />
+              <span>Web search</span>
+              <em>{webSearchEnabled ? "On" : "Off"}</em>
+              <span className="assistant-toggle-track" aria-hidden="true"><span /></span>
+            </button>
+            <button className="assistant-new-chat" onClick={clear} aria-label="Start a new chat">
+              <i className="fa-solid fa-plus" />
+              <span>New chat</span>
+            </button>
+          </div>
         </div>
 
         {consoleBody}

@@ -28,6 +28,7 @@ import {
 } from "./chatty-tools";
 import { formatSearchResults, webSearch } from "./web-search";
 import { formatModrinthResults, searchModrinth, type ModrinthHit } from "./modrinth";
+import { CHAT_MODELS, DEFAULT_CHAT_MODEL, type ChatModelId } from "./chat-models";
 
 const NOT_CONFIGURED = (message: string) =>
   `The AI assistant isn't connected yet — set AI_API_KEY in your environment to enable live answers. (You asked: "${message}")`;
@@ -44,11 +45,7 @@ const MAX_TOOL_CALLS_PER_ROUND = 6;
 
 /** Default OpenRouter cascade, in priority order. Environment values can
  * override it without removing the safety net behind them. */
-export const DEFAULT_AI_MODELS = [
-  "poolside/laguna-s-2.1:free",
-  "nvidia/nemotron-3.5-lightning:free",
-  "minimax/minimax-m3:free",
-] as const;
+export const DEFAULT_AI_MODELS = CHAT_MODELS.map((model) => model.id);
 
 /** Wall-clock budgets (ms), measured from when the event stream starts.
  * /api/chat sets `maxDuration = 60` and Vercel KILLS the function at that
@@ -108,15 +105,15 @@ function planLiveContext(message: string): PlannedToolCall[] {
   return planned.slice(0, 2).map((call, index) => ({ ...call, id: `live_${index}_${call.name}` }));
 }
 
-function resolveModelCascade(): string[] {
-  const primary = process.env.AI_MODEL?.trim() || DEFAULT_AI_MODELS[0];
+function resolveModelCascade(preferredModel?: ChatModelId): string[] {
+  const primary = preferredModel ?? process.env.AI_MODEL?.trim() ?? DEFAULT_CHAT_MODEL;
   const configuredFallbacks = (
     process.env.AI_FALLBACK_MODELS ?? process.env.AI_FALLBACK_MODEL ?? ""
   )
     .split(",")
     .map((model) => model.trim())
     .filter(Boolean);
-  return [...new Set([primary, ...configuredFallbacks, ...DEFAULT_AI_MODELS.slice(1)])];
+  return [...new Set([primary, ...configuredFallbacks, ...DEFAULT_AI_MODELS])];
 }
 
 function toolCacheKey(name: string, rawArgs: string): string {
@@ -147,11 +144,17 @@ export interface ChatTurn {
   content: string;
 }
 
+export interface ChatPreferences {
+  model?: ChatModelId;
+  webSearchEnabled?: boolean;
+}
+
 /** The assistant's role, knowledge, and style rules. */
 function buildSystemPrompt(opts: {
   user: ChatUserContext;
   knowledge: string;
   hasDb: boolean;
+  webSearchEnabled: boolean;
 }): string {
   const c = siteConfig;
   const u = opts.user;
@@ -200,7 +203,9 @@ function buildSystemPrompt(opts: {
     `- get_site_stats — member/thread/build/event counts`,
     `- search_site — search members, builds, forum posts, history, and rules together when the question spans the site or the right section is unclear`,
     `- search_mods — Modrinth, the mod repository: LIVE data on specific mods/modpacks/shaders (author, description, downloads, versions, link). For ANY question about a specific mod or modpack, call search_mods FIRST.`,
-    `- web_search — general Minecraft knowledge only (mechanics, crafting, updates), or NEWS about a mod search_mods couldn't find (unreleased/announced). NEVER for server-specific facts. LIMITED to 2 searches per answer — if the first results are thin, say so and answer from your own knowledge instead of searching again.`,
+    ...(opts.webSearchEnabled
+      ? [`- web_search — general Minecraft knowledge only (mechanics, crafting, updates), or NEWS about a mod search_mods couldn't find (unreleased/announced). NEVER for server-specific facts. LIMITED to 2 searches per answer — if the first results are thin, say so and answer from your own knowledge instead of searching again.`]
+      : [`- Web search is OFF for this message because the user disabled it. Never call web_search or imply that you searched the public web. Use site tools and your existing Minecraft knowledge instead.`]),
     `Rules of thumb: greeting/FAQ you already know → answer directly. Anything about current players, specific members/builds/threads, counts, or anything the snapshot doesn't fully cover → call the matching tool first, then answer from the result. When independent lookups are all needed, request them together so they can run in parallel. You may chain dependent tools (search_forum → read_forum_thread). Don't call tools you don't need.`,
     ``,
     `=== TRUTH HIERARCHY (always follow in this order) ===`,
@@ -418,6 +423,7 @@ async function completionRound(opts: {
   model: string;
   apiKey: string;
   messages: unknown[];
+  tools: typeof CHATTY_TOOLS;
   withTools: boolean;
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -436,7 +442,9 @@ async function completionRound(opts: {
       max_tokens: 500, // keep replies short — no AI essays
       stream: true,
       messages: opts.messages,
-      ...(opts.withTools ? { tools: CHATTY_TOOLS, tool_choice: "auto" } : {}),
+      ...(opts.withTools && opts.tools.length > 0
+        ? { tools: opts.tools, tool_choice: "auto" }
+        : {}),
     }),
     // A hung upstream must not hold the request open until the platform
     // kills it. Combine with the caller's abort signal (client Stop/leave).
@@ -553,11 +561,16 @@ export async function streamChatReply(
   message: string,
   signal?: AbortSignal,
   user: ChatUserContext = { username: "a player", role: "member" },
-  history: ChatTurn[] = []
+  history: ChatTurn[] = [],
+  preferences: ChatPreferences = {}
 ): Promise<ReadableStream<Uint8Array>> {
   const apiKey = process.env.AI_API_KEY;
   const baseUrl = (process.env.AI_BASE_URL ?? "https://openrouter.ai/api/v1").replace(/\/+$/, "");
-  const modelCascade = resolveModelCascade();
+  const webSearchEnabled = preferences.webSearchEnabled !== false;
+  const modelCascade = resolveModelCascade(preferences.model);
+  const availableTools = webSearchEnabled
+    ? CHATTY_TOOLS
+    : CHATTY_TOOLS.filter((tool) => tool.function.name !== "web_search");
 
   if (!apiKey) return messageStream(NOT_CONFIGURED(message));
 
@@ -568,17 +581,25 @@ export async function streamChatReply(
   const isModQuestion =
     /\b(mods?|modpacks?|shaders?|resource\s*packs?|datapacks?)\b/i.test(message);
   const needsGeneralResearch =
+    webSearchEnabled &&
     !isServerQuestion &&
     /\b(how|where|when|which|what|recipe|craft|find|farm|mechanic|version|update|best|fastest)\b/i.test(message);
   const [results, modHits, snapshot] = await Promise.all([
     // Free web search pre-attached for general questions (saves a tool
     // round); pure server questions get tools instead. Mod questions keep
     // web results too — news complements the Modrinth data.
-    needsGeneralResearch || isModQuestion ? webSearch(message) : Promise.resolve([]),
+    needsGeneralResearch || (webSearchEnabled && isModQuestion)
+      ? webSearch(message)
+      : Promise.resolve([]),
     isModQuestion ? searchModrinth(message) : Promise.resolve([] as ModrinthHit[]),
     buildKnowledgeSnapshot(),
   ]);
-  const system = buildSystemPrompt({ user, knowledge: snapshot.text, hasDb: snapshot.hasDb });
+  const system = buildSystemPrompt({
+    user,
+    knowledge: snapshot.text,
+    hasDb: snapshot.hasDb,
+    webSearchEnabled,
+  });
 
   // Sanitize client-sent history: cap turns, length, and roles — never
   // trust the client payload straight into the prompt.
@@ -600,7 +621,9 @@ export async function streamChatReply(
         ? "MINECRAFT MOD/MODPACK — ground the answer in the Modrinth data below, or call search_mods for more"
         : isServerQuestion
           ? "SERVER-SPECIFIC (use tools / knowledge — never guess)"
-          : "GENERAL MINECRAFT (web results below or the web_search tool; still cite the server where relevant)"
+          : webSearchEnabled
+            ? "GENERAL MINECRAFT (web results below or the web_search tool; still cite the server where relevant)"
+            : "GENERAL MINECRAFT (public web search is disabled; use existing knowledge and be honest about uncertainty)"
     }.`,
     ...(modHits.length > 0
       ? [``, `Modrinth results (live mod repository data):`, formatModrinthResults(modHits)]
@@ -611,6 +634,7 @@ export async function streamChatReply(
     ``,
     `Reminders:`,
     `- Prefer tools over guessing for anything about the server.`,
+    `- Public web search is ${webSearchEnabled ? "enabled" : "disabled"} for this message.`,
     `- Never invent members, rules, builds, events, numbers, or player names.`,
     `- Keep it short and answer directly.`,
   ].join("\n");
@@ -643,6 +667,7 @@ export async function streamChatReply(
         model,
         apiKey,
         messages,
+        tools: availableTools,
         withTools,
         signal,
         timeoutMs,
@@ -785,6 +810,17 @@ export async function streamChatReply(
                 ok: false,
                 label: "Tool limit reached",
                 content: `This round requested more than ${MAX_TOOL_CALLS_PER_ROUND} tools. Use the results already returned and answer now.`,
+              } satisfies ChattyToolResult,
+            };
+          }
+          if (call.name === "web_search" && !webSearchEnabled) {
+            return {
+              call,
+              result: {
+                ok: false,
+                label: "Web search is off",
+                content:
+                  "The user disabled public web search for this message. Do not search or claim to have searched; answer from site tools and existing knowledge.",
               } satisfies ChattyToolResult,
             };
           }
