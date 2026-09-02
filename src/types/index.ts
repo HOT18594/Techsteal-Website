@@ -217,3 +217,18 @@ export interface ServerStatus {
   /** Server software, e.g. "NeoForge". */
   software?: string | null;
 }
+
+export interface ServerTelemetryLine {
+  id: string;
+  text: string;
+  level: "info" | "warning" | "error" | "chat";
+}
+
+/** Extra hosting telemetry kept separate from the lightweight status poll.
+ * This endpoint deliberately never requests or returns account credit data. */
+export interface ServerTelemetry {
+  source: "live" | "unavailable";
+  ramGb: number | null;
+  lines: ServerTelemetryLine[];
+  sampledAt: string | null;
+}

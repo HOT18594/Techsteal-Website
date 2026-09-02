@@ -12,10 +12,11 @@ import { useToast } from "./Toast";
 import { useApi } from "@/lib/use-api";
 import { useSession } from "@/lib/use-session";
 
-/* The six links in the bar's middle stretch. Home is the wordmark, Status
-   the pill, Join the CTA — so the full nav lives in one bar, always
-   visible: icon-only below xl, icon + label from xl up. No hamburger. */
+/* Core destinations stay in the primary navigation. Server has an explicit
+   labelled entry; the live pill remains a quick signal, not the only way
+   someone can discover the status dashboard. */
 const NAV_LINKS = [
+  { href: "/status", label: "Server", icon: "fa-tower-broadcast" },
   { href: "/assistant", label: "Assistant", icon: "fa-robot" },
   { href: "/forum", label: "Forum", icon: "fa-comments" },
   { href: "/history", label: "History", icon: "fa-clock-rotate-left" },

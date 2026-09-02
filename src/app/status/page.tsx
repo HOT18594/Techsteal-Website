@@ -1,519 +1,568 @@
 "use client";
 
+import Link from "next/link";
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { siteConfig } from "@/lib/site";
-import { fallbackStatus } from "@/lib/fallback-data";
-import type { ServerStatus } from "@/types";
+import { SubPage } from "@/components/SubPage";
 import { useToast } from "@/components/Toast";
 import { useCopyAddress } from "@/components/CopyIpButton";
-import { SubPage } from "@/components/SubPage";
+import { fallbackStatus } from "@/lib/fallback-data";
+import { minotarUrl } from "@/lib/minotar";
+import { siteConfig } from "@/lib/site";
 import { useApi } from "@/lib/use-api";
 import { useSession } from "@/lib/use-session";
-import { minotarUrl } from "@/lib/minotar";
-import Link from "next/link";
+import type { ServerStatus, ServerTelemetry, ServerTelemetryLine } from "@/types";
 
-/** Visual identity per exaroton state: color + icon + animation. */
 const STATE_STYLE: Record<
   string,
-  { color: string; glow: string; icon: string; spin: boolean }
+  { color: string; glow: string; icon: string; message: string; spin?: boolean }
 > = {
-  online: { color: "var(--emerald)", glow: "var(--emerald-glow)", icon: "fa-circle-check", spin: false },
-  starting: { color: "var(--diamond)", glow: "rgba(56,211,240,0.4)", icon: "fa-rocket", spin: false },
-  loading: { color: "var(--diamond)", glow: "rgba(56,211,240,0.4)", icon: "fa-spinner", spin: true },
-  stopping: { color: "#ffd166", glow: "rgba(255,209,102,0.35)", icon: "fa-moon", spin: false },
-  restarting: { color: "var(--diamond)", glow: "rgba(56,211,240,0.4)", icon: "fa-rotate-right", spin: true },
-  crashed: { color: "var(--redstone)", glow: "var(--redstone-glow)", icon: "fa-triangle-exclamation", spin: false },
-  pending: { color: "#ffd166", glow: "rgba(255,209,102,0.35)", icon: "fa-hourglass-half", spin: false },
-  offline: { color: "var(--muted-2)", glow: "transparent", icon: "fa-circle-minus", spin: false },
-  unknown: { color: "var(--muted-2)", glow: "transparent", icon: "fa-circle-question", spin: false },
+  online: {
+    color: "var(--emerald)",
+    glow: "var(--emerald-glow)",
+    icon: "fa-bolt",
+    message: "All systems are responding. The realm is ready.",
+  },
+  starting: {
+    color: "var(--diamond)",
+    glow: "rgba(56,211,240,0.4)",
+    icon: "fa-rocket",
+    message: "Powering up the world. This screen will update automatically.",
+  },
+  loading: {
+    color: "var(--diamond)",
+    glow: "rgba(56,211,240,0.4)",
+    icon: "fa-spinner",
+    message: "Loading the world and preparing player data.",
+    spin: true,
+  },
+  stopping: {
+    color: "#ffd166",
+    glow: "rgba(255,209,102,0.35)",
+    icon: "fa-moon",
+    message: "Saving progress and shutting down safely.",
+  },
+  restarting: {
+    color: "var(--diamond)",
+    glow: "rgba(56,211,240,0.4)",
+    icon: "fa-rotate-right",
+    message: "Restart in progress. Live checks are running faster.",
+    spin: true,
+  },
+  crashed: {
+    color: "var(--redstone)",
+    glow: "var(--redstone-glow)",
+    icon: "fa-triangle-exclamation",
+    message: "The last run ended unexpectedly. Check the console below.",
+  },
+  pending: {
+    color: "#ffd166",
+    glow: "rgba(255,209,102,0.35)",
+    icon: "fa-hourglass-half",
+    message: "The host has queued the next server operation.",
+  },
+  offline: {
+    color: "var(--muted)",
+    glow: "rgba(124,145,184,0.18)",
+    icon: "fa-power-off",
+    message: "The realm is resting. Authorized members can start it here.",
+  },
+  unknown: {
+    color: "var(--muted-2)",
+    glow: "rgba(124,145,184,0.12)",
+    icon: "fa-satellite-dish",
+    message: "The live host did not answer. Try another status check.",
+  },
 };
 
+const EMPTY_TELEMETRY: ServerTelemetry = {
+  source: "unavailable",
+  ramGb: null,
+  lines: [],
+  sampledAt: null,
+};
+
+type ActivityPoint = { at: number; players: number; max: number };
+type ConsoleFilter = "all" | ServerTelemetryLine["level"];
+
 function styleFor(status: ServerStatus) {
-  // Unavailable status gets the neutral "unknown" look — never a green
-  // online icon sitting next to "Status unavailable".
   if (status.source !== "live") return STATE_STYLE.unknown;
   return STATE_STYLE[status.state ?? (status.online ? "online" : "offline")] ?? STATE_STYLE.unknown;
+}
+
+function ActivityChart({ points, max }: { points: ActivityPoint[]; max: number }) {
+  const width = 680;
+  const height = 154;
+  const inset = 12;
+  const chartPoints = points.slice(-36);
+  const coordinates = chartPoints.map((point, index) => {
+    const x = chartPoints.length <= 1 ? inset : inset + (index / (chartPoints.length - 1)) * (width - inset * 2);
+    const y = height - inset - (Math.min(point.players, max) / Math.max(max, 1)) * (height - inset * 2);
+    return [x, y] as const;
+  });
+  const line = coordinates.map(([x, y]) => `${x},${y}`).join(" ");
+  const area = coordinates.length > 1
+    ? `${inset},${height - inset} ${line} ${width - inset},${height - inset}`
+    : "";
+  const peak = chartPoints.reduce((highest, point) => Math.max(highest, point.players), 0);
+
+  return (
+    <div className="status-chart-wrap">
+      <div className="status-chart-summary">
+        <span><strong>{chartPoints.length}</strong> live samples</span>
+        <span>Peak <strong>{peak}</strong></span>
+      </div>
+      <svg
+        className="status-chart"
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={`Player activity from ${chartPoints.length} live samples. Peak ${peak} of ${max} slots.`}
+      >
+        <defs>
+          <linearGradient id="player-activity-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--diamond)" stopOpacity=".32" />
+            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <g className="status-chart-grid" aria-hidden="true">
+          <line x1={inset} y1="38" x2={width - inset} y2="38" />
+          <line x1={inset} y1="77" x2={width - inset} y2="77" />
+          <line x1={inset} y1="116" x2={width - inset} y2="116" />
+        </g>
+        {area ? <polygon points={area} fill="url(#player-activity-fill)" aria-hidden="true" /> : null}
+        {line ? <polyline points={line} className="status-chart-line" aria-hidden="true" /> : null}
+        {coordinates.map(([x, y], index) => (
+          <circle key={`${x}-${index}`} cx={x} cy={y} r={index === coordinates.length - 1 ? 5 : 2.6} className="status-chart-point" />
+        ))}
+      </svg>
+      {chartPoints.length < 2 ? (
+        <p className="status-chart-empty">The activity graph fills with real samples while you keep this page open.</p>
+      ) : null}
+    </div>
+  );
+}
+
+function ConsolePanel({ telemetry, loading }: { telemetry: ServerTelemetry; loading: boolean }) {
+  const [filter, setFilter] = useState<ConsoleFilter>("all");
+  const filters: Array<{ id: ConsoleFilter; label: string }> = [
+    { id: "all", label: "All" },
+    { id: "info", label: "Info" },
+    { id: "warning", label: "Warnings" },
+    { id: "error", label: "Errors" },
+    { id: "chat", label: "Chat" },
+  ];
+  const visibleLines = telemetry.lines.filter((line) => filter === "all" || line.level === filter).slice(-16);
+
+  return (
+    <section className="status-console status-panel" aria-labelledby="console-title">
+      <div className="status-panel-head console-head">
+        <div>
+          <span className="status-section-kicker"><i className="fa-solid fa-terminal" /> Diagnostics</span>
+          <h2 id="console-title">Server console</h2>
+        </div>
+        <div className="console-live-badge">
+          <span className={telemetry.source === "live" ? "is-live" : ""} />
+          {loading ? "Connecting" : telemetry.source === "live" ? "Live snapshot" : "Unavailable"}
+        </div>
+      </div>
+      <div className="console-toolbar" aria-label="Filter console lines">
+        {filters.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            aria-pressed={filter === item.id}
+            className={filter === item.id ? "active" : ""}
+            onClick={() => setFilter(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <div className="console-screen thin-scroll" role="log" aria-live="off" aria-label="Recent server console output">
+        <div className="console-command"><span>techsteal@realm</span>:~$ tail --live server.log</div>
+        {visibleLines.length ? visibleLines.map((line) => (
+          <div key={line.id} className={`console-line console-${line.level}`}>
+            <span className="console-marker" aria-hidden="true" />
+            <code>{line.text}</code>
+          </div>
+        )) : (
+          <div className="console-empty">
+            <i className="fa-solid fa-wave-square" aria-hidden="true" />
+            {telemetry.source === "live"
+              ? `No ${filter === "all" ? "recent" : filter} lines in this snapshot.`
+              : "Console data will appear when the hosting panel is reachable."}
+          </div>
+        )}
+      </div>
+      <p className="console-footnote">
+        Read-only snapshot · refreshes every 45 seconds · control characters are removed before display
+      </p>
+    </section>
+  );
 }
 
 export default function StatusPage() {
   const { show } = useToast();
   const { user, loading: sessionLoading } = useSession();
-  const { data: STATUS, refetch, loading: statusLoading } = useApi<ServerStatus>(
-    "/api/status",
-    fallbackStatus
+  const { data: status, refetch, loading: statusLoading } = useApi<ServerStatus>("/api/status", fallbackStatus);
+  const {
+    data: telemetry,
+    refetch: refetchTelemetry,
+    loading: telemetryLoading,
+  } = useApi<ServerTelemetry>("/api/server/telemetry", EMPTY_TELEMETRY);
+  const [refreshing, setRefreshing] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  const [now, setNow] = useState<number | null>(null);
+  const [activity, setActivity] = useState<ActivityPoint[]>([]);
+  const [control, setControl] = useState<{ configured: boolean; allowed: boolean } | null>(null);
+  const [controlBusy, setControlBusy] = useState<"start" | "stop" | null>(null);
+  const controlSeq = useRef(0);
+  const { copied, copy } = useCopyAddress();
+
+  const transitional = ["loading", "starting", "stopping", "restarting"].includes(status.state ?? "");
+  const statusLive = status.source === "live";
+  const online = statusLive && Boolean(status.online);
+  const players = statusLive ? (status.players ?? 0) : 0;
+  const max = status.max ?? siteConfig.maxPlayers;
+  const freeSlots = Math.max(max - players, 0);
+  const capacityPct = max > 0 ? Math.min(100, Math.round((players / max) * 100)) : 0;
+  const software = status.software ?? siteConfig.software;
+  const version = status.version ?? siteConfig.version;
+  const stateStyle = styleFor(status);
+  const heroLabel = statusLive ? status.stateLabel ?? (online ? "Online" : "Offline") : "Signal lost";
+  const playerList = useMemo(
+    () => (statusLive ? [...(status.playerList ?? [])].sort((a, b) => a.localeCompare(b)) : []),
+    [statusLive, status.playerList]
   );
 
-  // Transitional states (loading/starting/…) flip within a minute or two,
-  // so poll faster while one is active; steady states refresh every 30s.
-  const transitional =
-    STATUS.state === "loading" ||
-    STATUS.state === "starting" ||
-    STATUS.state === "stopping" ||
-    STATUS.state === "restarting";
+  const refreshControl = useCallback(() => {
+    if (sessionLoading) return;
+    const seq = ++controlSeq.current;
+    fetch("/api/server/control")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { configured?: boolean; allowed?: boolean } | null) => {
+        if (controlSeq.current !== seq || !data) return;
+        setControl({ configured: Boolean(data.configured), allowed: Boolean(data.allowed) });
+      })
+      .catch(() => {});
+  }, [sessionLoading]);
+
+  useEffect(() => {
+    refreshControl();
+    const seqRef = controlSeq;
+    return () => { seqRef.current += 1; };
+  }, [refreshControl]);
+
   useEffect(() => {
     const id = setInterval(() => void refetch(), transitional ? 12_000 : 30_000);
     return () => clearInterval(id);
   }, [refetch, transitional]);
 
-  // Manual refresh shows its own spinner (the hook's `loading` is only true
-  // for the first load, so pills never flicker on background refreshes).
-  const [refreshing, setRefreshing] = useState(false);
-  const refresh = async () => {
-    setRefreshing(true);
-    await refetch();
-    // Also re-probe the control-panel capability — a one-shot miss must not
-    // hide the card until the session changes.
-    refreshControl();
-    setRefreshing(false);
-  };
+  useEffect(() => {
+    const id = setInterval(() => void refetchTelemetry(), 45_000);
+    return () => clearInterval(id);
+  }, [refetchTelemetry]);
 
-  // "Updated Xs ago" ticker — both timestamps start null so the server and
-  // the first client frame render nothing (no hydration mismatch), then the
-  // effect stamps them client-side only.
-  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
-  const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
     setUpdatedAt(Date.now());
+  }, [status]);
+
+  useEffect(() => {
     setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 5_000);
     return () => clearInterval(id);
   }, []);
-  useEffect(() => {
-    setUpdatedAt(Date.now());
-  }, [STATUS]);
-  const updatedLabel = (() => {
-    if (updatedAt === null || now === null) return null;
-    const ageS = Math.max(0, Math.round((now - updatedAt) / 1000));
-    return ageS < 8 ? "Updated just now" : `Updated ${ageS}s ago`;
-  })();
-
-  const statusLive = STATUS.source === "live";
-  const style = styleFor(STATUS);
-  const online = Boolean(STATUS.online);
-  const players = statusLive ? (STATUS.players ?? 0) : 0;
-  const max = STATUS.max ?? siteConfig.maxPlayers;
-  const playerList = useMemo(
-    () => (statusLive ? [...(STATUS.playerList ?? [])].sort((a, b) => a.localeCompare(b)) : []),
-    [statusLive, STATUS.playerList]
-  );
-  const software = STATUS.software ?? siteConfig.software;
-  const version = STATUS.version ?? siteConfig.version;
-  const capacityPct = max > 0 ? Math.min(100, Math.round((players / max) * 100)) : 0;
-
-  // ------------------------------------------------------------------
-  // Server control (start/stop via Exaroton) — capability from /api/
-  // server/control, buttons gated by the LIVE state, not just online.
-  // ------------------------------------------------------------------
-  const [control, setControl] = useState<{ configured: boolean; allowed: boolean } | null>(null);
-  const [controlBusy, setControlBusy] = useState<"start" | "stop" | null>(null);
-
-  // One-shot probes are re-runnable: a single blipped request used to hide
-  // the entire Server Control card until the next full session change.
-  //
-  // Staleness is handled with a sequence ref rather than a returned cleanup
-  // closure: `refresh()` below also calls this, and it had no way to hold on
-  // to a cleanup, so a manual refresh raced the effect's probe and whichever
-  // response landed last won. Bumping the sequence makes only the newest
-  // probe able to write.
-  const controlSeq = useRef(0);
-  const refreshControl = useCallback(() => {
-    if (sessionLoading || !user) return;
-    const seq = ++controlSeq.current;
-    fetch("/api/server/control")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d: { configured?: boolean; allowed?: boolean } | null) => {
-        if (controlSeq.current !== seq || !d) return;
-        setControl({ configured: !!d.configured, allowed: !!d.allowed });
-      })
-      .catch(() => {});
-  }, [user, sessionLoading]);
 
   useEffect(() => {
+    if (!statusLive) return;
+    const nextPoint = { at: Date.now(), players, max };
+    try {
+      const stored = JSON.parse(localStorage.getItem("techsteal-status-activity") ?? "[]") as ActivityPoint[];
+      const safe = Array.isArray(stored)
+        ? stored.filter((point) => Number.isFinite(point.at) && Number.isFinite(point.players)).slice(-35)
+        : [];
+      const next = [...safe, nextPoint].slice(-36);
+      localStorage.setItem("techsteal-status-activity", JSON.stringify(next));
+      setActivity(next);
+    } catch {
+      setActivity((current) => [...current, nextPoint].slice(-36));
+    }
+  }, [statusLive, players, max, status]);
+
+  const freshness = useMemo(() => {
+    if (updatedAt === null || now === null) return "Waiting for first check";
+    const age = Math.max(0, Math.round((now - updatedAt) / 1000));
+    return age < 8 ? "Checked just now" : `Checked ${age}s ago`;
+  }, [now, updatedAt]);
+
+  const refreshAll = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    await Promise.all([refetch(), refetchTelemetry()]);
     refreshControl();
-    // Abandon an in-flight probe's result on unmount / re-run. The ref is read
-    // (and written) at cleanup time on purpose — that's the whole point of the
-    // sequence guard, so the exhaustive-deps ref warning doesn't apply: there
-    // is no "current at effect time" value we want here, we want the latest.
-    const seqRef = controlSeq;
-    return () => {
-      seqRef.current++;
-    };
-  }, [refreshControl]);
+    setRefreshing(false);
+  };
 
   const runControl = async (action: "start" | "stop") => {
     if (controlBusy) return;
-    if (action === "stop" && !window.confirm("Stop the server? Players will be kicked off.")) {
-      return;
-    }
+    if (action === "stop" && !window.confirm("Stop the server? Players will be disconnected.")) return;
     setControlBusy(action);
     try {
-      const res = await fetch("/api/server/control", {
+      const response = await fetch("/api/server/control", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action }),
       });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        show("Couldn't " + (action === "start" ? "start" : "stop"), data.error ?? "Try again soon.", "error");
+      const data = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        show(`Couldn’t ${action} the server`, data.error ?? "Try again in a moment.", "error");
         return;
       }
-      show(
-        action === "start" ? "Server starting" : "Server stopping",
-        action === "start"
-          ? "Kicking it up — this page tracks the boot automatically."
-          : "Shutting down — players have been kicked."
-      );
-      // Immediate refetch so the state pill flips without waiting a tick.
+      show(action === "start" ? "Server starting" : "Server stopping", "Live tracking is active on this page.");
       void refetch();
     } catch {
-      show("Couldn't " + (action === "start" ? "start" : "stop"), "Something went wrong.", "error");
+      show(`Couldn’t ${action} the server`, "Something went wrong.", "error");
     } finally {
       setControlBusy(null);
     }
   };
 
-  // Start/Stop are gated on LIVE status only. The placeholder fallback
-  // claims online:true, and acting on that could stop (or fail to start)
-  // a server whose real state we simply don't know right now.
-  const canStart =
-    statusLive &&
-    (STATUS.state === undefined ? !online : ["offline", "crashed"].includes(STATUS.state));
-  const canStop =
-    statusLive && (STATUS.state === undefined ? online : ["online"].includes(STATUS.state));
+  const canStart = statusLive && (status.state === undefined ? !online : ["offline", "crashed"].includes(status.state));
+  const canStop = statusLive && (status.state === undefined ? online : status.state === "online");
 
-  const { copied, copy } = useCopyAddress();
-
-  const heroLabel = statusLive
-    ? STATUS.stateLabel ?? (online ? "Online" : "Offline")
-    : "Status unavailable";
-
-  const rosterEmpty = (() => {
-    if (!statusLive)
-      return { icon: "fa-satellite-dish", text: "Status data unavailable right now." };
-    if (!online) return { icon: "fa-bed", text: "Nobody here — the server is down." };
-    // Online with players but no names: the query protocol hides the list on
-    // some setups. "The realm is quiet right now." directly contradicted the
-    // "N playing" line right above it.
-    if (players > 0)
-      return {
-        icon: "fa-user-secret",
-        text: `${players} ${players === 1 ? "player is" : "players are"} online, but the server isn't sharing names.`,
-      };
-    return { icon: "fa-leaf", text: "The realm is quiet right now." };
-  })();
+  const rosterMessage = !statusLive
+    ? "Player data is unavailable until the live signal returns."
+    : !online
+      ? "The realm is offline, so the roster is empty."
+      : players > 0
+        ? `${players} ${players === 1 ? "player is" : "players are"} online, but the server is not sharing names.`
+        : "The realm is online and quiet right now.";
 
   return (
-    <SubPage>
-      <div className="w-full">
-        {/* Header */}
-        <div className="page-header rowed mb-8 gap-4">
+    <SubPage className="max-w-[1500px]">
+      <div
+        className="status-ops"
+        style={{ "--status-color": stateStyle.color, "--status-glow": stateStyle.glow } as CSSProperties}
+      >
+        <header className="status-page-header">
           <div>
-            <h1 className="page-title">Server Status</h1>
+            <span className="status-eyebrow"><i className="fa-solid fa-satellite-dish" /> Live realm operations</span>
+            <h1 className="page-title">Server status</h1>
+            <p>Everything you need to check, join, and operate Techsteal—without hunting through the site.</p>
           </div>
-          <div className="flex items-center gap-3">
-            {/* Single source of truth for freshness — the hero below is the
-                one authoritative state display, so no duplicate pill here. */}
-            <span className="text-xs text-[var(--muted-2)] whitespace-nowrap hidden sm:block">
-              {updatedLabel}
+          <div className="status-header-actions">
+            <span className="status-freshness" role="status" aria-live="polite">
+              <i className="fa-regular fa-clock" aria-hidden="true" /> {freshness}
             </span>
-            <button
-              className="btn-ghost btn-sm"
-              onClick={() => void refresh()}
-              disabled={refreshing}
-              aria-label="Refresh status"
-              title="Refresh now"
-            >
-              <i className={`fa-solid fa-rotate-right ${refreshing ? "fa-spin" : ""}`} />
-              <span className="hidden sm:inline">Refresh</span>
+            <button className="status-refresh" onClick={() => void refreshAll()} disabled={refreshing}>
+              <i className={`fa-solid fa-rotate-right ${refreshing ? "fa-spin" : ""}`} aria-hidden="true" />
+              {refreshing ? "Checking" : "Refresh all"}
             </button>
           </div>
-        </div>
+        </header>
 
-        {/* Hero — THE authoritative state display: big label + MOTD on the
-            left, quick-glance metrics strip on the right, ambient glow
-            tinted by the current state color. */}
-        <div className="card p-6 sm:p-8 relative overflow-hidden">
-          <div
-            className="absolute inset-x-0 top-0 h-[2px]"
-            style={{ background: `linear-gradient(90deg, transparent, ${style.color}, transparent)` }}
-            aria-hidden="true"
-          />
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={{
-              background: `radial-gradient(560px 200px at 88% -30%, color-mix(in srgb, ${style.color} 14%, transparent), transparent 70%)`,
-            }}
-            aria-hidden="true"
-          />
-          <div className="relative flex flex-col xl:flex-row xl:items-center gap-7">
-            <div className="flex items-center gap-5 flex-1 min-w-0">
-              <span
-                className={`w-16 h-16 rounded-2xl border flex items-center justify-center text-2xl flex-shrink-0 ${
-                  style.spin ? "animate-pulse" : ""
-                }`}
-                style={{
-                  color: style.color,
-                  borderColor: style.color.includes("var")
-                    ? `color-mix(in srgb, ${style.color} 45%, transparent)`
-                    : style.glow,
-                  background: `color-mix(in srgb, ${style.color} 10%, transparent)`,
-                  boxShadow: `0 0 26px -8px ${style.glow}`,
-                }}
-                aria-hidden="true"
-              >
-                <i className={`fa-solid ${style.icon} ${style.spin ? "fa-spin" : ""}`} />
-              </span>
-              <div className="min-w-0">
-                <div className="flex items-baseline gap-3 flex-wrap">
-                  <span className="font-display text-3xl font-bold px-optical" style={{ color: style.color }}>
-                    {heroLabel}
-                  </span>
-                  {STATUS.serverName ? (
-                    <span className="text-sm text-[var(--muted)]">{STATUS.serverName}</span>
-                  ) : null}
-                </div>
-                <p className="text-sm text-[var(--muted)] mt-1">
-                  {!statusLive
-                    ? "Can't reach the status services right now — try refreshing."
-                    : STATUS.motd ?? (online ? "The realm is live — jump in!" : "The realm sleeps.")}
-                </p>
-                {transitional && statusLive ? (
-                  <p className="text-xs text-[var(--diamond)] mt-2 flex items-center gap-2">
-                    <i className="fa-solid fa-spinner fa-spin" aria-hidden="true" />
-                    Tracking the transition — this page updates itself.
-                  </p>
-                ) : null}
-              </div>
+        <section className="status-command-deck" aria-labelledby="current-state-title">
+          <div className="status-deck-grid" aria-hidden="true" />
+          <div className="status-state-copy">
+            <div className="status-state-label">
+              <span className="status-state-dot" />
+              {statusLoading && !statusLive ? "Establishing live signal" : "Current realm state"}
             </div>
-
-            {/* Quick-glance metric strip */}
-            <div className="status-metrics flex-shrink-0 py-1 border-t border-[var(--border-strong)] pt-4 xl:border-0 xl:pt-0 flex-wrap gap-y-3">
-              <div className="status-metric">
-                <span className="status-metric-label">Players</span>
-                <span className="status-metric-value px-optical" style={{ color: online ? "var(--emerald)" : undefined }}>
-                  {statusLive ? `${players}/${max}` : "—"}
+            <h2 id="current-state-title">{heroLabel}</h2>
+            <p className="status-state-message">
+              {status.motd && statusLive ? status.motd : stateStyle.message}
+            </p>
+            {status.serverName ? <span className="status-server-name">{status.serverName}</span> : null}
+            <div className="status-primary-actions">
+              <button className="status-copy-address" onClick={() => void copy()}>
+                <span>
+                  <small>Java server address</small>
+                  <strong>{siteConfig.address}</strong>
                 </span>
-              </div>
-              <div className="status-metric">
-                <span className="status-metric-label">Version</span>
-                <span className="status-metric-value px-optical">{version}</span>
-              </div>
-              <div className="status-metric">
-                <span className="status-metric-label">Software</span>
-                <span className="status-metric-value px-optical">{software}</span>
-              </div>
-              <div className="status-metric">
-                <span className="status-metric-label">Region</span>
-                <span className="status-metric-value px-optical">{siteConfig.location}</span>
-              </div>
+                <i className={`fa-solid ${copied ? "fa-check" : "fa-copy"}`} aria-hidden="true" />
+                <span className="sr-only">{copied ? "Address copied" : "Copy server address"}</span>
+              </button>
+              <Link href="/join" className="status-join-button">
+                <i className="fa-solid fa-compass" aria-hidden="true" />
+                Open join guide
+              </Link>
             </div>
+            {transitional && statusLive ? (
+              <div className="status-transition-note">
+                <i className="fa-solid fa-spinner fa-spin" aria-hidden="true" />
+                Transition tracking is running every 12 seconds.
+              </div>
+            ) : null}
           </div>
-        </div>
 
-        {/* Main dashboard grid — activity/control left, connection right */}
-        <div className="grid lg:grid-cols-5 gap-6 mt-6 items-start">
-          {/* ------------------------------------------------ left ---- */}
-          <div className="lg:col-span-3 flex flex-col gap-6">
-            {/* Who's in game */}
-            <div className="card p-6">
-              <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-                <h2 className="font-display text-xl font-bold flex items-center gap-2">
-                  <i className="fa-solid fa-user-group text-[var(--accent)]" />
-                  <span className="px-optical">Who&apos;s in game</span>
-                </h2>
-                <span
-                  className="text-xs font-bold px-2.5 py-1 rounded-full border"
-                  style={{
-                    color: statusLive ? (online ? "var(--emerald)" : "var(--muted)") : "var(--muted)",
-                    borderColor:
-                      statusLive && online
-                        ? "color-mix(in srgb, var(--emerald) 40%, transparent)"
-                        : "var(--border)",
-                    background:
-                      statusLive && online ? "rgba(34,197,94,0.08)" : "transparent",
-                  }}
-                >
-                  {statusLoading && !statusLive
-                    ? "Checking…"
-                    : statusLive
-                      ? `${players}/${max} online`
-                      : "Unknown"}
-                </span>
+          <div className="status-radar-wrap" role="img" aria-label={`Server is ${heroLabel}`}>
+            <div className="status-radar-orbit orbit-one" />
+            <div className="status-radar-orbit orbit-two" />
+            <div className="status-radar-core">
+              <i className={`fa-solid ${stateStyle.icon} ${stateStyle.spin ? "fa-spin" : ""}`} aria-hidden="true" />
+            </div>
+            <span className="radar-node node-one" />
+            <span className="radar-node node-two" />
+            <span className="radar-node node-three" />
+          </div>
+        </section>
+
+        <section className="status-metric-rail" aria-label="Server overview">
+          <div className="status-rail-metric">
+            <span className="status-rail-icon"><i className="fa-solid fa-user-group" /></span>
+            <div><small>Players online</small><strong>{statusLive ? players : "—"}<em>/{max}</em></strong></div>
+          </div>
+          <div className="status-rail-metric">
+            <span className="status-rail-icon"><i className="fa-solid fa-door-open" /></span>
+            <div><small>Open slots</small><strong>{statusLive ? freeSlots : "—"}</strong></div>
+          </div>
+          <div className="status-rail-metric">
+            <span className="status-rail-icon"><i className="fa-solid fa-memory" /></span>
+            <div><small>Memory allocated</small><strong>{telemetry.ramGb ?? "—"}<em>{telemetry.ramGb !== null ? " GB" : ""}</em></strong></div>
+          </div>
+          <div className="status-rail-metric">
+            <span className="status-rail-icon"><i className="fa-solid fa-shield-halved" /></span>
+            <div><small>Access mode</small><strong className="metric-word">Whitelist</strong></div>
+          </div>
+        </section>
+
+        <div className="status-dashboard-grid">
+          <div className="status-dashboard-main">
+            <ConsolePanel telemetry={telemetry} loading={telemetryLoading} />
+
+            <section className="status-panel status-activity" aria-labelledby="activity-title">
+              <div className="status-panel-head">
+                <div>
+                  <span className="status-section-kicker"><i className="fa-solid fa-chart-line" /> Session telemetry</span>
+                  <h2 id="activity-title">Player activity</h2>
+                </div>
+                <span className="status-panel-context">This device · latest 36 checks</span>
               </div>
+              <ActivityChart points={activity} max={max} />
+            </section>
 
-              {/* Capacity meter */}
-              <div className="capacity-bar" role="img" aria-label={`${players} of ${max} player slots in use`}>
+            <section className="status-panel status-roster" aria-labelledby="roster-title">
+              <div className="status-panel-head">
+                <div>
+                  <span className="status-section-kicker"><i className="fa-solid fa-gamepad" /> Live roster</span>
+                  <h2 id="roster-title">Inside the realm</h2>
+                </div>
+                <span className={`roster-count ${online ? "online" : ""}`}>{statusLive ? `${players} online` : "Unknown"}</span>
+              </div>
+              <div className="status-capacity-track" role="img" aria-label={`${players} of ${max} player slots occupied`}>
                 <span style={{ width: `${capacityPct}%` }} />
               </div>
-              <div className="flex justify-between text-[11px] text-[var(--muted-2)] mt-1.5 mb-4">
-                <span>{players} playing</span>
-                <span>{Math.max(max - players, 0)} slots free</span>
-              </div>
-
-              {statusLive && online && playerList.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
+              <div className="status-capacity-labels"><span>{capacityPct}% occupied</span><span>{freeSlots} slots open</span></div>
+              {statusLive && online && playerList.length ? (
+                <div className="status-player-grid">
                   {playerList.map((name) => (
-                    <span key={name} className="player-chip">
+                    <div key={name} className="status-player-chip">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={minotarUrl(name)} alt="" loading="lazy" width={22} height={22} />
-                      <span className="truncate max-w-[140px]">{name}</span>
-                    </span>
+                      <img src={minotarUrl(name)} alt="" loading="lazy" width={34} height={34} />
+                      <span><strong>{name}</strong><small>In game now</small></span>
+                      <i className="fa-solid fa-signal" aria-label="Online" />
+                    </div>
                   ))}
-                  {/* The count and the name list come from different fields:
-                      the query protocol only returns a SAMPLE of names on many
-                      servers, so "12 playing" next to 8 chips is correct, not
-                      a bug. Say so rather than letting it read as one. */}
                   {playerList.length < players ? (
-                    <span className="w-full text-[11px] text-[var(--muted-2)] mt-1">
-                      Showing {playerList.length} of {players} names — the server only reports a
-                      sample.
-                    </span>
+                    <p className="status-roster-note">The server reports {players} online but only shares {playerList.length} names.</p>
                   ) : null}
                 </div>
               ) : (
-                <div className="text-sm text-[var(--muted-2)] py-7 text-center border border-dashed border-[var(--border)] rounded-xl">
-                  <i className={`fa-solid ${rosterEmpty.icon} text-2xl mb-2 block opacity-60`} />
-                  {rosterEmpty.text}
+                <div className="status-roster-empty">
+                  <span><i className={`fa-solid ${online ? "fa-wind" : "fa-bed"}`} /></span>
+                  <div><strong>No visible players</strong><p>{rosterMessage}</p></div>
                 </div>
               )}
-            </div>
-
-            {/* Server Control — start/stop via Exaroton (verified members).
-                Promoted next to the roster: it's the page's action center. */}
-            {control && control.configured && (
-              <div className="card p-6">
-                <h2 className="font-display text-xl font-bold mb-1 flex items-center gap-2">
-                  <i className="fa-solid fa-power-off text-[var(--accent)]" />
-                  <span className="px-optical">Server Control</span>
-                </h2>
-                <p className="text-sm text-[var(--muted)] mb-5">
-                  Start or stop the Minecraft server via the hosting panel.
-                </p>
-                {control.allowed ? (
-                  <>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <button
-                        className="btn-primary"
-                        onClick={() => void runControl("start")}
-                        disabled={controlBusy !== null || !canStart}
-                      >
-                        {controlBusy === "start" ? (
-                          <i className="fa-solid fa-spinner fa-spin" />
-                        ) : (
-                          <i className="fa-solid fa-play" />
-                        )}
-                        Start Server
-                      </button>
-                      <button
-                        className="btn-secondary"
-                        onClick={() => void runControl("stop")}
-                        disabled={controlBusy !== null || !canStop}
-                      >
-                        {controlBusy === "stop" ? (
-                          <i className="fa-solid fa-spinner fa-spin" />
-                        ) : (
-                          <i className="fa-solid fa-stop" />
-                        )}
-                        Stop Server
-                      </button>
-                      <span className="text-xs text-[var(--muted-2)]">
-                        {transitional
-                          ? "Transition in progress."
-                          : online
-                            ? "Server is online — stop it to save credits."
-                            : "The server is offline right now."}
-                      </span>
-                    </div>
-                  </>
-                ) : user ? (
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                    <p className="text-sm text-[var(--muted)]">
-                      Verify you&apos;re in the official Discord server to control the server.
-                    </p>
-                    <Link href="/settings" className="btn-primary sm:ml-auto shrink-0 justify-center">
-                      <i className="fa-solid fa-user-check" />
-                      Verify in Settings
-                    </Link>
-                  </div>
-                ) : (
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                    <p className="text-sm text-[var(--muted)]">
-                      Sign in with Discord to control the server.
-                    </p>
-                    <Link href="/login" className="btn-primary sm:ml-auto shrink-0 justify-center">
-                      <i className="fa-brands fa-discord" />
-                      Log in with Discord
-                    </Link>
-                  </div>
-                )}
-              </div>
-            )}
+            </section>
           </div>
 
-          {/* ----------------------------------------------- right ---- */}
-          <div className="lg:col-span-2 flex flex-col gap-6">
-            {/* Connection — everything needed to actually join */}
-            <div className="card p-6">
-              <h2 className="font-display text-xl font-bold mb-5 flex items-center gap-2">
-                <i className="fa-solid fa-server text-[var(--accent)]" />
-                <span className="px-optical">Connection</span>
-              </h2>
-              <div className="space-y-2">
-                <div className="flex justify-between items-center gap-3 pb-2 border-b border-[var(--border)]">
-                  <span className="text-sm text-[var(--muted)] flex-shrink-0">Address</span>
-                  <span className="min-w-0 flex items-center gap-2">
-                    <code className="text-sm text-[var(--accent)] font-display break-all">
-                      {siteConfig.address}
-                    </code>
-                    <button
-                      onClick={() => void copy()}
-                      className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition"
-                      aria-label="Copy server address"
-                      title="Copy address"
-                    >
-                      <i className={`fa-solid ${copied ? "fa-check text-[var(--emerald)]" : "fa-copy"}`} />
-                    </button>
-                  </span>
+          <aside className="status-dashboard-side" aria-label="Server details and controls">
+            <section className="status-panel status-capacity-card" aria-labelledby="capacity-title">
+              <div className="status-panel-head compact">
+                <div>
+                  <span className="status-section-kicker"><i className="fa-solid fa-gauge-high" /> Load</span>
+                  <h2 id="capacity-title">Realm capacity</h2>
                 </div>
-                {([
-                  // `as const` tuples: without them TS widened every row to
-                  // string[], which cost a `label as string` cast on the key
-                  // and let a typo in `kind` pass unnoticed.
-                  ["Version", `${version} · ${software}`, "text"],
-                  ["Difficulty", siteConfig.difficulty, "text"],
-                  ["Whitelist", siteConfig.whitelist, "emerald"],
-                  ["Location", siteConfig.location, "text"],
-                ] as const satisfies readonly (readonly [string, string, "text" | "emerald"])[]).map(
-                  ([label, value, kind]) => (
-                  <div key={label} className="flex justify-between items-center gap-4 pb-2 border-b border-[var(--border)] last:border-b-0 last:pb-0">
-                    <span className="text-sm text-[var(--muted)] flex-shrink-0">{label}</span>
-                    <span className="min-w-0 text-right break-all">
-                      {kind === "emerald" ? (
-                        <span className="text-sm text-[var(--emerald)]">{value}</span>
-                      ) : (
-                        <span className="text-sm">{value}</span>
-                      )}
-                    </span>
-                  </div>
-                  )
-                )}
               </div>
-              <Link href="/join" className="btn-secondary w-full justify-center mt-5">
-                <i className="fa-solid fa-compass" />
-                New here? Full join guide
-              </Link>
-            </div>
+              <div className="status-capacity-ring-row">
+                <div
+                  className="status-capacity-ring"
+                  style={{ "--capacity-angle": `${capacityPct * 3.6}deg` } as CSSProperties}
+                  role="img"
+                  aria-label={`${capacityPct}% of player capacity in use`}
+                >
+                  <div><strong>{capacityPct}%</strong><span>occupied</span></div>
+                </div>
+                <dl className="status-capacity-facts">
+                  <div><dt>Playing</dt><dd>{statusLive ? players : "—"}</dd></div>
+                  <div><dt>Available</dt><dd>{statusLive ? freeSlots : "—"}</dd></div>
+                  <div><dt>Total</dt><dd>{max}</dd></div>
+                </dl>
+              </div>
+            </section>
 
-            {/* Data provenance footnote */}
-            <div className="card p-4 flex items-start gap-3 text-xs text-[var(--muted-2)] leading-relaxed">
-              <i className={`fa-solid mt-0.5 ${statusLive ? "fa-satellite-dish text-[var(--emerald)]" : "fa-triangle-exclamation text-[#ffd166]"}`} />
-              <span>
-                {statusLive
-                  ? "Live from the Exaroton hosting panel — refreshes itself every 30s automatically."
-                  : "The panel can't be reached right now, so values above fall back to defaults."}
-              </span>
+            <section className="status-panel status-connection" aria-labelledby="connection-title">
+              <div className="status-panel-head compact">
+                <div>
+                  <span className="status-section-kicker"><i className="fa-solid fa-link" /> Connection</span>
+                  <h2 id="connection-title">Server details</h2>
+                </div>
+              </div>
+              <button className="status-address-row" onClick={() => void copy()}>
+                <span><small>Address</small><code>{siteConfig.address}</code></span>
+                <i className={`fa-solid ${copied ? "fa-check" : "fa-copy"}`} aria-hidden="true" />
+              </button>
+              <dl className="status-detail-list">
+                <div><dt>Version</dt><dd>{version}</dd></div>
+                <div><dt>Software</dt><dd>{software}</dd></div>
+                <div><dt>Difficulty</dt><dd>{siteConfig.difficulty}</dd></div>
+                <div><dt>Whitelist</dt><dd className="is-good">{siteConfig.whitelist}</dd></div>
+                <div><dt>Region</dt><dd>{siteConfig.location}</dd></div>
+                <div><dt>Refresh</dt><dd>{transitional ? "12 seconds" : "30 seconds"}</dd></div>
+              </dl>
+            </section>
+
+            <section className="status-panel status-control" aria-labelledby="control-title">
+              <div className="status-panel-head compact">
+                <div>
+                  <span className="status-section-kicker"><i className="fa-solid fa-sliders" /> Operations</span>
+                  <h2 id="control-title">Realm control</h2>
+                </div>
+              </div>
+              {control === null ? (
+                <div className="status-control-message"><i className="fa-solid fa-spinner fa-spin" /> Checking your access…</div>
+              ) : !control.configured ? (
+                <div className="status-control-message"><i className="fa-solid fa-lock" /> Host controls are not connected.</div>
+              ) : control.allowed ? (
+                <>
+                  <div className="status-control-buttons">
+                    <button onClick={() => void runControl("start")} disabled={controlBusy !== null || !canStart}>
+                      <i className={`fa-solid ${controlBusy === "start" ? "fa-spinner fa-spin" : "fa-play"}`} /> Start
+                    </button>
+                    <button className="stop" onClick={() => void runControl("stop")} disabled={controlBusy !== null || !canStop}>
+                      <i className={`fa-solid ${controlBusy === "stop" ? "fa-spinner fa-spin" : "fa-stop"}`} /> Stop
+                    </button>
+                  </div>
+                  <p>{transitional ? "A server transition is already in progress." : online ? "The realm is online and accepting players." : "The realm is ready for an authorized start."}</p>
+                </>
+              ) : user ? (
+                <div className="status-control-gate">
+                  <p>Verify your Discord membership to unlock server operations.</p>
+                  <Link href="/settings"><i className="fa-solid fa-user-check" /> Verify in settings</Link>
+                </div>
+              ) : (
+                <div className="status-control-gate">
+                  <p>Members can start or stop the realm after signing in.</p>
+                  <Link href="/login"><i className="fa-brands fa-discord" /> Sign in with Discord</Link>
+                </div>
+              )}
+            </section>
+
+            <div className="status-source-note">
+              <i className={`fa-solid ${statusLive ? "fa-circle-check" : "fa-triangle-exclamation"}`} aria-hidden="true" />
+              <span><strong>{statusLive ? "Live host data" : "Fallback data"}</strong>{statusLive ? "Status is supplied by the server host and refreshed automatically." : "Live host data is temporarily unavailable. Displayed configuration values may be defaults."}</span>
             </div>
-          </div>
+          </aside>
         </div>
       </div>
     </SubPage>
