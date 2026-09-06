@@ -49,6 +49,10 @@ export async function POST() {
     if (res.status === 200) {
       verified = true;
       definitive = true;
+      // Cancel the unread body so the connection returns to the pool —
+      // every other branch does this, and an unconsumed keep-alive body
+      // holds the socket until GC.
+      await res.body?.cancel().catch(() => {});
     } else if (res.status === 404) {
       // A 404 only means "not a member" when Discord names the MEMBER as
       // unknown (code 10007). The same status also covers an unknown GUILD
@@ -82,7 +86,16 @@ export async function POST() {
   // applied in SQL so a concurrent admin grant can't be erased by this
   // write (and vice versa) — the old read-merge-overwrite lost updates.
   const account = await findAccount(user.id).catch(() => null);
-  if (account && !account.banned) {
+  if (!account) {
+    // A definitive Discord answer that can't be persisted must not answer
+    // 200 — the client would show "verified" while the DB badge stays
+    // false until some later successful verify. The store is down; retry.
+    return NextResponse.json(
+      { error: "Couldn't save the verification result — try again in a moment." },
+      { status: 503 }
+    );
+  }
+  if (!account.banned) {
     // Idempotent for verify; for a "left the server" answer it revokes
     // exactly the perks earned from verification.
     await applyDiscordVerification(user.id, verified);

@@ -36,7 +36,7 @@ interface ListData {
 export default function ForumPage() {
   const { show } = useToast();
   const router = useRouter();
-  const { user, loading: sessionLoading } = useSession();
+  const { user, loading: sessionLoading, refresh: refreshSession } = useSession();
   const isAdmin = user?.role === "admin";
 
   // ------------------------------------------------------------------
@@ -129,18 +129,11 @@ export default function ForumPage() {
   const [submitting, setSubmitting] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
 
-  // Autofocus the title field and lock body scroll while the composer is
-  // open. Escape is handled by <Modal> (topmost-overlay rule) — a second
-  // document-level listener here would close the composer AND anything
-  // stacked above it (e.g. a poll announcement) with one press.
+  // Autofocus the title field while the composer is open. Body scroll lock
+  // and Escape are owned by <Modal> itself.
   useEffect(() => {
     if (!modalOpen) return;
     titleRef.current?.focus();
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prevOverflow;
-    };
   }, [modalOpen]);
 
   const openModal = () => setModalOpen(true);
@@ -177,7 +170,10 @@ export default function ForumPage() {
         else void load();
       } else if (res.status === 401) {
         show("Sign in to post", "Log in with Discord to create threads.", "error");
-        setModalOpen(false);
+        // Session expired while writing — keep the modal (and the draft)
+        // open and re-check the session so its body flips to the signed-in
+        // / sign-in prompt. Closing here destroyed everything typed.
+        void refreshSession();
       } else if (res.status === 429) {
         show("Slow down", "You're posting too fast — wait a moment.", "error");
       } else {
@@ -628,7 +624,9 @@ export default function ForumPage() {
                   <Avatar name={user.username} src={user.avatarUrl} size="sm" className="w-5! h-5!" />
                   Posting as <span className="text-[var(--fg-2)] font-medium">{user.username}</span>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                {/* Single column for members (no poll button to pair with);
+                    two columns only when the admin poll toggle is present. */}
+                <div className={`grid gap-3 ${isAdmin ? "grid-cols-2" : "grid-cols-1"}`}>
                   <select className={inputClass} value={category} onChange={(e) => setCategory(e.target.value)}>
                     {CATEGORY_LIST.map((c) => (
                       <option key={c} value={c}>

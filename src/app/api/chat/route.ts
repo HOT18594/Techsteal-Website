@@ -95,8 +95,10 @@ export async function POST(request: NextRequest) {
     : [];
   const preferences = {
     model: isChatModelId(body.model) ? body.model : undefined,
-    // Default-on keeps the existing behavior for older clients.
-    webSearchEnabled: body.webSearchEnabled !== false,
+    // Default-on keeps the existing behavior for older clients. A non-boolean
+    // value must not silently re-enable search the user turned off —
+    // `!== false` alone let the STRING "false" count as enabled.
+    webSearchEnabled: body.webSearchEnabled === false ? false : true,
   };
 
   try {

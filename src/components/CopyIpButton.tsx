@@ -33,11 +33,11 @@ export function useCopyAddress() {
   return { copied, copy };
 }
 
-export function CopyIpButton({ variant = "primary" }: { variant?: "primary" | "secondary" }) {
+export function CopyIpButton() {
   const { copied, copy } = useCopyAddress();
   return (
     <button
-      className={variant === "primary" ? "btn-primary" : "btn-secondary"}
+      className="btn-primary"
       onClick={() => void copy()}
       aria-label={`Copy server address ${siteConfig.address}`}
     >

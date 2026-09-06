@@ -82,7 +82,16 @@ export async function uploadImage(
   const key = serviceRoleKey();
 
   // Safe file extension from the mime, with a random suffix to avoid collisions.
-  const base = (originalName || "image").replace(/[^\w.-]/g, "").replace(/^[.]+/, "").slice(0, 60) || "image";
+  // Consecutive dots collapse to one: the delete path (`storagePathFromUrl`)
+  // rejects any path containing ".." as traversal defense, so a stored key
+  // like "my...build.png" could never be garbage-collected (a silent,
+  // permanent storage leak for every such upload).
+  const base =
+    (originalName || "image")
+      .replace(/[^\w.-]/g, "")
+      .replace(/^[.]+/, "")
+      .replace(/\.{2,}/g, ".")
+      .slice(0, 60) || "image";
   const ext = MIME_EXT[mime] ?? "jpg";
   const path = `${folder}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${base}.${ext}`;
 
@@ -126,6 +135,22 @@ export function storagePathFromUrl(publicUrl: string): string | null {
   // No traversal, no empty path.
   if (!path || path.includes("..")) return null;
   return path;
+}
+
+/**
+ * Pull every URL that points into our own public bucket out of a blob of
+ * markdown/content. Forum posts embed images inline in their text (unlike
+ * gallery posts, which keep them in columns), so deleting a thread needs
+ * this to garbage-collect the bucket — otherwise every embed outlived its
+ * post forever. Trailing sentence punctuation is trimmed so a "…png." match
+ * still resolves.
+ */
+export function extractStorageUrls(content: string): string[] {
+  if (!content) return [];
+  const candidates = content.match(/https?:\/\/[^\s<>"')\]]+/g) ?? [];
+  return candidates
+    .map((u) => u.replace(/[.,;:!?]+$/, ""))
+    .filter((u) => storagePathFromUrl(u) !== null);
 }
 
 /**

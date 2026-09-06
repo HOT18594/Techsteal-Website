@@ -20,5 +20,23 @@ export function markdownExcerpt(md: string, max = 160): string {
     .replace(/^\s*([-*_]\s*){3,}$/gm, " ") // hr
     .replace(/\s+/g, " ")
     .trim();
-  return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+  if (text.length <= max) return text;
+  return `${safeSlice(text, max - 1).trimEnd()}…`;
+}
+
+/**
+ * Slice that never ends on a lone UTF-16 high surrogate — a naive
+ * String#slice can cut an emoji in half and end previews with "�".
+ */
+export function safeSlice(text: string, max: number): string {
+  const out = text.slice(0, Math.max(0, max));
+  return /[\uD800-\uDBFF]$/.test(out) ? out.slice(0, -1) : out;
+}
+
+/**
+ * Escape LIKE wildcards so user input can't match everything (% and _ are
+ * patterns in SQL LIKE; a search for "100%" would otherwise match every row).
+ */
+export function escapeLike(q: string): string {
+  return q.replace(/[\\%_]/g, (c) => `\\${c}`);
 }

@@ -240,6 +240,13 @@ body {
   border-color: rgba(124, 145, 184, 0.28);
   color: var(--muted);
 }
+/* First status check in flight — neutral, so the pill never flashes the
+   offline styling before the answer arrives. */
+.status-pill.checking {
+  background: linear-gradient(180deg, rgba(124, 145, 184, 0.1), rgba(124, 145, 184, 0.04));
+  border-color: var(--border);
+  color: var(--muted);
+}
 .pulse-dot {
   width: 8px;
   height: 8px;

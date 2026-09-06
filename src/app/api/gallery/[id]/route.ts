@@ -176,7 +176,18 @@ export async function DELETE(
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
   const body = await request.json().catch(() => ({}));
-  const commentId = parseId(body?.commentId);
+  // A PRESENT-but-invalid commentId (null/""/0/"12x") must not fall through
+  // to whole-post deletion — that would destroy every comment and the post's
+  // stored images on a malformed request (same bug class the forum like
+  // route fixed). Only an ABSENT commentId means "delete the post".
+  const commentId =
+    body?.commentId !== undefined && body.commentId !== null
+      ? parseId(body.commentId)
+      : null;
+  const commentDelete = body?.commentId !== undefined && body.commentId !== null;
+  if (commentDelete && commentId === null) {
+    return NextResponse.json({ error: "Invalid commentId" }, { status: 400 });
+  }
 
   const db = getDb();
   if (!db) {
@@ -194,7 +205,7 @@ export async function DELETE(
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
 
-  if (commentId) {
+  if (commentDelete && commentId !== null) {
     const [comment] = await db
       .select({ authorId: galleryComments.authorId })
       .from(galleryComments)
@@ -273,13 +284,18 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
   const body = await request.json().catch(() => ({}));
+  // Only a real boolean flips the flag — Boolean("false") === true, so a
+  // stringified body would feature the post instead of unfeaturing it.
+  if (typeof body.featured !== "boolean") {
+    return NextResponse.json({ error: "featured must be a boolean" }, { status: 400 });
+  }
   const db = getDb();
   if (!db) {
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
   const rows = await db
     .update(galleryItems)
-    .set({ featured: Boolean(body.featured) })
+    .set({ featured: body.featured })
     .where(eq(galleryItems.id, itemId))
     .returning();
   if (rows.length === 0) {

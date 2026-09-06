@@ -29,8 +29,6 @@ interface RichEditorProps {
   /** Textarea rows in Write mode. */
   rows?: number;
   disabled?: boolean;
-  /** Hide the toolbar (e.g. tiny editors) — preview still available. */
-  simple?: boolean;
   /** Unique id prefix so multiple editors on one page don't clash. */
   idPrefix: string;
   className?: string;
@@ -112,7 +110,6 @@ export function RichEditor({
   maxLength = 20000,
   rows = 8,
   disabled = false,
-  simple = false,
   idPrefix,
   className = "",
   onUploadError,
@@ -354,33 +351,31 @@ export function RichEditor({
       {/* Tab bar: Write / Preview + toolbar */}
       <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
         <div className="flex items-center gap-1">
-          {!simple ? (
-            <div className="flex items-center gap-0.5 flex-wrap" role="toolbar" aria-label="Formatting">
-              {TOOLS.map((t) => (
-                <button
-                  key={t.icon}
-                  type="button"
-                  className="rich-tool"
-                  title={t.label}
-                  aria-label={t.label}
-                  disabled={disabled || mode === "preview"}
-                  onClick={() => t.run(wrapSelection, prefixLine)}
-                >
-                  <i className={`fa-solid ${t.icon}`} />
-                </button>
-              ))}
+          <div className="flex items-center gap-0.5 flex-wrap" role="toolbar" aria-label="Formatting">
+            {TOOLS.map((t) => (
               <button
+                key={t.icon}
                 type="button"
                 className="rich-tool"
-                title="Embed image — click, paste, or drag one in"
-                aria-label="Embed image"
+                title={t.label}
+                aria-label={t.label}
                 disabled={disabled || mode === "preview"}
-                onClick={() => fileRef.current?.click()}
+                onClick={() => t.run(wrapSelection, prefixLine)}
               >
-                <i className="fa-solid fa-image" />
+                <i className={`fa-solid ${t.icon}`} />
               </button>
-            </div>
-          ) : null}
+            ))}
+            <button
+              type="button"
+              className="rich-tool"
+              title="Embed image — click, paste, or drag one in"
+              aria-label="Embed image"
+              disabled={disabled || mode === "preview"}
+              onClick={() => fileRef.current?.click()}
+            >
+              <i className="fa-solid fa-image" />
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {uploading > 0 || uploadPct !== null ? (

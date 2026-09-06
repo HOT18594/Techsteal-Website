@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
@@ -81,8 +81,10 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
   const [filter, setFilter] = useState<MemberFilter>("all");
   const [query, setQuery] = useState("");
   const [confirmRemove, setConfirmRemove] = useState<Account | null>(null);
+  const reqSeq = useRef(0);
 
   const load = useCallback(async (initial = false) => {
+    const reqId = ++reqSeq.current; // a slow older response must not clobber a newer one
     if (initial) setLoading(true);
     else setRefreshing(true);
     setLoadError(null);
@@ -93,16 +95,20 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
         bannedAccounts?: Account[];
         error?: string;
       };
+      if (reqId !== reqSeq.current) return;
       if (!res.ok) throw new Error(data.error || "Are you signed in as an admin?");
       setAccounts(data.accounts ?? []);
       setBanned(data.bannedAccounts ?? []);
     } catch (err) {
+      if (reqId !== reqSeq.current) return;
       const message = err instanceof Error ? err.message : "Are you signed in as an admin?";
       setLoadError(message);
       show("Failed to load members", message, "error");
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (reqId === reqSeq.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [show]);
 

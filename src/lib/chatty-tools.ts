@@ -14,7 +14,7 @@ import { formatSearchResults, webSearch } from "./web-search";
 import { formatModrinthResults, searchModrinth } from "./modrinth";
 import { parseRouteId } from "./route-ids";
 
-export interface ChattyToolDef {
+interface ChattyToolDef {
   type: "function";
   function: {
     name: string;
@@ -184,7 +184,7 @@ export const TOOL_LABELS: Record<string, string> = {
 };
 
 /** Finished-state labels keep the UI from looking stuck after a tool returns. */
-export const TOOL_DONE_LABELS: Record<string, string> = {
+const TOOL_DONE_LABELS: Record<string, string> = {
   get_server_status: "Live status checked",
   search_members: "Members checked",
   get_rules: "Rules checked",
@@ -207,7 +207,11 @@ export function toolDoneLabel(name: string): string {
 }
 
 function cap(s: string, max = 1800): string {
-  return s.length > max ? s.slice(0, max) + " …(truncated)" : s;
+  if (s.length <= max) return s;
+  let out = s.slice(0, max);
+  // Never end on a lone high surrogate — a half-cut emoji renders as "�".
+  if (/[\uD800-\uDBFF]$/.test(out)) out = out.slice(0, -1);
+  return out + " …(truncated)";
 }
 
 /** Escape LIKE wildcards so user input can't match everything. */
@@ -299,7 +303,7 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
       const rows = await db
         .select()
         .from(timelineEvents)
-        .where(era ? ilike(timelineEvents.era, `%${era}%`) : undefined)
+        .where(era ? ilike(timelineEvents.era, `%${escapeLike(era)}%`) : undefined)
         .orderBy(desc(timelineEvents.id))
         .limit(30);
       if (rows.length === 0) return { ok: true, label, content: era ? `No events found for era "${era}".` : "No history events recorded yet." };

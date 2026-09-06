@@ -56,8 +56,10 @@ export async function verifySession(token: string): Promise<SessionUser | null> 
       role: user.role === "admin" ? "admin" : "member",
       permissions: Array.isArray(user.permissions) ? user.permissions : [],
       avatarUrl: typeof user.avatarUrl === "string" ? user.avatarUrl : undefined,
-      onboarded: user.onboarded,
-      discordVerified: user.discordVerified,
+      // Booleans only — a token minted by older code (or carrying odd values)
+      // must not smuggle non-boolean truthiness into client gating.
+      onboarded: user.onboarded === true,
+      discordVerified: user.discordVerified === true,
     };
   } catch {
     return null;

@@ -24,7 +24,11 @@ function cleanConsoleLine(line: string): string {
 }
 
 function lineLevel(text: string): ServerTelemetryLine["level"] {
-  if (/\/(?:msg|tell|say)\b|<[^>]+>|\[chat\]/i.test(text)) return "chat";
+  // Real chat only: an explicit [chat] tag, /msg|tell|say commands, or a
+  // <Player> tag sitting right where the vanilla log prefix ends ("…]: <Name>
+  // message"). The old <[^>]+> alternative matched ANY bracketed token, so
+  // plugin lines like "Loaded <config> from world" styled as chat.
+  if (/\[chat\]|\b\/(?:msg|tell|say)\b|\]:\s*<[^>]+>/i.test(text)) return "chat";
   if (/\b(?:error|fatal|severe|exception|crash)\b/i.test(text)) return "error";
   if (/\bwarn(?:ing)?\b/i.test(text)) return "warning";
   return "info";

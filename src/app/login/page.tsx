@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { siteConfig } from "@/lib/site";
 import { useToast } from "@/components/Toast";
@@ -35,9 +35,11 @@ function LoginContent() {
   }, [user, sessionLoading, router, nextParam]);
 
   // Show a toast if the Discord callback bounced us back with an error.
+  const errorToastShown = useRef(false);
   useEffect(() => {
     const error = searchParams.get("error");
-    if (!error) return;
+    if (!error || errorToastShown.current) return;
+    errorToastShown.current = true;
     const messages: Record<string, string> = {
       discord_not_configured: "Discord login isn't set up yet.",
       state_mismatch: "That sign-in link was stale — try again.",
@@ -48,7 +50,12 @@ function LoginContent() {
     // "constructor" would resolve inherited members and crash the toast.
     const message = Object.hasOwn(messages, error) ? messages[error] : undefined;
     show("Sign-in failed", message ?? "Something went wrong.", "error");
-  }, [searchParams, show]);
+    // Strip the param so a refresh doesn't replay the toast.
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("error");
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : "?", { scroll: false });
+  }, [searchParams, show, router]);
 
   return (
     <SubPage className="items-center justify-center">

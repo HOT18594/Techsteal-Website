@@ -8,18 +8,10 @@ import { isRateLimited, rateLimitIp } from "@/lib/rate-limit";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { serializePoll } from "@/lib/polls";
 import { publicRow } from "@/lib/public-row";
-import { parseRouteId } from "@/lib/route-ids";
+import { parseBodyId, parseRouteId } from "@/lib/route-ids";
 import { shouldCountView } from "@/lib/view-counter";
 
 export const dynamic = "force-dynamic";
-
-/** Parse a reply id from a JSON body, rejecting null/""/0/negatives. */
-function parseReplyId(value: unknown): number | null {
-  if (typeof value === "number") {
-    return Number.isSafeInteger(value) && value > 0 ? value : null;
-  }
-  return parseRouteId(typeof value === "string" ? value : null);
-}
 
 // Thread detail: thread + its replies (pinned comments first, then oldest)
 // + its poll (if any). Increments the view counter (deduped per viewer).
@@ -117,7 +109,18 @@ export async function POST(
   }
   const account = gate.status === "ok" ? gate.account : null;
 
-  // Spam guard for members — admins are exempt from rate limits.
+  const body = await request.json().catch(() => ({}));
+  const content = typeof body.content === "string" ? body.content.trim() : "";
+  if (!content) {
+    return NextResponse.json({ error: "A reply can't be empty." }, { status: 400 });
+  }
+  if (content.length > 20000) {
+    return NextResponse.json({ error: "Replies can be at most 20,000 characters." }, { status: 400 });
+  }
+
+  // Spam guard for members — admins are exempt from rate limits. Checked
+  // AFTER validation: an accidental empty submit must not spend one of the
+  // ten allowed replies (validation is cheap; the limit guards the write).
   if (
     (account?.role ?? user.role) !== "admin" &&
     isRateLimited(`reply:${user.id}`, 10, 60_000)
@@ -126,15 +129,6 @@ export async function POST(
       { error: "You're replying too fast — wait a moment." },
       { status: 429 }
     );
-  }
-
-  const body = await request.json().catch(() => ({}));
-  const content = typeof body.content === "string" ? body.content.trim() : "";
-  if (!content) {
-    return NextResponse.json({ error: "A reply can't be empty." }, { status: 400 });
-  }
-  if (content.length > 20000) {
-    return NextResponse.json({ error: "Replies can be at most 20,000 characters." }, { status: 400 });
   }
 
   const db = getDb();
@@ -159,8 +153,20 @@ export async function POST(
 
   const username = account?.username ?? user.username;
   // Reply insert + thread counter bump must commit together — otherwise a
-  // failure between them permanently drifts the replies count.
-  const reply = await db.transaction(async (tx) => {
+  // failure between them permanently drifts the replies count. The
+  // existence/locked re-check runs INSIDE the transaction under a row lock:
+  // a thread deleted (or locked) between the pre-check and the insert used
+  // to gain an orphaned reply on a dead thread (no FK constraints exist).
+  const outcome = await db.transaction(async (tx) => {
+    const [parent] = await tx
+      .select({ id: forumThreads.id, locked: forumThreads.locked })
+      .from(forumThreads)
+      .where(eq(forumThreads.id, threadId))
+      .limit(1)
+      .for("update");
+    if (!parent) return { error: "not_found" as const };
+    if (parent.locked) return { error: "locked" as const };
+
     const [inserted] = await tx
       .insert(forumReplies)
       .values({
@@ -181,8 +187,17 @@ export async function POST(
       .set({ replies: sql`${forumThreads.replies} + 1`, last: new Date().toISOString() })
       .where(eq(forumThreads.id, threadId));
 
-    return inserted;
+    return { reply: inserted };
   });
+  if ("error" in outcome) {
+    return outcome.error === "locked"
+      ? NextResponse.json(
+          { error: "This thread is locked — replies are closed." },
+          { status: 423 }
+        )
+      : NextResponse.json({ error: "Thread not found" }, { status: 404 });
+  }
+  const reply = outcome.reply;
 
   const avatars = await resolveAuthorAvatars([reply]);
   const info = avatarInfoFor(avatars, reply);
@@ -218,7 +233,7 @@ export async function PATCH(
   }
 
   const body = await request.json().catch(() => ({}));
-  const replyId = parseReplyId(body?.replyId);
+  const replyId = parseBodyId(body?.replyId);
   if (!replyId) {
     return NextResponse.json({ error: "replyId is required" }, { status: 400 });
   }
@@ -229,6 +244,10 @@ export async function PATCH(
   }
 
   // Scope by threadId too — the reply must belong to THIS thread's URL.
+  // Only a real boolean flips the flag (Boolean("false") is `true`).
+  if (body.pinned !== undefined && typeof body.pinned !== "boolean") {
+    return NextResponse.json({ error: "pinned must be a boolean" }, { status: 400 });
+  }
   const rows = await db
     .update(forumReplies)
     .set({ pinned: Boolean(body.pinned) })
@@ -269,7 +288,7 @@ export async function PUT(
   }
 
   const body = await request.json().catch(() => ({}));
-  const replyId = parseReplyId(body?.replyId);
+  const replyId = parseBodyId(body?.replyId);
   if (!replyId) {
     return NextResponse.json({ error: "replyId is required" }, { status: 400 });
   }
@@ -356,7 +375,7 @@ export async function DELETE(
   }
 
   const body = await request.json().catch(() => ({}));
-  const replyId = parseReplyId(body?.replyId);
+  const replyId = parseBodyId(body?.replyId);
   if (!replyId) {
     return NextResponse.json({ error: "replyId is required" }, { status: 400 });
   }

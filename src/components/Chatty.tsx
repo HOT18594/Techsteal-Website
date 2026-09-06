@@ -8,7 +8,7 @@
 // lives in localStorage; the 3-dot indicator only shows before the first
 // event arrives.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { siteConfig } from "@/lib/site";
@@ -16,6 +16,7 @@ import { Avatar } from "@/components/Avatar";
 import { Markdown } from "@/components/Markdown";
 import { useToast } from "@/components/Toast";
 import { useSession } from "@/lib/use-session";
+import { hasOpenOverlays } from "@/lib/overlay-stack";
 import {
   CHAT_MODELS,
   DEFAULT_CHAT_MODEL,
@@ -84,6 +85,9 @@ const TOOL_ICONS: Record<string, string> = {
 
 const STORAGE_KEY = "techsteal-nova-chat-v1";
 const PREFERENCES_KEY = "techsteal-chatty-preferences-v1";
+// A question asked from another page (?ask=…) while the user couldn't chat
+// yet (signed out / unverified) is parked here and consumed once they can.
+const PREFILL_KEY = "techsteal-chatty-pending-ask";
 
 function nowTime(): string {
   const d = new Date();
@@ -94,8 +98,22 @@ function loadHistory(): ChatMessage[] | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as ChatMessage[];
-    return Array.isArray(parsed) ? parsed : null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    // Validate each entry: a corrupt or stale-schema row (e.g. one missing
+    // `text`) would otherwise make send()/regenerate() throw on .trim()
+    // and silently kill the composer.
+    const valid = parsed.filter((m): m is ChatMessage => {
+      if (!m || typeof m !== "object") return false;
+      const msg = m as Partial<ChatMessage>;
+      return (
+        typeof msg.id === "number" &&
+        Number.isFinite(msg.id) &&
+        (msg.role === "user" || msg.role === "assistant") &&
+        typeof msg.text === "string"
+      );
+    });
+    return valid.length > 0 ? valid : null;
   } catch {
     return null;
   }
@@ -112,6 +130,122 @@ function ChattyLogo({ size, className = "" }: { size: number; className?: string
     />
   );
 }
+
+interface MessageRowProps {
+  message: ChatMessage;
+  isLast: boolean;
+  canRegenerate: boolean;
+  assistantName: string;
+  username?: string;
+  avatarUrl?: string;
+  onCopy: (text: string) => void;
+  onRetry: (text: string) => void;
+  onRegenerate: () => void;
+}
+
+// Memoized transcript row. Streaming fires dozens of setMessages per second;
+// without memo every token re-rendered — and re-parsed markdown for — the
+// ENTIRE transcript, which janks the main thread on long chats (worst on
+// mobile). With memo, only the growing bubble re-renders; completed rows
+// keep their parsed trees (and spoiler reveal state) untouched.
+const ChatMessageRow = memo(function ChatMessageRow({
+  message,
+  isLast,
+  canRegenerate,
+  assistantName,
+  username,
+  avatarUrl,
+  onCopy,
+  onRetry,
+  onRegenerate,
+}: MessageRowProps) {
+  if (message.role === "assistant") {
+    return (
+      <article className="assistant-message is-assistant">
+        <div className="assistant-message-avatar" aria-hidden="true">
+          <ChattyLogo size={36} />
+        </div>
+        <div className="assistant-message-main">
+          <div className="assistant-message-meta">
+            <strong>{assistantName}</strong>
+            <span>{message.time}</span>
+          </div>
+          {message.tools && message.tools.length > 0 && message.id !== 0 ? (
+            <div className="assistant-tool-trace" aria-label="Sources checked">
+              {message.tools.map((tool, toolIndex) => {
+                const status = tool.status ?? "complete";
+                return (
+                  <span
+                    key={tool.id ?? `${tool.name}-${toolIndex}`}
+                    className={`is-${status}`}
+                    title={tool.name}
+                  >
+                    <i
+                      className={`fa-solid ${
+                        status === "running"
+                          ? "fa-circle-notch fa-spin"
+                          : status === "error"
+                            ? "fa-triangle-exclamation"
+                            : "fa-check"
+                      }`}
+                      aria-hidden="true"
+                    />
+                    {tool.label}
+                    {tool.durationMs ? <small>{(tool.durationMs / 1000).toFixed(1)}s</small> : null}
+                  </span>
+                );
+              })}
+            </div>
+          ) : null}
+          <div className={`assistant-answer ${message.error ? "is-error" : ""}`}>
+            <div className="chat-md">{renderText(message.text)}</div>
+            {message.error && message.retry ? (
+              <button
+                className="assistant-retry"
+                onClick={isLast ? onRegenerate : () => onRetry(message.retry!)}
+              >
+                <i className="fa-solid fa-rotate-right" /> Retry
+              </button>
+            ) : null}
+          </div>
+          <div className="assistant-message-actions">
+            {message.stats ? <span>{message.stats}</span> : <span />}
+            <button onClick={() => onCopy(message.text)}>
+              <i className="fa-regular fa-copy" /> Copy
+            </button>
+            {canRegenerate && isLast ? (
+              <button onClick={onRegenerate}>
+                <i className="fa-solid fa-rotate-right" /> Regenerate
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </article>
+    );
+  }
+  return (
+    <article className="assistant-message is-user">
+      <div className="assistant-message-main">
+        <div className="assistant-message-meta is-user-meta">
+          <span>{message.time}</span>
+          <strong>You</strong>
+        </div>
+        <div className="assistant-user-bubble">{message.text}</div>
+        <div className="assistant-message-actions is-user-actions">
+          <button onClick={() => onCopy(message.text)}>
+            <i className="fa-regular fa-copy" /> Copy
+          </button>
+        </div>
+      </div>
+      <Avatar
+        name={username ?? "You"}
+        src={avatarUrl}
+        size="sm"
+        className="assistant-user-avatar w-9! h-9! flex-shrink-0"
+      />
+    </article>
+  );
+});
 
 export function Chatty() {
   const { show } = useToast();
@@ -163,6 +297,11 @@ export function Chatty() {
     if (!user || !hasAccess) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "/" || typing) return;
+      // Modifier chords (Ctrl/Cmd+/ etc.) belong to the app or browser.
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // A dialog/lightbox owns the keyboard — never yank focus out of an
+      // open overlay into the hidden chat input behind it.
+      if (hasOpenOverlays()) return;
       const t = e.target as HTMLElement;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       e.preventDefault();
@@ -287,13 +426,33 @@ export function Chatty() {
   // question the user never typed.
   useEffect(() => {
     if (!hydrated || autoAsked.current) return;
-    if (!hasAccess) return;
-    const params = new URLSearchParams(window.location.search);
-    const ask = params.get("ask");
-    if (!ask) return;
+    if (!hasAccess) {
+      // Visitors who can't chat yet (signed out / unverified) keep their
+      // question: park it in sessionStorage instead of silently dropping
+      // it — it's consumed below once they gain access.
+      const ask = new URLSearchParams(window.location.search).get("ask");
+      if (ask) {
+        autoAsked.current = true;
+        try {
+          sessionStorage.setItem(PREFILL_KEY, ask);
+        } catch {}
+      }
+      return;
+    }
+    const ask = new URLSearchParams(window.location.search).get("ask");
+    let parked: string | null = null;
+    try {
+      parked = sessionStorage.getItem(PREFILL_KEY);
+      if (parked) sessionStorage.removeItem(PREFILL_KEY);
+    } catch {}
+    const question = ask ?? parked;
+    if (!question) return;
     autoAsked.current = true;
-    if (messages.length > 1) return; // already has a real conversation
-    void send(ask);
+    if (messages.length > 1) {
+      setInput(question); // already a conversation — prefill instead of sending
+      return;
+    }
+    void send(question);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, messages.length, hasAccess]);
 
@@ -360,6 +519,10 @@ export function Chatty() {
       }
     };
 
+    // Accumulated reply text — declared outside the try so the catch can
+    // preserve whatever streamed before a connection drop.
+    let acc = "";
+
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -393,7 +556,6 @@ export function Chatty() {
       // NDJSON events: {"t":"text"|"tool"|"error", ...} one per line.
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let acc = "";
       let buffer = "";
       let failed = false;
 
@@ -496,8 +658,11 @@ export function Chatty() {
       // error was simply wrong.
       if (gen !== genRef.current || controller.signal.aborted) return;
       // A failed request must NOT look like an AI answer — mark the bubble
-      // as an error and offer to re-send the question.
-      updateAssistant("Something went wrong reaching me — check your connection.", true, text);
+      // as an error and offer to re-send the question. Whatever streamed
+      // before the drop is kept: discarding paragraphs the user was already
+      // reading is worse than an honest trailing note.
+      const failureNote = "Something went wrong reaching me — check your connection.";
+      updateAssistant(acc ? `${acc}\n\n${failureNote}` : failureNote, true, text);
     } finally {
       if (gen === genRef.current) {
         setTyping(false);
@@ -570,6 +735,14 @@ export function Chatty() {
     !typing && lastMsg?.role === "assistant" && !lastMsg?.error && messages.length > 1;
   const selectedModelOption =
     CHAT_MODELS.find((model) => model.id === selectedModel) ?? CHAT_MODELS[0];
+
+  // Stable per-action callbacks so the memoized rows don't re-render when
+  // an unrelated state change (e.g. a streamed token) recreates closures.
+  const actionsRef = useRef({ send, regenerate, copyMessage });
+  actionsRef.current = { send, regenerate, copyMessage };
+  const onCopy = useCallback((text: string) => void actionsRef.current.copyMessage(text), []);
+  const onRetry = useCallback((text: string) => void actionsRef.current.send(text), []);
+  const onRegenerate = useCallback(() => actionsRef.current.regenerate(), []);
 
   const gateClass = "assistant-gate";
 
@@ -655,101 +828,19 @@ export function Chatty() {
           ) : null}
 
           {!isEmpty
-            ? messages.map((messageItem) => (
-                <article
+            ? messages.map((messageItem, messageIndex) => (
+                <ChatMessageRow
                   key={messageItem.id}
-                  className={`assistant-message ${
-                    messageItem.role === "assistant" ? "is-assistant" : "is-user"
-                  }`}
-                >
-                  {messageItem.role === "assistant" ? (
-                    <>
-                      <div className="assistant-message-avatar" aria-hidden="true">
-                        <ChattyLogo size={36} />
-                      </div>
-                      <div className="assistant-message-main">
-                        <div className="assistant-message-meta">
-                          <strong>{ai.name}</strong>
-                          <span>{messageItem.time}</span>
-                        </div>
-                        {messageItem.tools && messageItem.tools.length > 0 && messageItem.id !== 0 ? (
-                          <div className="assistant-tool-trace" aria-label="Sources checked">
-                            {messageItem.tools.map((tool, toolIndex) => {
-                              const status = tool.status ?? "complete";
-                              return (
-                                <span
-                                  key={tool.id ?? `${tool.name}-${toolIndex}`}
-                                  className={`is-${status}`}
-                                  title={tool.name}
-                                >
-                                  <i
-                                    className={`fa-solid ${
-                                      status === "running"
-                                        ? "fa-circle-notch fa-spin"
-                                        : status === "error"
-                                          ? "fa-triangle-exclamation"
-                                          : "fa-check"
-                                    }`}
-                                    aria-hidden="true"
-                                  />
-                                  {tool.label}
-                                  {tool.durationMs ? <small>{(tool.durationMs / 1000).toFixed(1)}s</small> : null}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        ) : null}
-                        <div className={`assistant-answer ${messageItem.error ? "is-error" : ""}`}>
-                          <div className="chat-md">{renderText(messageItem.text)}</div>
-                          {messageItem.error && messageItem.retry ? (
-                            <button
-                              className="assistant-retry"
-                              onClick={
-                                messageItem.id === lastMsg?.id
-                                  ? regenerate
-                                  : () => void send(messageItem.retry)
-                              }
-                            >
-                              <i className="fa-solid fa-rotate-right" /> Retry
-                            </button>
-                          ) : null}
-                        </div>
-                        <div className="assistant-message-actions">
-                          {messageItem.stats ? <span>{messageItem.stats}</span> : <span />}
-                          <button onClick={() => void copyMessage(messageItem.text)}>
-                            <i className="fa-regular fa-copy" /> Copy
-                          </button>
-                          {canRegenerate && messageItem.id === lastMsg?.id ? (
-                            <button onClick={regenerate}>
-                              <i className="fa-solid fa-rotate-right" /> Regenerate
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="assistant-message-main">
-                        <div className="assistant-message-meta is-user-meta">
-                          <span>{messageItem.time}</span>
-                          <strong>You</strong>
-                        </div>
-                        <div className="assistant-user-bubble">{messageItem.text}</div>
-                        <div className="assistant-message-actions is-user-actions">
-                          <button onClick={() => void copyMessage(messageItem.text)}>
-                            <i className="fa-regular fa-copy" /> Copy
-                          </button>
-                        </div>
-                      </div>
-                      <Avatar
-                        name={user?.username ?? "You"}
-                        src={user?.avatarUrl}
-                        size="sm"
-                        className="assistant-user-avatar w-9! h-9! flex-shrink-0"
-                      />
-                    </>
-                  )}
-                </article>
+                  message={messageItem}
+                  isLast={messageIndex === messages.length - 1}
+                  canRegenerate={canRegenerate}
+                  assistantName={ai.name}
+                  username={user?.username}
+                  avatarUrl={user?.avatarUrl}
+                  onCopy={onCopy}
+                  onRetry={onRetry}
+                  onRegenerate={onRegenerate}
+                />
               ))
             : null}
 

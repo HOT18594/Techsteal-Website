@@ -32,6 +32,22 @@ export default function HistoryPage() {
           </p>
         </div>
 
+        {error && events.length > 0 ? (
+          // Non-empty fallback data means this branch can't be an ErrorState
+          // — the page IS rendering something, but it's placeholder content,
+          // and the old silent swap read curated placeholder as live data.
+          <div className="mb-6 flex items-center gap-2 flex-wrap text-xs text-[var(--muted)] border border-[var(--border)] rounded-lg px-4 py-3 bg-[var(--bg-2)]/50">
+            <i className="fa-solid fa-circle-info text-[var(--muted-2)]" aria-hidden="true" />
+            <span>Couldn&apos;t reach the live timeline — showing placeholder content.</span>
+            <button
+              className="text-[var(--accent)] hover:text-[var(--accent-bright)] transition"
+              onClick={() => void refetch()}
+            >
+              Retry
+            </button>
+          </div>
+        ) : null}
+
         {error && events.length === 0 ? (
           <ErrorState onRetry={() => void refetch()} what="timeline" />
         ) : loading ? (

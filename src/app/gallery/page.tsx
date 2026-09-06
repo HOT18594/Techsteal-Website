@@ -46,7 +46,7 @@ function imagesOf(g: GalleryItem): string[] {
 
 export default function GalleryPage() {
   const { show } = useToast();
-  const { user, loading: sessionLoading } = useSession();
+  const { user, loading: sessionLoading, refresh: refreshSession } = useSession();
   const isAdmin = user?.role === "admin";
 
   const { data: items, loading, error, refetch } = useApi<GalleryItem[]>("/api/gallery", fallbackGallery);
@@ -148,14 +148,10 @@ export default function GalleryPage() {
     };
   }, []);
 
-  // Lock body scroll while an overlay is up; arrow keys page through the
-  // lightbox. Escape is handled by <Modal> (topmost-overlay rule) — a second
-  // document-level listener here closed the composer AND the lightbox (and
-  // anything stacked above them) with a single press.
+  // Page the lightbox with arrow keys while an overlay is up. Scroll lock
+  // and Escape are owned by <Modal> itself.
   useEffect(() => {
     if (!modalOpen && !viewing) return;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
       // Arrow keys in a text field move the caret — never page the lightbox.
       const t = e.target as HTMLElement | null;
@@ -169,7 +165,6 @@ export default function GalleryPage() {
     };
     document.addEventListener("keydown", onKey);
     return () => {
-      document.body.style.overflow = prevOverflow;
       document.removeEventListener("keydown", onKey);
     };
     // slides/visible must be deps: a filter/sort change that keeps the slide
@@ -185,11 +180,16 @@ export default function GalleryPage() {
   }, [modalOpen]);
 
   // Load comments (and bump views) when the lightbox opens on a post.
+  // commentsTick lets the error state offer a retry without re-keying the
+  // effect on the item.
   const viewingItemId = viewing?.itemId ?? null;
+  const [commentsError, setCommentsError] = useState(false);
+  const [commentsTick, setCommentsTick] = useState(0);
   useEffect(() => {
     if (viewingItemId === null) return;
     let cancelled = false;
     setComments(null);
+    setCommentsError(false);
     setCommentsLoading(true);
     fetch(`/api/gallery/${viewingItemId}`)
       .then(async (res) => {
@@ -204,12 +204,16 @@ export default function GalleryPage() {
           builderAvatar: data.item.builderAvatar ?? null,
         });
       })
-      .catch(() => !cancelled && setComments([]))
+      .catch(() => {
+        if (cancelled) return;
+        setComments([]);
+        setCommentsError(true);
+      })
       .finally(() => !cancelled && setCommentsLoading(false));
     return () => {
       cancelled = true;
     };
-  }, [viewingItemId, setItemsLocal]);
+  }, [viewingItemId, commentsTick, setItemsLocal]);
 
   const openModal = () => {
     setTitle("");
@@ -335,12 +339,18 @@ export default function GalleryPage() {
         setDescription("");
         setModalOpen(false);
         void refetch();
-      } else if (res.status === 401) {
-        show("Sign in to post", "Log in with Discord to share builds.", "error");
-        setModalOpen(false);
-      } else if (res.status === 403) {
-        show("Not allowed to post", "Only verified Discord members can share to the gallery.", "error");
-        setModalOpen(false);
+      } else if (res.status === 401 || res.status === 403) {
+        // Session expired (or access lost) while writing — keep the modal
+        // (and the draft + uploaded images) open; the session refresh flips
+        // its body to the sign-in prompt. Closing here destroyed the post.
+        show(
+          res.status === 401 ? "Sign in to post" : "Not allowed to post",
+          res.status === 401
+            ? "Log in with Discord to share builds."
+            : "Only verified Discord members can share to the gallery.",
+          "error"
+        );
+        void refreshSession();
       } else {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         show("Couldn't post", data.error ?? "The server rejected the request.", "error");
@@ -969,6 +979,16 @@ export default function GalleryPage() {
                 </h4>
                 {commentsLoading ? (
                   <p className="text-sm text-[var(--muted)]">Loading comments…</p>
+                ) : commentsError ? (
+                  <div className="text-sm text-[var(--muted)]">
+                    <p>Couldn&apos;t load comments.</p>
+                    <button
+                      className="btn-secondary btn-sm mt-2"
+                      onClick={() => setCommentsTick((t) => t + 1)}
+                    >
+                      <i className="fa-solid fa-rotate-right" /> Retry
+                    </button>
+                  </div>
                 ) : (comments ?? []).length === 0 ? (
                   <p className="text-sm text-[var(--muted-2)]">No comments yet.</p>
                 ) : (

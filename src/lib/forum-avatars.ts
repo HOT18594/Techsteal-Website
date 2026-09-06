@@ -14,14 +14,14 @@ import { profiles } from "./schema";
 // postgres driver (which needs Node builtins).
 export { minotarUrl };
 
-export interface AuthorAvatar {
+interface AuthorAvatar {
   /** Discord PFP (preferred) or skin-head URL, or null for a letter tile. */
   avatarUrl: string | null;
   /** Deterministic letter-tile color for this author. */
   color: string;
 }
 
-export const AVATAR_COLORS = [
+const AVATAR_COLORS = [
   "avatar-1",
   "avatar-2",
   "avatar-3",

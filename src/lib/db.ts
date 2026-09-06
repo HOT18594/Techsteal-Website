@@ -41,7 +41,7 @@ const g = globalThis as unknown as { __techstealDb?: Map<string, Db> };
  * clients over a few server sessions — it's what Supabase recommends for
  * serverless. prepare:false (below) keeps it compatible.
  */
-export function toTransactionPooler(url: string): string {
+function toTransactionPooler(url: string): string {
   try {
     const u = new URL(url);
     if (u.hostname.endsWith(".pooler.supabase.com") && u.port !== "6543") {

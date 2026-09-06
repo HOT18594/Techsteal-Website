@@ -29,6 +29,12 @@ export async function GET() {
   // 7-day cookie keeps reporting e.g. role: "admin" to the UI (and keeps
   // being sent on every request).
   if (!account || account.banned) {
+    if (!account && !process.env.DATABASE_URL) {
+      // No-DB fallback mode (same as profile GET): there is no store to
+      // check, so the cookie IS the account. Treating this as "account
+      // gone" cleared every signed-in visitor's session on each call.
+      return NextResponse.json({ user });
+    }
     await clearSession().catch(() => {});
     return NextResponse.json({ user: null });
   }
@@ -36,7 +42,10 @@ export async function GET() {
   return NextResponse.json({
     user: {
       ...user,
-      avatarUrl: account.avatarUrl ?? user.avatarUrl,
+      // The DB is authoritative: it explicitly nulls avatarUrl when the
+      // Discord PFP is removed, so falling back to the cookie's (stale)
+      // URL resurrected a deleted picture on second devices.
+      avatarUrl: account.avatarUrl,
       role: account.role,
       permissions: account.permissions,
       onboarded: account.onboarded ?? false,

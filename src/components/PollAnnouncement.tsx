@@ -122,17 +122,7 @@ export function PollAnnouncement() {
     dismissed !== null &&
     !dismissed.has(String(poll.id));
 
-  // Lock body scroll while the announcement is up. Escape is handled by
-  // <Modal> itself (topmost-overlay rule) — a second listener here would
-  // close this announcement AND any composer/lightbox beneath it at once.
-  useEffect(() => {
-    if (!visible || !poll) return;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [visible, poll]);
+  // (Body scroll lock and Escape are owned by <Modal> itself.)
 
   if (!visible || !poll) return null;
 

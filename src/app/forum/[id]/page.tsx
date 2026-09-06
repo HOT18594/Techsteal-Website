@@ -65,7 +65,9 @@ export default function ThreadPage() {
     setBusyLike(null);
     try {
       const res = await fetch(`/api/forum/${id}`);
-      if (res.status === 404) {
+      if (res.status === 404 || res.status === 400) {
+        // 404 = gone; 400 = a malformed id (/forum/abc, /forum/0) — both are
+        // permanent "this thread doesn't exist", not retryable errors.
         if (reqId === reqRef.current) setNotFound(true);
         return;
       }
@@ -592,7 +594,7 @@ export default function ThreadPage() {
               <PollViewer
                 poll={poll}
                 signedIn={Boolean(user)}
-                canVote={Boolean(user) && !locked}
+                canVote={Boolean(user)}
                 onVote={castVote}
               />
             ) : null}

@@ -55,6 +55,11 @@ function broadcast(user: SessionUser | null) {
   for (const fn of listeners) fn(user);
 }
 
+// Bumped by logout() so an /api/auth/me response that was already in flight
+// (started before logout) can't land afterwards and broadcast the pre-logout
+// user back over every subscriber while the cookie is actually cleared.
+let sessionGeneration = 0;
+
 export interface SessionState {
   user: SessionUser | null;
   loading: boolean;
@@ -68,7 +73,9 @@ export function useSession(): SessionState {
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    broadcast(await fetchSession());
+    const gen = sessionGeneration;
+    const user = await fetchSession();
+    if (gen === sessionGeneration) broadcast(user);
     setLoading(false);
   }, []);
 
@@ -85,6 +92,9 @@ export function useSession(): SessionState {
   }, [refresh]);
 
   const logout = useCallback(async (): Promise<boolean> => {
+    // Invalidate any in-flight session fetch first: its result predates the
+    // logout and must not overwrite the cleared state.
+    sessionGeneration++;
     // Only clear local state when the server actually cleared the cookie —
     // otherwise the still-valid session "resurrects" on the next refresh.
     try {

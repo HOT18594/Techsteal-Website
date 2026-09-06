@@ -105,16 +105,29 @@ export async function POST(request: Request) {
   }
 
   let updated: Awaited<ReturnType<typeof updateAccount>> = null;
+  let roleCommitted = false;
   try {
     if (Object.keys(patch).length > 0) {
       updated = await updateAccount(id, patch);
       // Report a missing account before spending more round-trips on it.
       if (!updated) return NextResponse.json({ error: "Account not found" }, { status: 404 });
+      roleCommitted = true;
     }
     if (grant.length > 0) updated = await addPermissions(id, grant);
     if (revoke.length > 0) updated = await removePermissions(id, revoke);
   } catch {
-    return NextResponse.json(DB_DOWN, { status: 503 });
+    // Role and permissions are separate writes — a failure between them must
+    // not pretend nothing happened ("database unreachable" after the role
+    // already saved) or that everything failed. Say exactly what saved.
+    return NextResponse.json(
+      roleCommitted
+        ? {
+            error:
+              "The role was saved, but the permission change hit a database hiccup — reopen the panel and re-check this member's perks.",
+          }
+        : DB_DOWN,
+      { status: 503 }
+    );
   }
   if (!updated) return NextResponse.json({ error: "Account not found" }, { status: 404 });
   return NextResponse.json({ account: updated });

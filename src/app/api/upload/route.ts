@@ -53,7 +53,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Images must be JPG, PNG, WebP or GIF." }, { status: 400 });
   }
   if (file.size > MAX_BYTES) {
-    return NextResponse.json({ error: "Images must be under 8 MB." }, { status: 400 });
+    // 413, same as the declared-length branch above — one condition, one
+    // status, so client retry logic keyed on 413 behaves consistently.
+    return NextResponse.json({ error: "Images must be under 8 MB." }, { status: 413 });
   }
 
   try {

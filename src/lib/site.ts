@@ -22,7 +22,6 @@ export const siteConfig = {
   assistant: {
     name: "Chatty Jr.",
     initial: "C",
-    tagline: "Online · responds instantly",
   },
   socials: {
     discord: "#",

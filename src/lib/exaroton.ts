@@ -89,7 +89,7 @@ interface ExarotonServerResponse {
   };
 }
 
-export interface ExarotonSnapshot {
+interface ExarotonSnapshot {
   serverName: string | null;
   motd: string | null;
   /** Numeric exaroton status code, or null when unknown. */
@@ -106,7 +106,7 @@ export interface ExarotonSnapshot {
 
 /** Strip Minecraft § formatting codes (incl. the §x hex-color prefix),
  * keeping line breaks. */
-export function stripFormattingCodes(text: string): string {
+function stripFormattingCodes(text: string): string {
   return text.replace(/[§&][0-9a-fk-orx]/gi, "");
 }
 

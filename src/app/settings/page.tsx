@@ -147,8 +147,8 @@ function SettingsContent() {
         profile?: Account;
         error?: string;
       };
-      setAdminCode("");
       if (res.ok && data.profile?.role === "admin") {
+        setAdminCode(""); // clear only on success — a typo keeps what was typed
         await refresh();
         show("Admin unlocked", "Welcome to the admin team. 🔑");
       } else {
@@ -199,7 +199,10 @@ function SettingsContent() {
   const inputClass =
     "w-full bg-[var(--bg-2)] border border-[var(--border)] px-4 py-3 text-sm text-[var(--fg)] outline-none focus:border-[var(--accent)] transition placeholder:text-[var(--muted-2)] rounded-lg";
 
-  if (loadingProfile) {
+  if (sessionLoading || !user || loadingProfile) {
+    // Keep the shell up while the session resolves or the signed-out
+    // redirect is in flight — clearing it the moment `user` is null flashed
+    // a frame of the (empty) settings body before the redirect landed.
     return (
       <SubPage className="max-w-3xl">
         <p className="text-sm text-[var(--muted)] text-center py-16">Loading profile…</p>

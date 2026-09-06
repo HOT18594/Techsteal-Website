@@ -45,7 +45,7 @@ const MAX_TOOL_CALLS_PER_ROUND = 6;
 
 /** Default OpenRouter cascade, in priority order. Environment values can
  * override it without removing the safety net behind them. */
-export const DEFAULT_AI_MODELS = CHAT_MODELS.map((model) => model.id);
+const DEFAULT_AI_MODELS = CHAT_MODELS.map((model) => model.id);
 
 /** Wall-clock budgets (ms), measured from when the event stream starts.
  * /api/chat sets `maxDuration = 60` and Vercel KILLS the function at that
@@ -344,6 +344,26 @@ async function buildKnowledgeSnapshot(): Promise<{ text: string; hasDb: boolean 
   return { text: chunks.join("\n\n").slice(0, 5000), hasDb: true };
 }
 
+/** Knowledge snapshot with a hard timeout: a stalled pooler must not hang
+ * the whole request BEFORE any response headers exist (the client would see
+ * an opaque network error at the platform timeout instead of an answer the
+ * assistant can still produce from tools alone). */
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(fallback);
+      }
+    );
+  });
+}
+
 /** Stream a fixed error/graceful message as NDJSON events. */
 function messageStream(text: string): ReadableStream<Uint8Array> {
   return eventStream(async (emit) => {
@@ -574,6 +594,12 @@ export async function streamChatReply(
 
   if (!apiKey) return messageStream(NOT_CONFIGURED(message));
 
+  // Wall-clock origin for every budget below. Taken BEFORE the pre-round
+  // work — web search + Modrinth + the knowledge snapshot can spend several
+  // seconds, and excluding them pushed the reserve math past Vercel's
+  // 60s kill point (maxDuration), ending streams with no answer at all.
+  const startedAt = Date.now();
+
   const isServerQuestion = SERVER_QUESTION_HINTS.test(message);
   // Mod questions pre-attach live Modrinth data — the model answers from
   // real repository context instead of the (often empty) web results that
@@ -592,7 +618,9 @@ export async function streamChatReply(
       ? webSearch(message)
       : Promise.resolve([]),
     isModQuestion ? searchModrinth(message) : Promise.resolve([] as ModrinthHit[]),
-    buildKnowledgeSnapshot(),
+    // Hard 8s ceiling: a pooler stall degrades to a no-snapshot answer
+    // instead of hanging the response before headers can be sent.
+    withTimeout(buildKnowledgeSnapshot(), 8_000, { text: "", hasDb: true }),
   ]);
   const system = buildSystemPrompt({
     user,
@@ -646,7 +674,6 @@ export async function streamChatReply(
   ];
 
   return eventStream(async (emit) => {
-    const startedAt = Date.now();
     let streamedText = false;
     const trackEmit = (event: Record<string, string>) => {
       if (event.t === "text" && event.v) streamedText = true;
@@ -783,7 +810,10 @@ export async function streamChatReply(
     if (round === null) return;
 
     let roundNum = 1;
-    let webSearches = 0;
+    // The pre-attached search counts against the cap: the system prompt
+    // promises "max 2 searches per answer", and 1 pre-round + 2 model calls
+    // is three searches by any honest reading.
+    let webSearches = results.length > 0 ? 1 : 0;
     while (
       round.toolCalls.length > 0 &&
       roundNum < MAX_ROUNDS &&

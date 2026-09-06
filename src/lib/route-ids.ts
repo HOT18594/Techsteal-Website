@@ -20,3 +20,15 @@ export function parseRouteId(raw: string | null | undefined): number | null {
   if (!Number.isSafeInteger(n) || n <= 0) return null;
   return n;
 }
+
+/**
+ * Parse an id from a JSON body (number or numeric string), rejecting
+ * null/""/0/negatives. One shared copy — the per-route duplicates had begun
+ * to drift.
+ */
+export function parseBodyId(value: unknown): number | null {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value > 0 ? value : null;
+  }
+  return parseRouteId(typeof value === "string" ? value : null);
+}

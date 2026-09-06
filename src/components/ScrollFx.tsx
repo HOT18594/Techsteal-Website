@@ -57,6 +57,11 @@ export function ScrollFx() {
     const maxScroll = () => Math.max(0, doc.scrollHeight - window.innerHeight);
 
     const onWheel = (e: WheelEvent) => {
+      // A modal/lightbox locked the body (overflow:hidden): it owns the
+      // viewport now. Wheeling over its backdrop must not grow the glide
+      // target, or the page glides to a stale offset the moment the modal
+      // closes (the lock blocks user scroll, not script scroll).
+      if (document.body.style.overflow === "hidden") return;
       // Ctrl/cmd+wheel is browser zoom — never touch it.
       if (e.ctrlKey || e.metaKey) return;
       // Someone else already handled this tick (or it's a passive listener's).

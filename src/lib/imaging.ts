@@ -7,7 +7,7 @@
 // GIFs skip compression — re-encoding through <canvas> would freeze the
 // animation into its first frame.
 
-export interface CompressResult {
+interface CompressResult {
   file: File;
   /** True when the file was actually re-encoded (false = passed through). */
   compressed: boolean;

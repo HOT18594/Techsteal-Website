@@ -10,7 +10,9 @@ import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { CATEGORY_LIST } from "@/lib/forum-categories";
 import { parsePollInput, pollOptionRows } from "@/lib/polls";
 import { publicRow } from "@/lib/public-row";
-import { parseRouteId } from "@/lib/route-ids";
+import { parseBodyId } from "@/lib/route-ids";
+import { escapeLike } from "@/lib/excerpt";
+import { deleteImagesByUrl, extractStorageUrls } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -20,19 +22,6 @@ export const dynamic = "force-dynamic";
 const CATEGORIES: readonly string[] = CATEGORY_LIST;
 const SORTS = ["new", "top", "hot", "views"] as const;
 const PER_PAGE = 15;
-
-/** Parse a thread/reply id from a JSON body, rejecting null/""/0/negatives. */
-function parseId(value: unknown): number | null {
-  if (typeof value === "number") {
-    return Number.isSafeInteger(value) && value > 0 ? value : null;
-  }
-  return parseRouteId(typeof value === "string" ? value : null);
-}
-
-/** Escape LIKE wildcards so user input can't match everything. */
-function escapeLike(q: string): string {
-  return q.replace(/[\\%_]/g, (c) => `\\${c}`);
-}
 
 export interface ForumListResponse {
   threads: ReturnType<typeof serializeThread>[];
@@ -192,13 +181,6 @@ export async function POST(request: NextRequest) {
     );
   }
   const account = gate.account;
-  // Spam guard for members — admins are exempt from rate limits.
-  if (account.role !== "admin" && isRateLimited(`forum:${user.id}`, 5, 60_000)) {
-    return NextResponse.json(
-      { error: "You're posting too fast — wait a moment." },
-      { status: 429 }
-    );
-  }
 
   const body = await request.json().catch(() => ({}));
   const title = typeof body.title === "string" ? body.title.trim() : "";
@@ -214,6 +196,16 @@ export async function POST(request: NextRequest) {
   }
   if (content.length > 20000) {
     return NextResponse.json({ error: "Posts can be at most 20,000 characters." }, { status: 400 });
+  }
+
+  // Spam guard for members — admins are exempt from rate limits. Checked
+  // AFTER validation: a fumbled empty title must not consume one of the
+  // five allowed posts (validation is cheap; the limit guards the write).
+  if (account.role !== "admin" && isRateLimited(`forum:${user.id}`, 5, 60_000)) {
+    return NextResponse.json(
+      { error: "You're posting too fast — wait a moment." },
+      { status: 429 }
+    );
   }
 
   // Polls are admin-only — validated up front so the transaction can't
@@ -306,7 +298,7 @@ export async function PUT(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => ({}));
-  const id = parseId(body?.id);
+  const id = parseBodyId(body?.id);
   if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
 
   const title = typeof body.title === "string" ? body.title.trim() : undefined;
@@ -367,6 +359,11 @@ export async function PUT(request: NextRequest) {
     })
     .where(eq(forumThreads.id, id))
     .returning();
+  // The existence check above raced a concurrent delete: an empty update
+  // result means the row vanished — answer 404, not `publicRow(undefined)`.
+  if (rows.length === 0) {
+    return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+  }
   return NextResponse.json(publicRow(rows[0]));
 }
 
@@ -382,7 +379,7 @@ export async function PATCH(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => ({}));
-  const id = parseId(body?.id);
+  const id = parseBodyId(body?.id);
   if (!id) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
   }
@@ -393,8 +390,20 @@ export async function PATCH(request: NextRequest) {
   }
 
   const patch: { pinned?: boolean; locked?: boolean } = {};
-  if (body.pinned !== undefined) patch.pinned = Boolean(body.pinned);
-  if (body.locked !== undefined) patch.locked = Boolean(body.locked);
+  // Only real booleans are accepted — Boolean("false") is `true`, so a
+  // stringified body would pin/unpin the opposite of what was sent.
+  if (body.pinned !== undefined) {
+    if (typeof body.pinned !== "boolean") {
+      return NextResponse.json({ error: "pinned must be a boolean" }, { status: 400 });
+    }
+    patch.pinned = body.pinned;
+  }
+  if (body.locked !== undefined) {
+    if (typeof body.locked !== "boolean") {
+      return NextResponse.json({ error: "locked must be a boolean" }, { status: 400 });
+    }
+    patch.locked = body.locked;
+  }
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
   }
@@ -419,7 +428,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => ({}));
-  const id = parseId(body?.id);
+  const id = parseBodyId(body?.id);
   if (!id) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
   }
@@ -462,9 +471,15 @@ export async function DELETE(request: NextRequest) {
 
   // Atomic cascade: thread, replies, poll and votes go together — a
   // mid-failure must not orphan replies/polls pointing at a dead thread.
-  const rows = await db.transaction(async (tx) => {
-    const deleted = await tx.delete(forumThreads).where(eq(forumThreads.id, id)).returning();
-    if (deleted.length === 0) return null;
+  const deleted = await db.transaction(async (tx) => {
+    const rows = await tx.delete(forumThreads).where(eq(forumThreads.id, id)).returning();
+    if (rows.length === 0) return null;
+    // Collect embed URLs before the cascade wipes them — the content is
+    // needed below to garbage-collect the bucket.
+    const replyContents = await tx
+      .select({ content: forumReplies.content })
+      .from(forumReplies)
+      .where(eq(forumReplies.threadId, id));
     await tx.delete(forumReplies).where(eq(forumReplies.threadId, id));
     const polls = await tx
       .select({ id: forumPolls.id })
@@ -474,10 +489,20 @@ export async function DELETE(request: NextRequest) {
       await tx.delete(forumPollVotes).where(eq(forumPollVotes.pollId, p.id));
     }
     await tx.delete(forumPolls).where(eq(forumPolls.threadId, id));
-    return deleted;
+    return { threadContent: rows[0].content, replyContents };
   });
-  if (!rows) {
+  if (!deleted) {
     return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+  }
+  // Free the bucket: forum embeds live inline in post/reply text, so unlike
+  // gallery posts (which track their images in columns) deleting the rows
+  // used to orphan every uploaded image forever. Best-effort, like gallery.
+  const embedUrls = [
+    ...extractStorageUrls(deleted.threadContent ?? ""),
+    ...deleted.replyContents.flatMap((r) => extractStorageUrls(r.content ?? "")),
+  ];
+  if (embedUrls.length > 0) {
+    await deleteImagesByUrl(embedUrls);
   }
   return NextResponse.json({ ok: true });
 }

@@ -34,7 +34,17 @@ export function Navbar() {
   const pathname = usePathname();
   const { user, loading: sessionLoading, logout } = useSession();
   // Live status from /api/status (falls back to placeholder until configured).
-  const { data: status, loading: statusLoading } = useApi<ServerStatus>("/api/status", fallbackStatus);
+  // The navbar mounts once per full page load, so poll every 60s — otherwise
+  // the pill freezes on whatever the server said when the tab was opened.
+  const { data: status, loading: statusLoading, refetch: refetchStatus } = useApi<ServerStatus>(
+    "/api/status",
+    fallbackStatus
+  );
+  useEffect(() => {
+    const t = setInterval(() => void refetchStatus(), 60_000);
+    return () => clearInterval(t);
+  }, [refetchStatus]);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   // Close the profile popover on route change.
   useEffect(() => {
@@ -79,13 +89,19 @@ export function Navbar() {
   }, [profileOpen]);
 
   const handleLogout = async () => {
-    const ok = await logout();
-    if (ok) {
-      show("Signed out", "See you later.");
-      setProfileOpen(false);
-      if (pathname === "/admin") router.push("/");
-    } else {
-      show("Couldn't sign out", "Try again in a moment.", "error");
+    if (loggingOut) return; // double-click fires two POSTs + stacked toasts
+    setLoggingOut(true);
+    try {
+      const ok = await logout();
+      if (ok) {
+        show("Signed out", "See you later.");
+        setProfileOpen(false);
+        if (pathname === "/admin") router.push("/");
+      } else {
+        show("Couldn't sign out", "Try again in a moment.", "error");
+      }
+    } finally {
+      setLoggingOut(false);
     }
   };
 
@@ -136,11 +152,11 @@ export function Navbar() {
               inner span — toggling the pill itself was the double-dot bug.) */}
           <Link
             href="/status"
-            className={`status-pill ${online ? "" : "offline"}`}
+            className={`status-pill ${statusLoading ? "checking" : online ? "" : "offline"}`}
             aria-label={online ? `Server online — ${players}/${max} players` : "Server offline — view status"}
             title={statusLoading ? "Checking status…" : online ? `Online · ${players}/${max} players` : "Offline"}
           >
-            <span className={`pulse-dot ${online ? "" : "muted"}`} />
+            <span className={`pulse-dot ${statusLoading || !online ? "muted" : ""}`} />
             <span className="hidden lg:inline">
               {statusLoading ? "Checking…" : online ? "Online" : "Offline"}
               {!statusLoading && statusLive ? ` · ${players}/${max}` : ""}
@@ -226,6 +242,7 @@ export function Navbar() {
             <button
               className="nav-popover-link w-full text-left text-[var(--redstone)] hover:text-[var(--redstone)]"
               onClick={() => void handleLogout()}
+              disabled={loggingOut}
             >
               <i className="fa-solid fa-right-from-bracket" aria-hidden="true" />
               Log out

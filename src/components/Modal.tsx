@@ -49,6 +49,13 @@ export function Modal({ label, onClose, cardClassName = "", children }: ModalPro
     // must close top-first: only the newest instance may react to Escape.
     const overlayId = pushOverlay();
 
+    // Lock the page behind the dialog (save/restore, so stacked dialogs
+    // re-enable in the right order). Every dialog used to hand-roll this —
+    // ones that forgot (admin confirm) left the page scrollable behind the
+    // modal and fed wheel events to the scroll FX.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (!isTopOverlay(overlayId)) return;
@@ -88,6 +95,7 @@ export function Modal({ label, onClose, cardClassName = "", children }: ModalPro
     return () => {
       document.removeEventListener("keydown", onKey);
       popOverlay(overlayId);
+      document.body.style.overflow = prevOverflow;
       // Give focus back to what opened the dialog — but only when focus is
       // still ours to move (inside the unmounting dialog, or lost to body).
       const active = document.activeElement;

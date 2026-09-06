@@ -15,10 +15,16 @@ export function parsePollInput(value: unknown): { question: string; options: str
   if (question.length > 140) return { error: "Poll questions can be at most 140 characters." };
 
   if (!Array.isArray(p.options)) return { error: "A poll needs options." };
-  const options = p.options
-    .filter((o): o is string => typeof o === "string")
-    .map((o) => o.trim())
-    .filter(Boolean);
+  // Dedupe after trim: "Yes"/"Yes" otherwise become two distinct option ids
+  // with identical text — votes split between them and the tally misleads.
+  const options = [
+    ...new Set(
+      p.options
+        .filter((o): o is string => typeof o === "string")
+        .map((o) => o.trim())
+        .filter(Boolean)
+    ),
+  ];
   if (options.length < 2) return { error: "A poll needs at least two options." };
   if (options.length > 10) return { error: "Polls can have at most ten options." };
   if (options.some((o) => o.length > 80)) {

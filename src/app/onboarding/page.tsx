@@ -177,6 +177,16 @@ function OnboardingContent() {
   const inputClass =
     "w-full bg-[var(--bg-2)] border border-[var(--border)] px-4 py-3 text-sm text-[var(--fg)] outline-none focus:border-[var(--accent)] transition placeholder:text-[var(--muted-2)] rounded-lg";
 
+  // Signed-out visitors are on their way to /login — hold the loading shell
+  // instead of flashing the (meaningless, pre-auth) wizard body first.
+  if (sessionLoading || !user) {
+    return (
+      <SubPage className="max-w-2xl">
+        <p className="text-sm text-[var(--muted)] text-center py-16">Loading…</p>
+      </SubPage>
+    );
+  }
+
   return (
     <SubPage className="max-w-2xl">
       <div className="w-full">

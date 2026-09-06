@@ -117,7 +117,10 @@ export function formatModrinthResults(hits: ModrinthHit[]): string {
     .map(
       (h) =>
         `- ${h.title} by ${h.author} — ${h.projectType}, ${fmtCount(h.downloads)} downloads` +
-        `${h.versions?.length ? `, for ${h.versions.join("/")} (latest ${h.versions[h.versions.length - 1]})` : ""}` +
+        // No "latest" label: Modrinth's search `versions` array is game-version
+        // support and its ordering is not documented as newest-last — labeling
+        // the tail element "latest" handed the model a plausible falsehood.
+        `${h.versions?.length ? `, supports ${h.versions.join("/")}` : ""}` +
         `${h.clientSide && h.serverSide ? `, ${h.clientSide === "required" && h.serverSide === "required" ? "client+server" : h.serverSide === "required" ? "server-side" : "client-side"}` : ""}` +
         `\n  ${h.description}` +
         `\n  ${h.url}`

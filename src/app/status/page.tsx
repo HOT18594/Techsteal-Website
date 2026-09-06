@@ -215,6 +215,7 @@ export default function StatusPage() {
   const [now, setNow] = useState<number | null>(null);
   const [activity, setActivity] = useState<ActivityPoint[]>([]);
   const [control, setControl] = useState<{ configured: boolean; allowed: boolean } | null>(null);
+  const [controlError, setControlError] = useState(false);
   const [controlBusy, setControlBusy] = useState<"start" | "stop" | null>(null);
   const controlSeq = useRef(0);
   const { copied, copy } = useCopyAddress();
@@ -238,13 +239,22 @@ export default function StatusPage() {
   const refreshControl = useCallback(() => {
     if (sessionLoading) return;
     const seq = ++controlSeq.current;
+    setControlError(false);
     fetch("/api/server/control")
       .then((response) => (response.ok ? response.json() : null))
       .then((data: { configured?: boolean; allowed?: boolean } | null) => {
-        if (controlSeq.current !== seq || !data) return;
+        if (controlSeq.current !== seq) return;
+        // A 429/503/network blip used to leave `control` null forever — an
+        // eternal "Checking your access…" spinner. Surface it with a retry.
+        if (!data) {
+          setControlError(true);
+          return;
+        }
         setControl({ configured: Boolean(data.configured), allowed: Boolean(data.allowed) });
       })
-      .catch(() => {});
+      .catch(() => {
+        if (controlSeq.current === seq) setControlError(true);
+      });
   }, [sessionLoading]);
 
   useEffect(() => {
@@ -351,7 +361,10 @@ export default function StatusPage() {
             <p>Everything you need to check, join, and operate Techsteal—without hunting through the site.</p>
           </div>
           <div className="status-header-actions">
-            <span className="status-freshness" role="status" aria-live="polite">
+            {/* Ambient info — deliberately NOT aria-live: the age text
+                changes every 5 seconds, and a live region re-announced
+                "Checked 15s ago" → "Checked 20s ago" to screen readers. */}
+            <span className="status-freshness">
               <i className="fa-regular fa-clock" aria-hidden="true" /> {freshness}
             </span>
             <button className="status-refresh" onClick={() => void refreshAll()} disabled={refreshing}>
@@ -530,7 +543,19 @@ export default function StatusPage() {
                 </div>
               </div>
               {control === null ? (
-                <div className="status-control-message"><i className="fa-solid fa-spinner fa-spin" /> Checking your access…</div>
+                controlError ? (
+                  <div className="status-control-message">
+                    <i className="fa-solid fa-triangle-exclamation" /> Couldn&apos;t check your access.{" "}
+                    <button
+                      className="text-[var(--accent)] hover:text-[var(--accent-bright)] transition"
+                      onClick={refreshControl}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : (
+                  <div className="status-control-message"><i className="fa-solid fa-spinner fa-spin" /> Checking your access…</div>
+                )
               ) : !control.configured ? (
                 <div className="status-control-message"><i className="fa-solid fa-lock" /> Host controls are not connected.</div>
               ) : control.allowed ? (

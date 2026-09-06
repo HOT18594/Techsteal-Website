@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { forumReplies, forumThreads } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
 import { ACCOUNT_DB_ERROR_MESSAGE, accountGate } from "@/lib/accounts";
+import { isRateLimited } from "@/lib/rate-limit";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { publicRow } from "@/lib/public-row";
 import { parseRouteId } from "@/lib/route-ids";
@@ -59,6 +60,12 @@ export async function POST(
   }
   if (gate.status === "db_error" || gate.status === "unconfigured") {
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
+
+  // Likes take FOR UPDATE row locks — a scripted hammer serializes on the
+  // row and churns pooler connections, so like writes get a generous cap.
+  if (isRateLimited(`like:${user.id}`, 60, 60_000)) {
+    return NextResponse.json({ error: "Slow down a little." }, { status: 429 });
   }
 
   // Locking read + write inside a transaction: two simultaneous "like"
