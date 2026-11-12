@@ -17,6 +17,7 @@ import { Markdown } from "@/components/Markdown";
 import { useToast } from "@/components/Toast";
 import { useSession } from "@/lib/use-session";
 import { hasOpenOverlays } from "@/lib/overlay-stack";
+import "./chatty.css";
 import {
   CHAT_MODELS,
   DEFAULT_CHAT_MODEL,
@@ -285,6 +286,7 @@ export function Chatty() {
   const nextId = useRef(1);
   const genRef = useRef(0);
   const controllerRef = useRef<AbortController | null>(null);
+  const streamUpdateRef = useRef<{ flush: () => void; cancel: () => void } | null>(null);
   const autoAsked = useRef(false);
   const activeToolsRef = useRef<ToolTrace[]>([]);
   // Autoscroll only while the reader is already at (or near) the bottom —
@@ -390,14 +392,21 @@ export function Chatty() {
   // but only while the reader hasn't scrolled up to re-read something.
   useEffect(() => {
     const el = scrollRef.current;
-    if (el && stickToBottom.current) {
+    if (!el) return;
+    if (messages.length <= 1 && messages[0]?.role === "assistant" && !typing && activeTools.length === 0) {
+      // The welcome screen starts at its heading, even if it is taller
+      // than a short viewport. Only conversations follow the newest reply.
+      el.scrollTop = 0;
+      stickToBottom.current = true;
+    } else if (stickToBottom.current) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [messages, typing, activeTools]);
+  }, [messages, typing, activeTools, hasAccess, sessionLoading]);
 
   // Navigating away mid-stream must not leave the request running.
   useEffect(() => {
     return () => {
+      streamUpdateRef.current?.cancel();
       controllerRef.current?.abort();
     };
   }, []);
@@ -432,7 +441,6 @@ export function Chatty() {
       // it — it's consumed below once they gain access.
       const ask = new URLSearchParams(window.location.search).get("ask");
       if (ask) {
-        autoAsked.current = true;
         try {
           sessionStorage.setItem(PREFILL_KEY, ask);
         } catch {}
@@ -458,7 +466,9 @@ export function Chatty() {
 
   const send = async (raw?: string, baseMessages?: ChatMessage[]) => {
     const text = (raw ?? input).trim();
-    if (!text || typing) return;
+    // The controller is installed synchronously; React's typing state may
+    // still be stale when two clicks/Enter presses arrive in the same tick.
+    if (!text || typing || !hasAccess || (controllerRef.current && !controllerRef.current.signal.aborted)) return;
     const gen = ++genRef.current; // invalidates any in-flight request
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -503,7 +513,7 @@ export function Chatty() {
 
     // Appends/updates the streaming assistant bubble (with live tool trace).
     let assistantId: number | null = null;
-    const updateAssistant = (partial: string, error = false, retry?: string) => {
+    const commitAssistant = (partial: string, error = false, retry?: string) => {
       const tools = [...activeToolsRef.current];
       if (assistantId === null) {
         const id = nextId.current++;
@@ -518,6 +528,35 @@ export function Chatty() {
         );
       }
     };
+
+    // A fast stream can deliver many tiny chunks in one frame. Keep the
+    // first word immediate, then reparse Markdown at most every 40ms.
+    // Stop flushes the latest partial text; clear/unmount discard queued work.
+    let pendingUpdate: { partial: string; error: boolean; retry?: string } | null = null;
+    let updateTimer: ReturnType<typeof setTimeout> | null = null;
+    const cancelUpdate = () => {
+      if (updateTimer !== null) clearTimeout(updateTimer);
+      updateTimer = null;
+      pendingUpdate = null;
+    };
+    const flushUpdate = () => {
+      const pending = pendingUpdate;
+      cancelUpdate();
+      if (pending && gen === genRef.current && !controller.signal.aborted) {
+        commitAssistant(pending.partial, pending.error, pending.retry);
+      }
+    };
+    const updateAssistant = (partial: string, error = false, retry?: string) => {
+      if (gen !== genRef.current || controller.signal.aborted) return;
+      pendingUpdate = { partial, error, retry };
+      if (assistantId === null || error) {
+        flushUpdate();
+      } else if (updateTimer === null) {
+        updateTimer = setTimeout(flushUpdate, 40);
+      }
+    };
+    const streamUpdate = { flush: flushUpdate, cancel: cancelUpdate };
+    streamUpdateRef.current = streamUpdate;
 
     // Accumulated reply text — declared outside the try so the catch can
     // preserve whatever streamed before a connection drop.
@@ -613,11 +652,11 @@ export function Chatty() {
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
         if (gen !== genRef.current) {
           controller.abort(); // stopped or superseded
           return;
         }
+        if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
@@ -665,11 +704,15 @@ export function Chatty() {
       updateAssistant(acc ? `${acc}\n\n${failureNote}` : failureNote, true, text);
     } finally {
       if (gen === genRef.current) {
+        flushUpdate();
         setTyping(false);
         setDots(false);
         setStreamStarted(false);
         setActiveTools([]);
+      } else {
+        cancelUpdate();
       }
+      if (streamUpdateRef.current === streamUpdate) streamUpdateRef.current = null;
       // Only clear OUR controller — a newer send may have installed its own
       // controllerRef while this request was finishing, and nulling that
       // would make Stop a no-op until the next stream chunk.
@@ -678,6 +721,7 @@ export function Chatty() {
   };
 
   const stop = () => {
+    streamUpdateRef.current?.flush();
     genRef.current++; // invalidate the in-flight request
     controllerRef.current?.abort();
     setTyping(false);
@@ -687,6 +731,7 @@ export function Chatty() {
   };
 
   const clear = () => {
+    streamUpdateRef.current?.cancel();
     genRef.current++;
     controllerRef.current?.abort();
     setTyping(false);
@@ -718,7 +763,7 @@ export function Chatty() {
   /** Re-run the last question: drop the final answer(s) and resend, with
    *  context rebuilt from the trimmed conversation (no stale-answer bias). */
   const regenerate = () => {
-    if (typing) return;
+    if (typing || (controllerRef.current && !controllerRef.current.signal.aborted)) return;
     const cut = [...messages];
     while (cut.length > 1 && cut[cut.length - 1].role === "assistant") cut.pop();
     const lastUser = cut.length > 1 ? cut[cut.length - 1].text : null;
@@ -733,8 +778,6 @@ export function Chatty() {
   const lastMsg = messages[messages.length - 1];
   const canRegenerate =
     !typing && lastMsg?.role === "assistant" && !lastMsg?.error && messages.length > 1;
-  const selectedModelOption =
-    CHAT_MODELS.find((model) => model.id === selectedModel) ?? CHAT_MODELS[0];
 
   // Stable per-action callbacks so the memoized rows don't re-render when
   // an unrelated state change (e.g. a streamed token) recreates closures.
@@ -750,14 +793,13 @@ export function Chatty() {
     <div className={gateClass}>
       <div className="assistant-gate-icon is-loading"><i className="fa-solid fa-circle-notch fa-spin" /></div>
       <h2>Preparing your assistant</h2>
-      <p>Connecting your account and Techsteal knowledge…</p>
+      <p>Connecting your account…</p>
     </div>
   ) : !user ? (
     <div className={gateClass}>
-      <div className="assistant-gate-icon is-discord"><i className="fa-brands fa-discord" /></div>
-      <p className="assistant-eyebrow">Member access</p>
-      <h2>Sign in to chat with {ai.name}</h2>
-      <p>{ai.name} is included for Techsteal members. Log in with Discord to open your conversation.</p>
+      <div className="assistant-gate-character" aria-hidden="true"><ChattyLogo size={88} /></div>
+      <h2>Hey, I&apos;m {ai.name}</h2>
+      <p>Sign in to start a conversation.</p>
       <Link href="/login" className="btn-primary justify-center">
         <i className="fa-brands fa-discord" />
         Log in with Discord
@@ -768,7 +810,7 @@ export function Chatty() {
       <div className="assistant-gate-icon"><i className="fa-solid fa-shield-halved" /></div>
       <p className="assistant-eyebrow">One step left</p>
       <h2>Verify your membership</h2>
-      <p>Verify that you&apos;re in the official Discord to unlock the assistant, Gallery posting, and Server Control.</p>
+      <p>Connect your Discord membership in Settings to start chatting.</p>
       <Link href="/settings" className="btn-primary justify-center">
         <i className="fa-solid fa-user-check" />
         Verify in Settings
@@ -789,16 +831,9 @@ export function Chatty() {
         <div className="assistant-thread" role="log" aria-live="polite" aria-relevant="additions text">
           {isEmpty && !typing ? (
             <div className="assistant-welcome">
-              <div className="assistant-welcome-mark" aria-hidden="true">
-                <ChattyLogo size={72} />
-                <span />
-              </div>
-              <p className="assistant-eyebrow">Your Techsteal copilot</p>
-              <h2>What can I help you find{user?.username ? `, ${user.username}` : ""}?</h2>
-              <p className="assistant-welcome-copy">
-                Ask about the live server, community activity, rules, builds, mods, or Minecraft itself.
-                I&apos;ll pull in the right source while you watch.
-              </p>
+              <div className="assistant-welcome-character" aria-hidden="true"><ChattyLogo size={80} /></div>
+              <p className="assistant-eyebrow">Hey{user?.username ? `, ${user.username}` : " there"}</p>
+              <h2>Need a hand?</h2>
               <div className="assistant-prompt-grid">
                 {SUGGESTIONS.map((suggestion) => (
                   <button
@@ -808,21 +843,10 @@ export function Chatty() {
                     disabled={typing}
                   >
                     <i className={`fa-solid ${suggestion.icon}`} aria-hidden="true" />
-                    <span>
-                      <strong>{suggestion.title}</strong>
-                      <small>{suggestion.hint}</small>
-                    </span>
-                    <i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" />
+                    <strong>{suggestion.title}</strong>
+                    <i className="fa-solid fa-arrow-right" aria-hidden="true" />
                   </button>
                 ))}
-              </div>
-              <div className="assistant-trust-row" aria-label="Assistant capabilities">
-                <span><i className="fa-solid fa-bolt" /> Live answers</span>
-                <span><i className="fa-solid fa-database" /> Site knowledge</span>
-                <span>
-                  <i className={`fa-solid ${webSearchEnabled ? "fa-globe" : "fa-shield-halved"}`} />
-                  {webSearchEnabled ? "Web search on" : "Web search off"}
-                </span>
               </div>
             </div>
           ) : null}
@@ -913,9 +937,6 @@ export function Chatty() {
                 <i className={`fa-solid ${webSearchEnabled ? "fa-globe" : "fa-database"}`} />
                 {webSearchEnabled ? "Web search on" : "Site tools only"}
               </span>
-              <span className="assistant-composer-model">
-                <i className="fa-solid fa-bolt" /> {selectedModelOption.label}
-              </span>
               {input.length > 1600 ? <small>{input.length}/2000</small> : null}
             </div>
             {typing ? (
@@ -936,77 +957,52 @@ export function Chatty() {
           </div>
         </div>
         <p className="assistant-composer-caption">
-          {ai.name} can make mistakes. Check important info. <span><kbd>/</kbd> focus · <kbd>Shift+Enter</kbd> new line</span>
+          {ai.name} can make mistakes. <span><kbd>Shift+Enter</kbd> for a new line</span>
         </p>
       </div>
     </div>
   );
 
   return (
-    <div className="assistant-workspace">
+    <div className="assistant-workspace assistant-redesign">
       <aside className="assistant-rail">
         <div className="assistant-rail-brand">
-          <div className="assistant-orb" aria-hidden="true">
-            <ChattyLogo size={46} />
-            <span />
+          <div className="assistant-brand-mark" aria-hidden="true">
+            <ChattyLogo size={44} />
           </div>
           <div>
-            <p className="assistant-eyebrow">Techsteal intelligence</p>
             <h1>{ai.name}</h1>
-            <p>Server-aware help, in one place.</p>
+            <p>Techsteal assistant</p>
           </div>
         </div>
 
-        <div className="assistant-presence">
-          <span className="assistant-presence-dot" aria-hidden="true" />
-          <div>
-            <strong>Connected to Techsteal</strong>
-            <span>Live site knowledge available</span>
-          </div>
-        </div>
+        <button className="assistant-new-chat assistant-rail-new" onClick={clear} aria-label="Start a new chat">
+          <i className="fa-solid fa-plus" /> New conversation
+        </button>
 
         <div className="assistant-rail-section">
           <div className="assistant-rail-heading">
-            <span>Quick starts</span>
-            <i className="fa-solid fa-bolt" aria-hidden="true" />
+            <span>Explore Techsteal</span>
           </div>
-          <div className="assistant-quick-list">
-            {SUGGESTIONS.slice(0, 5).map((suggestion) => (
-              <button
-                key={suggestion.title}
-                type="button"
-                onClick={() => void send(suggestion.text)}
-                disabled={typing || !hasAccess}
-              >
-                <i className={`fa-solid ${suggestion.icon}`} aria-hidden="true" />
-                <span>
-                  <strong>{suggestion.title}</strong>
-                  <small>{suggestion.hint}</small>
-                </span>
-                <i className="fa-solid fa-chevron-right" aria-hidden="true" />
-              </button>
-            ))}
-          </div>
+          <nav className="assistant-resource-links" aria-label="Community resources">
+            <Link href="/status"><i className="fa-solid fa-signal" /> Server status <i className="fa-solid fa-arrow-up-right-from-square" /></Link>
+            <Link href="/rules"><i className="fa-solid fa-book-open" /> Server rules <i className="fa-solid fa-arrow-up-right-from-square" /></Link>
+            <Link href="/gallery"><i className="fa-regular fa-image" /> Build gallery <i className="fa-solid fa-arrow-up-right-from-square" /></Link>
+            <Link href="/forum"><i className="fa-regular fa-comments" /> Community forum <i className="fa-solid fa-arrow-up-right-from-square" /></Link>
+          </nav>
         </div>
 
-        <div className="assistant-rail-note">
-          <i className="fa-solid fa-shield-halved" aria-hidden="true" />
-          <p>
-            <strong>Safe, read-only access</strong>
-            <span>Chatty can look things up, but never changes your account or server.</span>
-          </p>
+        <div className="assistant-rail-bottom">
+          <span className="assistant-connection"><span aria-hidden="true" /> Site knowledge connected</span>
+          {user ? <div className="assistant-account"><Avatar name={user.username} src={user.avatarUrl} size="sm" /><div><strong>{user.username}</strong><span>{hasAccess ? "Member access" : "Verification needed"}</span></div><Link href="/settings" aria-label="Account settings"><i className="fa-solid fa-gear" /></Link></div> : <Link href="/login" className="assistant-rail-signin"><i className="fa-brands fa-discord" /> Sign in</Link>}
         </div>
       </aside>
 
       <section className="assistant-console">
         <div className="assistant-console-bar">
           <div className="assistant-console-title">
-            <div className="assistant-mobile-orb" aria-hidden="true">
-              <ChattyLogo size={32} />
-            </div>
             <div>
-              <p>Current conversation</p>
-              <strong>{ai.name}</strong>
+              <strong>Conversation</strong>
             </div>
           </div>
           <div className="assistant-console-actions">
@@ -1023,7 +1019,7 @@ export function Chatty() {
               >
                 {CHAT_MODELS.map((model) => (
                   <option key={model.id} value={model.id}>
-                    {model.label}{model.suggested ? " · Suggested" : ""}
+                    {model.label}
                   </option>
                 ))}
               </select>
@@ -1039,11 +1035,10 @@ export function Chatty() {
               title="Allow Chatty Jr. to search public web sources"
             >
               <i className="fa-solid fa-globe" aria-hidden="true" />
-              <span>Web search</span>
-              <em>{webSearchEnabled ? "On" : "Off"}</em>
+              <span>Search</span>
               <span className="assistant-toggle-track" aria-hidden="true"><span /></span>
             </button>
-            <button className="assistant-new-chat" onClick={clear} aria-label="Start a new chat">
+            <button className="assistant-new-chat assistant-mobile-new" onClick={clear} aria-label="Start a new chat">
               <i className="fa-solid fa-plus" />
               <span>New chat</span>
             </button>

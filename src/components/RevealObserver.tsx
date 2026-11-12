@@ -2,63 +2,64 @@
 
 import { useEffect } from "react";
 
-// Global reveal-on-scroll observer.
-// Watches every `.reveal` element and every `.stagger` list container
-// (including ones mounted later) and adds `.visible` when it enters the
-// viewport — the same behavior the original single-file site had, applied
-// site-wide so pre-built markup that uses bare `.reveal` classes (like the
-// Home hero and feature cards) animates in too.
+const REVEAL_SELECTOR = ".reveal:not(.visible), .stagger:not(.visible)";
+
 export function RevealObserver() {
   useEffect(() => {
-    if (typeof IntersectionObserver === "undefined") {
-      document
-        .querySelectorAll(".reveal, .stagger")
-        .forEach((el) => el.classList.add("visible"));
-      return;
-    }
-
-    const io = new IntersectionObserver(
+    const io = typeof IntersectionObserver === "undefined" ? null : new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
             entry.target.classList.add("visible");
-            io.unobserve(entry.target);
+            io?.unobserve(entry.target);
           }
         }
       },
       { threshold: 0.1 }
     );
-
-    const observeAll = () => {
-      document
-        .querySelectorAll(".reveal:not(.visible), .stagger:not(.visible)")
-        .forEach((el) => io.observe(el));
+    const observeElement = (element: Element) => {
+      if (io) io.observe(element);
+      else element.classList.add("visible");
+    };
+    const observeTree = (root: ParentNode) => {
+      if (root instanceof Element && root.matches(REVEAL_SELECTOR)) observeElement(root);
+      root.querySelectorAll(REVEAL_SELECTOR).forEach(observeElement);
     };
 
-    observeAll();
+    observeTree(document.body);
 
-    // Catch any `.reveal` elements mounted after hydration (e.g. content
-    // loaded through the API). Mutations arrive in bursts (streaming chat,
-    // list refetches) — coalesce them into one querySelectorAll per frame
-    // instead of scanning the whole document per mutation.
-    let mo: MutationObserver | null = null;
+    // Scan only newly mounted element subtrees. Streaming text mutations
+    // don't add elements and therefore never schedule document-wide queries.
+    const addedRoots = new Set<Element>();
     let scheduled = 0;
-    if (typeof MutationObserver !== "undefined") {
-      const queueObserveAll = () => {
-        if (scheduled !== 0) return;
-        scheduled = requestAnimationFrame(() => {
-          scheduled = 0;
-          observeAll();
-        });
-      };
-      mo = new MutationObserver(queueObserveAll);
-      mo.observe(document.body, { childList: true, subtree: true });
-    }
+    const mo = typeof MutationObserver === "undefined" ? null : new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (node instanceof Element) addedRoots.add(node);
+        }
+      }
+      if (!addedRoots.size || scheduled !== 0) return;
+      scheduled = requestAnimationFrame(() => {
+        scheduled = 0;
+        for (const root of addedRoots) {
+          if (!root.isConnected) continue;
+          // A parent in this batch already covers its descendants.
+          let covered = false;
+          for (let parent = root.parentElement; parent; parent = parent.parentElement) {
+            if (addedRoots.has(parent)) { covered = true; break; }
+          }
+          if (!covered) observeTree(root);
+        }
+        addedRoots.clear();
+      });
+    });
+    mo?.observe(document.body, { childList: true, subtree: true });
 
     return () => {
-      io.disconnect();
+      io?.disconnect();
       mo?.disconnect();
       if (scheduled !== 0) cancelAnimationFrame(scheduled);
+      addedRoots.clear();
     };
   }, []);
 

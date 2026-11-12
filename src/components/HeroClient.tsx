@@ -1,295 +1,55 @@
 "use client";
 
 import Image from "next/image";
-import type { CSSProperties } from "react";
-import { siteConfig } from "@/lib/site";
-import { fallbackMembers, fallbackGallery, fallbackStatus } from "@/lib/fallback-data";
-import type { GalleryItem, Member, ServerStatus } from "@/types";
-import { MemberSlideshow } from "@/components/MemberSlideshow";
+import Link from "next/link";
+import { Avatar } from "@/components/Avatar";
 import { useCopyAddress } from "@/components/CopyIpButton";
 import { useApi } from "@/lib/use-api";
-import Link from "next/link";
+import { fallbackMembers, fallbackGallery, fallbackStatus } from "@/lib/fallback-data";
+import { siteConfig } from "@/lib/site";
+import type { GalleryItem, Member, ServerStatus } from "@/types";
+
+const SHORTCUTS = [
+  { href: "/assistant", title: "Chatty Jr.", icon: "fa-robot" },
+  { href: "/members", title: "Members", icon: "fa-users" },
+  { href: "/history", title: "History", icon: "fa-clock-rotate-left" },
+  { href: "/rules", title: "Rules", icon: "fa-shield-halved" },
+];
 
 export function HeroClient() {
-  // Live previews for the three feature tiles (console style — no slideshow).
-  const { data: status } = useApi<ServerStatus>("/api/status", fallbackStatus);
+  const { data: status, loading } = useApi<ServerStatus>("/api/status", fallbackStatus);
   const { data: members } = useApi<Member[]>("/api/members", fallbackMembers);
   const { data: gallery } = useApi<GalleryItem[]>("/api/gallery", fallbackGallery);
-
-  // The site-wide copy-address hook (used by /join and /status too). The hero
-  // used to hand-roll this — same toast, same 2s "Copied!" flash, same unmount
-  // timer cleanup — so the shared implementation was quietly dead here. Both
-  // hero copy affordances (the kicker pill and the Copy IP button) read the
-  // one `copied` flag, so they still flash together.
-  const { copied, copy: copyIP } = useCopyAddress();
-
-  // Never present fallback status numbers as live — same guard as the
-  // Navbar and Status page use.
-  const statusLive = status.source === "live";
+  const { copied, copy } = useCopyAddress();
+  const live = status.source === "live";
+  const featured = gallery.find((item) => item.featured) ?? gallery[0];
+  const statusText = loading ? "Checking…" : live ? status.online ? "Online" : "Offline" : "Unavailable";
 
   return (
-    <>
-      {/* ============ HERO — cinematic, multi-layer ============ */}
-      <section className="hero">
-        {/* Layer 0: the image, parallaxed (moves slower than the page) */}
-        <div className="hero-media" data-parallax="0.18" aria-hidden="true">
-          <Image
-            src="/techsteal-hero.jpeg"
-            alt=""
-            fill
-            priority
-            sizes="100vw"
-            quality={85}
-            className="object-cover"
-          />
+    <div className="home-page">
+      <section className="world-hero" aria-labelledby="home-title">
+        <Image src="/techsteal-hero.jpeg" alt="A Minecraft valley with mountains, forests, and a winding river" fill priority sizes="100vw" className="world-image" />
+        <div className="world-shade" />
+        <div className="world-content">
+          <span className="world-label"><span />{siteConfig.season}<span className="world-label-divider">/</span>Private Minecraft server</span>
+          <h1 id="home-title" className="home-wordmark">{siteConfig.name}</h1>
+          <button className="hero-address" onClick={() => void copy()} aria-label={`Copy server address ${siteConfig.address}`}><span>{copied ? "Address copied" : siteConfig.address}</span><i className={copied ? "fa-solid fa-check" : "fa-regular fa-copy"} aria-hidden="true" /></button>
+          <div className="hero-actions"><Link href="/join" className="btn-primary">Join the server <i className="fa-solid fa-arrow-right" aria-hidden="true" /></Link><Link href="/status" className="btn-secondary">Server status <span className={`home-status-dot ${live && status.online ? "is-online" : ""}`} /></Link></div>
         </div>
-
-        {/* Layer 1 — VERY slight dark tint so text sits on a stable base */}
-        <div className="hero-tint" aria-hidden="true" />
-
-        {/* Layer 2 — soft multi-layer blend that melts the image edges into the page bg */}
-        <div className="hero-blend" aria-hidden="true" />
-
-        {/* Layer 3 — content, drifting slightly faster for depth */}
-        <div className="hero-content" data-parallax="-0.05">
-          {/* IP — one pill, rises in after the title, click to copy */}
-          <button
-            className="hero-kicker hero-cta cursor-pointer"
-            style={{ "--i": 0 } as CSSProperties}
-            onClick={() => void copyIP()}
-            title="Click to copy the server address"
-            aria-label={`${siteConfig.address} — click to copy`}
-          >
-            <span className="hero-kicker-text">{siteConfig.address}</span>
-            <span className="hero-kicker-copy" aria-hidden="true">
-              <i className={copied ? "fa-solid fa-check" : "fa-regular fa-copy"} />
-            </span>
-          </button>
-
-          {/* TECHSTEAL — letters fly in, then rest in the original style */}
-          <h1 className="hero-title" aria-label={siteConfig.name}>
-            {siteConfig.name.split("").map((ch, i) => (
-              <span
-                key={i}
-                className="hero-letter"
-                style={{ "--i": i } as CSSProperties}
-                aria-hidden="true"
-              >
-                {ch}
-              </span>
-            ))}
-          </h1>
-
-          <div className="mt-12 flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link
-              href="/join"
-              className="btn-primary w-full sm:w-auto justify-center hero-cta"
-              style={{ "--i": 0 } as CSSProperties}
-            >
-              <i className="fa-solid fa-compass" />
-              <span>How to Join</span>
-            </Link>
-            <button
-              className="btn-secondary w-full sm:w-auto justify-center hero-cta"
-              onClick={() => void copyIP()}
-              style={{ "--i": 1 } as CSSProperties}
-            >
-              {copied ? (
-                <>
-                  <i className="fa-solid fa-check" />
-                  <span>Copied!</span>
-                </>
-              ) : (
-                <>
-                  <i className="fa-solid fa-copy" />
-                  <span>Copy IP</span>
-                </>
-              )}
-            </button>
-            <Link
-              href="/status"
-              className="btn-secondary w-full sm:w-auto justify-center hero-cta"
-              style={{ "--i": 2 } as CSSProperties}
-            >
-              <i className="fa-solid fa-signal" />
-              <span>Check Status</span>
-            </Link>
-          </div>
-        </div>
-
-        {/* Layer 4 — floating ember orbs (velocity drift).
-            fa-hammer / fa-gem: free FA6 icons (fa-sword / fa-diamond are
-            Pro-only and rendered as empty boxes). */}
-        <i
-          className="fa-solid fa-hammer absolute left-[12%] top-[24%] text-[var(--accent)]/25 text-3xl"
-          data-drift="6"
-          aria-hidden="true"
-        />
-        <i
-          className="fa-solid fa-gem absolute right-[14%] top-[30%] text-[var(--diamond)]/20 text-2xl rotate-12"
-          data-drift="-8"
-          aria-hidden="true"
-        />
-        <i
-          className="fa-solid fa-cube absolute right-[24%] bottom-[22%] text-[var(--accent-bright)]/20 text-xl"
-          data-drift="5"
-          aria-hidden="true"
-        />
-
-        {/* Scroll indicator — smooth-scrolls to the features below */}
-        <a
-          href="#features"
-          className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-2 text-[var(--muted)] text-xs tracking-wider uppercase z-10 hover:text-[var(--accent-bright)] transition"
-          aria-label="Scroll to features"
-        >
-          <span>Scroll</span>
-          <i className="fa-solid fa-chevron-down animate-bounce text-[var(--accent)]" />
-        </a>
+        <div className="hero-footnote"><span>JAVA {siteConfig.version}</span><Link href="#community" aria-label="Explore the community"><i className="fa-solid fa-chevron-down" aria-hidden="true" /></Link><span>{siteConfig.software.toUpperCase()} / SURVIVAL</span></div>
       </section>
-
-      {/* ============ FEATURE LINKS (clean, spacious) ============ */}
-      <section id="features" className="pt-20 lg:pt-24 pb-10 lg:pb-12 px-6 lg:px-10">
-        <div className="max-w-7xl mx-auto">
-          <div className="grid md:grid-cols-3 gap-6 lg:gap-8">
-            {/* Status */}
-            <Link href="/status" className="reveal group">
-              <div className="tile card p-10 h-full flex flex-col items-center text-center">
-                <div className="tile-icon w-16 h-16 rounded-2xl bg-[var(--accent-dim)] flex items-center justify-center mb-8 group-hover:bg-[var(--accent)] group-hover:text-white transition-colors">
-                  <i className="fa-solid fa-signal text-2xl text-[var(--accent)] group-hover:text-white" />
-                </div>
-                <h3 className="font-display text-2xl font-bold">Status</h3>
-                <span className="tile-arrow mt-6 text-[var(--accent)] text-sm font-semibold flex items-center gap-2">
-                  Open <i className="fa-solid fa-arrow-right" />
-                </span>
-                <div className="mt-8 w-full">
-                  {/* Live status preview (console style) — fallback data is
-                      shown as "unavailable", never fake Online numbers. */}
-                  <div className="aspect-[4/3] w-full rounded-xl border border-[var(--border)] bg-[var(--bg-2)] p-4 flex flex-col items-center text-center overflow-hidden">
-                    {statusLive ? (
-                      <>
-                        <div className={`status-pill ${status.online ? "" : "offline"}`}>
-                          <span className={`pulse-dot ${status.online ? "" : "muted"}`} />
-                          {status.online ? "Online" : "Offline"}
-                        </div>
-                        <div className="mt-auto">
-                          <div className="font-display text-4xl font-bold leading-none text-[var(--fg)]">
-                            {status.players ?? 0}
-                            <span className="text-[var(--muted-2)] text-xl">
-                              /{status.max ?? siteConfig.maxPlayers}
-                            </span>
-                          </div>
-                          <div className="mt-1.5 text-xs text-[var(--muted)] uppercase tracking-wider">
-                            players online
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <div className="m-auto text-xs text-[var(--muted-2)] uppercase tracking-wider flex flex-col items-center gap-3">
-                        <i className="fa-solid fa-satellite-dish text-2xl" />
-                        Status unavailable
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </Link>
-
-            {/* Members */}
-            <Link href="/members" className="reveal reveal-delay-1 group">
-              <div className="tile card p-10 h-full flex flex-col items-center text-center">
-                <div className="tile-icon w-16 h-16 rounded-2xl bg-[var(--accent-dim)] flex items-center justify-center mb-8 group-hover:bg-[var(--accent)] group-hover:text-white transition-colors">
-                  <i className="fa-solid fa-users text-2xl text-[var(--accent)] group-hover:text-white" />
-                </div>
-                <h3 className="font-display text-2xl font-bold">Members</h3>
-                <span className="tile-arrow mt-6 text-[var(--accent)] text-sm font-semibold flex items-center gap-2">
-                  Open <i className="fa-solid fa-arrow-right" />
-                </span>
-                <div className="mt-8 w-full">
-                  {/* Live members preview — passive slideshow of members
-                      who've linked a Minecraft account (name + PFP). */}
-                  <MemberSlideshow members={members} />
-                </div>
-              </div>
-            </Link>
-
-            {/* Gallery */}
-            <Link href="/gallery" className="reveal reveal-delay-2 group">
-              <div className="tile card p-10 h-full flex flex-col items-center text-center">
-                <div className="tile-icon w-16 h-16 rounded-2xl bg-[var(--accent-dim)] flex items-center justify-center mb-8 group-hover:bg-[var(--accent)] group-hover:text-white transition-colors">
-                  <i className="fa-solid fa-images text-2xl text-[var(--accent)] group-hover:text-white" />
-                </div>
-                <h3 className="font-display text-2xl font-bold">Gallery</h3>
-                <span className="tile-arrow mt-6 text-[var(--accent)] text-sm font-semibold flex items-center gap-2">
-                  Open <i className="fa-solid fa-arrow-right" />
-                </span>
-                <div className="mt-8 w-full">
-                  {/* Live gallery preview (console style) */}
-                  {gallery.length === 0 ? (
-                    <div className="asset-placeholder aspect-[4/3] rounded-xl w-full">
-                      <div className="asset-placeholder-content">
-                        <i className="fa-solid fa-cube asset-placeholder-icon" />
-                        <span className="asset-placeholder-hint">No builds yet</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="aspect-[4/3] w-full rounded-xl border border-[var(--border)] bg-[var(--bg-2)] p-1.5 grid grid-cols-3 gap-1.5 overflow-hidden">
-                      {gallery.slice(0, 3).map((g) => (
-                        <div
-                          key={g.id ?? g.title}
-                          className="relative rounded-lg overflow-hidden border border-[var(--border)]"
-                        >
-                          {/* Grid-cell sized (no intrinsic dimensions) and
-                              images.unoptimized is on in next.config.ts, so
-                              next/image would only add wrapper markup. */}
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={g.image}
-                            alt={g.title}
-                            loading="lazy"
-                            className="w-full h-full object-cover"
-                          />
-                          <div className="absolute inset-0 bg-gradient-to-t from-[rgba(5,7,15,0.85)] via-transparent to-transparent" />
-                          <span className="absolute bottom-1.5 left-1.5 right-1.5 text-[10px] font-bold text-white truncate">
-                            {g.title}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </Link>
-          </div>
+      <section id="community" className="home-community" aria-labelledby="community-title">
+        <div className="home-section-heading"><h2 id="community-title">The server.</h2><span>{siteConfig.season}</span></div>
+        <div className="community-grid">
+          <Link href="/status" className="community-card community-server"><span className="community-card-label"><i className="fa-solid fa-cube" aria-hidden="true" />Server<i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" /></span><div className="community-card-bottom"><div className="home-server-state"><span className={`home-status-dot ${live && status.online ? "is-online" : ""}`} /><h3>{statusText}</h3></div><span>{live && status.online ? `${status.players ?? 0} / ${status.max ?? siteConfig.maxPlayers} players` : siteConfig.address}</span></div><div className="server-block-motif" aria-hidden="true"><span /><span /><span /></div></Link>
+          <Link href="/forum" className="community-card community-forum"><span className="community-card-label"><i className="fa-regular fa-comments" aria-hidden="true" />Forum<i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" /></span><div className="community-card-bottom"><h3>Forum</h3>{members.length > 0 && <div className="home-member-row"><div className="home-avatars">{members.slice(0, 4).map((member) => <Avatar key={member.id ?? member.name} name={member.name} src={member.avatarUrl} color={member.color} size="sm" />)}</div><span>{members.length} members</span></div>}</div></Link>
+          <Link href="/gallery" className={`community-card community-gallery ${featured ? "has-image" : ""}`}>
+            {featured ? <Image src={featured.image} alt={featured.title} fill sizes="(max-width: 768px) 100vw, 430px" className="community-gallery-image" /> : <div className="gallery-landscape" aria-hidden="true"><div /><div /><div /></div>}
+            <span className="community-card-label"><i className="fa-regular fa-image" aria-hidden="true" />Gallery<i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" /></span><div className="community-card-bottom"><h3>{featured ? featured.title : "Gallery"}</h3>{featured && <span>By {featured.builder}</span>}</div>
+          </Link>
         </div>
+        <div className="home-shortcuts">{SHORTCUTS.map((item) => <Link href={item.href} key={item.href}><i className={`fa-solid ${item.icon}`} aria-hidden="true" /><span>{item.title}</span><i className="fa-solid fa-arrow-right" aria-hidden="true" /></Link>)}</div>
       </section>
-
-      {/* ============ QUICK LINKS ============ */}
-      <section className="pt-10 lg:pt-12 pb-16 lg:pb-20 px-6 lg:px-10">
-        <div className="max-w-7xl mx-auto">
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-5">
-            {(
-              [
-                { href: "/assistant", icon: "fa-robot", title: "Assistant" },
-                { href: "/forum", icon: "fa-comments", title: "Forum" },
-                { href: "/members", icon: "fa-users", title: "Members" },
-                { href: "/history", icon: "fa-clock-rotate-left", title: "History" },
-                { href: "/rules", icon: "fa-gavel", title: "Rules" },
-              ] as const
-            ).map((l, i) => (
-              <Link
-                key={l.href}
-                href={l.href}
-                className={`reveal group ${i > 0 ? `reveal-delay-${i}` : ""}`}
-              >
-                <div className="tile card px-6 py-10 lg:py-12 min-h-[10.5rem] lg:min-h-[12rem] text-center h-full flex flex-col items-center justify-center gap-5">
-                  <i className={`fa-solid ${l.icon} fa-2xl text-[var(--accent)] group-hover:text-[var(--accent-bright)] transition-colors`} />
-                  <h3 className="font-display text-lg font-bold">{l.title}</h3>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
-    </>
+    </div>
   );
 }

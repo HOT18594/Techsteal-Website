@@ -52,3 +52,6 @@ scripts/CODES.md
 
 # local QA screenshots (never ship test artifacts)
 gui-test-shots/
+
+# zwork host runtime artifacts
+.zwork/

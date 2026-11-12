@@ -1,0 +1,87 @@
+.t-nav {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 56;
+  height: 76px;
+  background: var(--bg);
+  color: var(--fg);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-grotesk, sans-serif);
+}
+.t-nav-inner { max-width: 1344px; padding: 0 32px; margin: 0 auto; height: 100%; display: flex; align-items: center; gap: 32px; }
+.t-nav .t-nav-brand { display: inline-flex; align-items: center; gap: 10px; color: var(--fg); font-family: var(--font-brand, "Minecraft Pixel", monospace); font-size: 16px; font-weight: 400; letter-spacing: .2px; line-height: 1; flex-shrink: 0; text-decoration: none; }
+.t-nav-symbol { color: var(--accent); font-size: 23px; }
+.t-nav-links { display: flex; gap: 23px; align-items: center; margin-left: auto; }
+.t-nav-links a { position: relative; padding: 29px 0; color: var(--muted); font-size: 13px; font-weight: 550; text-decoration: none; transition: color 150ms; }
+.t-nav-links a:hover, .t-nav-links a.active { color: var(--fg); }
+.t-nav-links a.active::after { content: ""; position: absolute; bottom: 18px; left: 0; right: 0; height: 2px; background: var(--accent); }
+.t-nav-actions { display: flex; align-items: center; gap: 18px; flex-shrink: 0; }
+.t-nav .t-nav-status { color: var(--muted); display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; font-size: 11px; text-decoration: none; }
+.t-nav-status > span { width: 6px; height: 6px; border-radius: 50%; background: var(--muted-2); }
+.t-nav-status.is-online > span { background: #a6c88c; }
+.t-nav .t-nav-join { display: inline-flex; justify-content: center; align-items: center; gap: 16px; min-height: 38px; padding: 0 15px; border-radius: 5px; background: var(--accent); color: var(--bg); font-size: 12px; font-weight: 700; text-decoration: none; transition: background 150ms; }
+.t-nav .t-nav-join:hover { background: var(--accent-bright); }
+.t-nav .t-nav-login { color: var(--fg-2); font-size: 12px; font-weight: 550; text-decoration: none; }
+.t-nav-login:hover { color: var(--accent); }
+.t-nav-profile { padding: 0; border: 0; background: none; cursor: pointer; }
+.t-nav-profile .avatar { width: 32px; height: 32px; border-radius: 5px; box-shadow: none; }
+.t-nav-toggle { display: none; }
+.t-nav :is(a, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; }
+.t-nav-mobile { display: none; }
+.t-nav-popover { position: absolute; right: max(32px, calc((100vw - 1280px) / 2)); top: 84px; width: 252px; padding: 8px; background: var(--card); border: 1px solid var(--border-strong); border-radius: 8px; box-shadow: 0 16px 48px #0005; visibility: hidden; opacity: 0; }
+.t-nav-popover.is-open { visibility: visible; opacity: 1; }
+.t-nav-identity { display: flex; align-items: center; gap: 12px; padding: 12px 8px 16px; margin-bottom: 6px; border-bottom: 1px solid var(--border-strong); }
+.t-nav-identity div { min-width: 0; }
+.t-nav-identity strong { display: block; font-size: 14px; overflow: hidden; text-overflow: ellipsis; }
+.t-nav-identity span { color: var(--muted); font-size: 11px; }
+.t-nav-popover > :is(a, button) { display: block; width: 100%; padding: 11px 12px; background: none; border: 0; border-radius: 4px; color: var(--fg-2); text-align: left; text-decoration: none; cursor: pointer; font-family: inherit; font-size: 13px; }
+.t-nav-popover > :is(a, button):hover { background: var(--card-hover); }
+.t-nav-popover > button { color: #e6ac9c; }
+.t-nav-popover > button:disabled { opacity: .5; cursor: wait; }
+@media (min-width: 1280px) and (max-width: 1399px) {
+  .t-nav-inner { gap: 24px; }
+  .t-nav-links { gap: 18px; }
+  .t-nav-actions { gap: 12px; }
+  .t-nav-actions > .t-nav-status { display: none; }
+}
+@media (max-width: 1279px) {
+  .t-nav-links, .t-nav-actions > .t-nav-status { display: none; }
+  .t-nav-actions { margin-left: auto; }
+  .t-nav-toggle { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 40px; height: 40px; gap: 6px; border: 1px solid var(--border-strong); border-radius: 5px; background: transparent; cursor: pointer; }
+  .t-nav-toggle span { display: block; width: 17px; height: 1.5px; background: var(--fg); transition: transform 150ms; }
+  .t-nav-toggle.is-open span:first-child { transform: translateY(3.75px) rotate(45deg); }
+  .t-nav-toggle.is-open span:last-child { transform: translateY(-3.75px) rotate(-45deg); }
+  .t-nav-mobile:not([hidden]) { display: block; padding: 12px 32px 22px; background: var(--card); border-bottom: 1px solid var(--border-strong); max-height: calc(100dvh - 76px); overflow-y: auto; box-shadow: 0 20px 30px #0004; }
+  .t-nav-mobile nav { max-width: 1280px; margin: auto; }
+  .t-nav-mobile nav a { display: flex; align-items: center; gap: 22px; padding: 13px 4px; color: var(--fg); text-decoration: none; border-bottom: 1px solid var(--border); font-size: 19px; font-weight: 550; }
+  .t-nav-mobile nav a.active, .t-nav-mobile nav a:hover { color: var(--accent); }
+  .t-nav-mobile-number { color: var(--muted-2); font-size: 10px; font-weight: 400; letter-spacing: 1px; }
+  .t-nav-mobile-arrow { margin-left: auto; font-size: 16px; color: var(--muted); }
+  .t-nav-mobile-footer { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding-top: 24px; font-size: 11px; color: var(--muted); }
+  .t-nav-mobile-account-actions { display: flex; align-items: center; gap: 24px; margin-top: 24px; }
+  .t-nav-mobile-account { display: inline-block; color: var(--accent); font-size: 14px; text-decoration: none; }
+}
+@media (max-width: 600px) {
+  .t-nav-inner { padding: 0 20px; gap: 12px; }
+  .t-nav .t-nav-brand { font-size: 14px; gap: 8px; }
+  .t-nav-symbol { font-size: 20px; }
+  .t-nav-actions { gap: 12px; }
+  .t-nav .t-nav-join { min-height: 35px; padding: 0 11px; gap: 10px; font-size: 11px; }
+  .t-nav-login { display: none; }
+  .t-nav-mobile:not([hidden]) { padding: 12px 20px 22px; }
+  .t-nav-popover { right: 20px; }
+}
+@media (max-width: 380px) {
+  .t-nav .t-nav-brand { font-size: 14px; }
+  .t-nav-symbol { font-size: 19px; }
+  .t-nav-actions { gap: 8px; }
+  .t-nav-actions > .t-nav-join { display: none; }
+}
+@media (max-width: 480px) {
+  .t-nav-actions.has-account > .t-nav-join { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-nav * { transition: none; }
+}
+
+

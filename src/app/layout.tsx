@@ -2,17 +2,18 @@ import type { Metadata, Viewport } from "next";
 import { Space_Grotesk } from "next/font/google";
 import type { ReactNode } from "react";
 import { BackToTop } from "@/components/BackToTop";
-import { CursorFx } from "@/components/CursorFx";
 import { Footer } from "@/components/Footer";
 import { Navbar } from "@/components/Navbar";
 import { OnboardingReminder } from "@/components/OnboardingReminder";
 import { PageEnter } from "@/components/PageEnter";
 import { PollAnnouncement } from "@/components/PollAnnouncement";
 import { RevealObserver } from "@/components/RevealObserver";
-import { ScrollFx } from "@/components/ScrollFx";
 import { ToastProvider } from "@/components/Toast";
+import { PaletteProvider } from "@/components/PaletteProvider";
+import { paletteBootstrap } from "@/lib/palettes";
 import { siteConfig } from "@/lib/site";
 import "./globals.css";
+import "./palettes.css";
 
 // The two Minecraft fonts are self-hosted in public/fonts and wired up via
 // @font-face in globals.css (`--font-pixel` and `--font-minecraft-logo`).
@@ -46,13 +47,14 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#060a14",
+  themeColor: "#191919",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={grotesk.variable}>
+    <html lang="en" className={grotesk.variable} suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: paletteBootstrap }} />
         {/* Preconnect warms the CDN connection so the FontAwesome stylesheet
             doesn't wait on a full TLS handshake after discovery. */}
         <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossOrigin="" />
@@ -62,10 +64,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         />
       </head>
       <body className="antialiased min-h-screen flex flex-col">
-        <ToastProvider>
+        <PaletteProvider><ToastProvider>
           <RevealObserver />
-          <ScrollFx />
-          <CursorFx />
           <Navbar />
           <OnboardingReminder />
           <PollAnnouncement />
@@ -74,7 +74,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           </main>
           <Footer />
           <BackToTop />
-        </ToastProvider>
+        </ToastProvider></PaletteProvider>
       </body>
     </html>
   );

@@ -7,6 +7,7 @@ import { Avatar } from "@/components/Avatar";
 import { useToast } from "@/components/Toast";
 import { SubPage } from "@/components/SubPage";
 import { useSession } from "@/lib/use-session";
+import { PalettePicker } from "@/components/PalettePicker";
 import type { Account } from "@/types";
 
 export default function SettingsPage() {
@@ -53,6 +54,7 @@ function SettingsContent() {
       return;
     }
     let cancelled = false;
+    setLoadingProfile(true);
     fetch("/api/profile")
       // A 500/503 must reach the catch (toast + keep the form) — mapping it
       // to `{ profile: null }` here would blank the profile and flip every
@@ -77,7 +79,7 @@ function SettingsContent() {
     return () => {
       cancelled = true;
     };
-  }, [user, show]);
+  }, [user?.id, show]);
 
   const patch = async (body: Record<string, unknown>) => {
     const res = await fetch("/api/profile", {
@@ -148,6 +150,7 @@ function SettingsContent() {
         error?: string;
       };
       if (res.ok && data.profile?.role === "admin") {
+        setProfile(data.profile);
         setAdminCode(""); // clear only on success — a typo keeps what was typed
         await refresh();
         show("Admin unlocked", "Welcome to the admin team. 🔑");
@@ -162,6 +165,7 @@ function SettingsContent() {
   };
 
   const verifyDiscord = async () => {
+    if (verifyState === "checking" || discordVerified) return;
     setVerifyState("checking");
     try {
       const res = await fetch("/api/auth/discord/verify", { method: "POST" });
@@ -261,6 +265,7 @@ function SettingsContent() {
         </div>
 
         {/* Minecraft username */}
+        <PalettePicker />
         <div className="card p-6 mb-6">
           <h2 className="font-display text-lg font-bold mb-1 flex items-center gap-2">
             <i className="fa-solid fa-cube text-[var(--accent)]" />
@@ -290,6 +295,7 @@ function SettingsContent() {
             )}
             <div className="flex flex-col sm:flex-row gap-3 flex-1 w-full">
               <input
+                aria-label="Minecraft username"
                 className={inputClass}
                 placeholder="Minecraft username"
                 value={mcUsername}
@@ -372,6 +378,7 @@ function SettingsContent() {
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
               <input
+                aria-label="Admin code"
                 type="password"
                 className={inputClass}
                 placeholder="Admin code"

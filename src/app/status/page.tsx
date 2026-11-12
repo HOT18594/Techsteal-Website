@@ -12,67 +12,18 @@ import { siteConfig } from "@/lib/site";
 import { useApi } from "@/lib/use-api";
 import { useSession } from "@/lib/use-session";
 import type { ServerStatus, ServerTelemetry, ServerTelemetryLine } from "@/types";
+import "./status.css";
 
-const STATE_STYLE: Record<
-  string,
-  { color: string; glow: string; icon: string; message: string; spin?: boolean }
-> = {
-  online: {
-    color: "var(--emerald)",
-    glow: "var(--emerald-glow)",
-    icon: "fa-bolt",
-    message: "All systems are responding. The realm is ready.",
-  },
-  starting: {
-    color: "var(--diamond)",
-    glow: "rgba(56,211,240,0.4)",
-    icon: "fa-rocket",
-    message: "Powering up the world. This screen will update automatically.",
-  },
-  loading: {
-    color: "var(--diamond)",
-    glow: "rgba(56,211,240,0.4)",
-    icon: "fa-spinner",
-    message: "Loading the world and preparing player data.",
-    spin: true,
-  },
-  stopping: {
-    color: "#ffd166",
-    glow: "rgba(255,209,102,0.35)",
-    icon: "fa-moon",
-    message: "Saving progress and shutting down safely.",
-  },
-  restarting: {
-    color: "var(--diamond)",
-    glow: "rgba(56,211,240,0.4)",
-    icon: "fa-rotate-right",
-    message: "Restart in progress. Live checks are running faster.",
-    spin: true,
-  },
-  crashed: {
-    color: "var(--redstone)",
-    glow: "var(--redstone-glow)",
-    icon: "fa-triangle-exclamation",
-    message: "The last run ended unexpectedly. Check the console below.",
-  },
-  pending: {
-    color: "#ffd166",
-    glow: "rgba(255,209,102,0.35)",
-    icon: "fa-hourglass-half",
-    message: "The host has queued the next server operation.",
-  },
-  offline: {
-    color: "var(--muted)",
-    glow: "rgba(124,145,184,0.18)",
-    icon: "fa-power-off",
-    message: "The realm is resting. Authorized members can start it here.",
-  },
-  unknown: {
-    color: "var(--muted-2)",
-    glow: "rgba(124,145,184,0.12)",
-    icon: "fa-satellite-dish",
-    message: "The live host did not answer. Try another status check.",
-  },
+const STATE_STYLE: Record<string, { color: string; message: string }> = {
+  online: { color: "#a6c88c", message: "Ready to join." },
+  starting: { color: "#e0c38b", message: "Starting the server. Updates automatically." },
+  loading: { color: "#e0c38b", message: "Preparing the world." },
+  stopping: { color: "#e0c38b", message: "Saving the world and stopping safely." },
+  restarting: { color: "#e0c38b", message: "Restart in progress." },
+  crashed: { color: "#e6a398", message: "The last run ended unexpectedly. Check the console." },
+  pending: { color: "#e0c38b", message: "The next operation is queued." },
+  offline: { color: "#a2a79b", message: "The server is offline." },
+  unknown: { color: "#a2a79b", message: "We couldn’t reach the host. Live status is unavailable." },
 };
 
 const EMPTY_TELEMETRY: ServerTelemetry = {
@@ -92,52 +43,32 @@ function styleFor(status: ServerStatus) {
 
 function ActivityChart({ points, max }: { points: ActivityPoint[]; max: number }) {
   const width = 680;
-  const height = 154;
+  const height = 150;
   const inset = 12;
   const chartPoints = points.slice(-36);
+  if (!chartPoints.length) {
+    return <div className="ops-chart-empty"><i className="fa-solid fa-chart-line" aria-hidden="true" /><p>No activity data yet</p></div>;
+  }
   const coordinates = chartPoints.map((point, index) => {
     const x = chartPoints.length <= 1 ? inset : inset + (index / (chartPoints.length - 1)) * (width - inset * 2);
     const y = height - inset - (Math.min(point.players, max) / Math.max(max, 1)) * (height - inset * 2);
     return [x, y] as const;
   });
   const line = coordinates.map(([x, y]) => `${x},${y}`).join(" ");
-  const area = coordinates.length > 1
-    ? `${inset},${height - inset} ${line} ${width - inset},${height - inset}`
-    : "";
   const peak = chartPoints.reduce((highest, point) => Math.max(highest, point.players), 0);
-
   return (
-    <div className="status-chart-wrap">
-      <div className="status-chart-summary">
-        <span><strong>{chartPoints.length}</strong> live samples</span>
-        <span>Peak <strong>{peak}</strong></span>
-      </div>
-      <svg
-        className="status-chart"
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-label={`Player activity from ${chartPoints.length} live samples. Peak ${peak} of ${max} slots.`}
-      >
-        <defs>
-          <linearGradient id="player-activity-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--diamond)" stopOpacity=".32" />
-            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <g className="status-chart-grid" aria-hidden="true">
-          <line x1={inset} y1="38" x2={width - inset} y2="38" />
-          <line x1={inset} y1="77" x2={width - inset} y2="77" />
-          <line x1={inset} y1="116" x2={width - inset} y2="116" />
+    <div className="ops-chart-wrap">
+      <div className="ops-chart-labels"><span>{max} slots</span><span>Peak {peak}</span></div>
+      <svg className="ops-chart" viewBox={`0 0 ${width} ${height}`} role="img"
+        aria-label={`Player activity from ${chartPoints.length} live samples. Peak ${peak} of ${max} slots.`}>
+        <g className="ops-chart-grid" aria-hidden="true">
+          {[12, 54, 96, 138].map((y) => <line key={y} x1={inset} y1={y} x2={width - inset} y2={y} />)}
         </g>
-        {area ? <polygon points={area} fill="url(#player-activity-fill)" aria-hidden="true" /> : null}
-        {line ? <polyline points={line} className="status-chart-line" aria-hidden="true" /> : null}
-        {coordinates.map(([x, y], index) => (
-          <circle key={`${x}-${index}`} cx={x} cy={y} r={index === coordinates.length - 1 ? 5 : 2.6} className="status-chart-point" />
-        ))}
+        {line ? <polyline points={line} className="ops-chart-line" aria-hidden="true" /> : null}
+        {coordinates.length ? <circle cx={coordinates[coordinates.length - 1][0]} cy={coordinates[coordinates.length - 1][1]} r={4} className="ops-chart-point" /> : null}
       </svg>
-      {chartPoints.length < 2 ? (
-        <p className="status-chart-empty">The activity graph fills with real samples while you keep this page open.</p>
-      ) : null}
+      <div className="ops-chart-labels"><span>{chartPoints.length} live {chartPoints.length === 1 ? "check" : "checks"} on this device</span><span>Latest</span></div>
+      {chartPoints.length < 2 ? <p className="ops-helper">Waiting for more live samples.</p> : null}
     </div>
   );
 }
@@ -145,58 +76,32 @@ function ActivityChart({ points, max }: { points: ActivityPoint[]; max: number }
 function ConsolePanel({ telemetry, loading }: { telemetry: ServerTelemetry; loading: boolean }) {
   const [filter, setFilter] = useState<ConsoleFilter>("all");
   const filters: Array<{ id: ConsoleFilter; label: string }> = [
-    { id: "all", label: "All" },
-    { id: "info", label: "Info" },
-    { id: "warning", label: "Warnings" },
-    { id: "error", label: "Errors" },
-    { id: "chat", label: "Chat" },
+    { id: "all", label: "All" }, { id: "info", label: "Info" },
+    { id: "warning", label: "Warnings" }, { id: "error", label: "Errors" }, { id: "chat", label: "Chat" },
   ];
   const visibleLines = telemetry.lines.filter((line) => filter === "all" || line.level === filter).slice(-16);
-
   return (
-    <section className="status-console status-panel" aria-labelledby="console-title">
-      <div className="status-panel-head console-head">
-        <div>
-          <span className="status-section-kicker"><i className="fa-solid fa-terminal" /> Diagnostics</span>
-          <h2 id="console-title">Server console</h2>
-        </div>
-        <div className="console-live-badge">
-          <span className={telemetry.source === "live" ? "is-live" : ""} />
-          {loading ? "Connecting" : telemetry.source === "live" ? "Live snapshot" : "Unavailable"}
-        </div>
+    <section className="ops-panel ops-console" aria-labelledby="console-title">
+      <div className="ops-panel-head">
+        <h2 id="console-title">Server console</h2>
+        <span className="ops-label"><span className={`ops-dot ${telemetry.source === "live" ? "is-live" : ""}`} />
+          {loading ? "Connecting" : telemetry.source === "live" ? "Live snapshot" : "Unavailable"}</span>
       </div>
-      <div className="console-toolbar" aria-label="Filter console lines">
-        {filters.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            aria-pressed={filter === item.id}
-            className={filter === item.id ? "active" : ""}
-            onClick={() => setFilter(item.id)}
-          >
-            {item.label}
-          </button>
-        ))}
+      <div className="ops-console-toolbar" aria-label="Filter console lines">
+        {filters.map((item) => <button key={item.id} type="button" aria-pressed={filter === item.id}
+          className={filter === item.id ? "active" : ""} onClick={() => setFilter(item.id)}>{item.label}</button>)}
       </div>
-      <div className="console-screen thin-scroll" role="log" aria-live="off" aria-label="Recent server console output">
-        <div className="console-command"><span>techsteal@realm</span>:~$ tail --live server.log</div>
+      <div className="ops-console-screen thin-scroll" role="log" aria-live="off" aria-label="Recent server console output">
         {visibleLines.length ? visibleLines.map((line) => (
-          <div key={line.id} className={`console-line console-${line.level}`}>
-            <span className="console-marker" aria-hidden="true" />
-            <code>{line.text}</code>
+          <div key={line.id} className={`ops-console-line ops-console-${line.level}`}>
+            <span className="ops-log-level">{line.level}</span><code>{line.text}</code>
           </div>
-        )) : (
-          <div className="console-empty">
-            <i className="fa-solid fa-wave-square" aria-hidden="true" />
-            {telemetry.source === "live"
-              ? `No ${filter === "all" ? "recent" : filter} lines in this snapshot.`
-              : "Console data will appear when the hosting panel is reachable."}
-          </div>
-        )}
+        )) : <div className="ops-empty-console"><i className="fa-solid fa-terminal" aria-hidden="true" />
+          <strong>{telemetry.source === "live" ? `No ${filter === "all" ? "recent" : filter} messages` : "Console unavailable"}</strong>
+          <p>{telemetry.source === "live" ? "New output appears on the next refresh." : "Waiting for a connection to the hosting panel."}</p>
+        </div>}
       </div>
-      <p className="console-footnote">
-        Read-only snapshot · refreshes every 45 seconds · control characters are removed before display
-      </p>
+      <div className="ops-console-footer"><span>Read-only</span><span>Refreshes every 45s</span></div>
     </section>
   );
 }
@@ -244,8 +149,8 @@ export default function StatusPage() {
       .then((response) => (response.ok ? response.json() : null))
       .then((data: { configured?: boolean; allowed?: boolean } | null) => {
         if (controlSeq.current !== seq) return;
-        // A 429/503/network blip used to leave `control` null forever — an
-        // eternal "Checking your access…" spinner. Surface it with a retry.
+        // A 429/503/network blip used to leave `control` null forever â€” an
+        // eternal "Checking your accessâ€¦" spinner. Surface it with a retry.
         if (!data) {
           setControlError(true);
           return;
@@ -325,13 +230,13 @@ export default function StatusPage() {
       });
       const data = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
-        show(`Couldn’t ${action} the server`, data.error ?? "Try again in a moment.", "error");
+        show(`Couldnâ€™t ${action} the server`, data.error ?? "Try again in a moment.", "error");
         return;
       }
       show(action === "start" ? "Server starting" : "Server stopping", "Live tracking is active on this page.");
       void refetch();
     } catch {
-      show(`Couldn’t ${action} the server`, "Something went wrong.", "error");
+      show(`Couldnâ€™t ${action} the server`, "Something went wrong.", "error");
     } finally {
       setControlBusy(null);
     }
@@ -349,244 +254,89 @@ export default function StatusPage() {
         : "The realm is online and quiet right now.";
 
   return (
-    <SubPage className="max-w-[1500px]">
-      <div
-        className="status-ops"
-        style={{ "--status-color": stateStyle.color, "--status-glow": stateStyle.glow } as CSSProperties}
-      >
-        <header className="status-page-header">
-          <div>
-            <span className="status-eyebrow"><i className="fa-solid fa-satellite-dish" /> Live realm operations</span>
-            <h1 className="page-title">Server status</h1>
-            <p>Everything you need to check, join, and operate Techsteal—without hunting through the site.</p>
-          </div>
-          <div className="status-header-actions">
-            {/* Ambient info — deliberately NOT aria-live: the age text
-                changes every 5 seconds, and a live region re-announced
-                "Checked 15s ago" → "Checked 20s ago" to screen readers. */}
-            <span className="status-freshness">
-              <i className="fa-regular fa-clock" aria-hidden="true" /> {freshness}
-            </span>
-            <button className="status-refresh" onClick={() => void refreshAll()} disabled={refreshing}>
+    <SubPage className="max-w-[1320px]">
+      <div className="ops-dashboard" style={{ "--ops-state": stateStyle.color } as CSSProperties}>
+        <header className="ops-page-head">
+          <div><span className="ops-eyebrow">Techsteal / Java realm</span><h1>Server status</h1></div>
+          <div className="ops-page-actions">
+            <span className="ops-freshness">{freshness}</span>
+            <button className="ops-button" onClick={() => void refreshAll()} disabled={refreshing}>
               <i className={`fa-solid fa-rotate-right ${refreshing ? "fa-spin" : ""}`} aria-hidden="true" />
-              {refreshing ? "Checking" : "Refresh all"}
+              {refreshing ? "Checking…" : "Refresh"}
             </button>
           </div>
         </header>
 
-        <section className="status-command-deck" aria-labelledby="current-state-title">
-          <div className="status-deck-grid" aria-hidden="true" />
-          <div className="status-state-copy">
-            <div className="status-state-label">
-              <span className="status-state-dot" />
-              {statusLoading && !statusLive ? "Establishing live signal" : "Current realm state"}
-            </div>
+        <section className="ops-summary" aria-labelledby="current-state-title">
+          <div className="ops-summary-state">
+            <span className="ops-label"><span className="ops-state-dot" />{statusLoading && !statusLive ? "Checking connection" : statusLive ? "Live server status" : "Connection unavailable"}</span>
             <h2 id="current-state-title">{heroLabel}</h2>
-            <p className="status-state-message">
-              {status.motd && statusLive ? status.motd : stateStyle.message}
-            </p>
-            {status.serverName ? <span className="status-server-name">{status.serverName}</span> : null}
-            <div className="status-primary-actions">
-              <button className="status-copy-address" onClick={() => void copy()}>
-                <span>
-                  <small>Java server address</small>
-                  <strong>{siteConfig.address}</strong>
-                </span>
-                <i className={`fa-solid ${copied ? "fa-check" : "fa-copy"}`} aria-hidden="true" />
-                <span className="sr-only">{copied ? "Address copied" : "Copy server address"}</span>
-              </button>
-              <Link href="/join" className="status-join-button">
-                <i className="fa-solid fa-compass" aria-hidden="true" />
-                Open join guide
-              </Link>
-            </div>
-            {transitional && statusLive ? (
-              <div className="status-transition-note">
-                <i className="fa-solid fa-spinner fa-spin" aria-hidden="true" />
-                Transition tracking is running every 12 seconds.
-              </div>
-            ) : null}
+            <p>{status.motd && statusLive ? status.motd : stateStyle.message}</p>
+            {status.serverName ? <span className="ops-server-name">{status.serverName}</span> : null}
+            {transitional && statusLive ? <span className="ops-transition"><i className="fa-solid fa-spinner fa-spin" aria-hidden="true" /> Checking every 12 seconds</span> : null}
           </div>
-
-          <div className="status-radar-wrap" role="img" aria-label={`Server is ${heroLabel}`}>
-            <div className="status-radar-orbit orbit-one" />
-            <div className="status-radar-orbit orbit-two" />
-            <div className="status-radar-core">
-              <i className={`fa-solid ${stateStyle.icon} ${stateStyle.spin ? "fa-spin" : ""}`} aria-hidden="true" />
-            </div>
-            <span className="radar-node node-one" />
-            <span className="radar-node node-two" />
-            <span className="radar-node node-three" />
+          <div className="ops-summary-join">
+            <span className="ops-eyebrow">Java server address</span>
+            <button className="ops-address" onClick={() => void copy()}>
+              <span>{siteConfig.address}</span><i className={`fa-regular ${copied ? "fa-circle-check" : "fa-copy"}`} aria-hidden="true" />
+              <span className="sr-only">{copied ? "Address copied" : "Copy server address"}</span>
+            </button>
+            <Link href="/join" className="ops-join">How to join <i className="fa-solid fa-arrow-up-right-from-square" aria-hidden="true" /></Link>
           </div>
         </section>
 
-        <section className="status-metric-rail" aria-label="Server overview">
-          <div className="status-rail-metric">
-            <span className="status-rail-icon"><i className="fa-solid fa-user-group" /></span>
-            <div><small>Players online</small><strong>{statusLive ? players : "—"}<em>/{max}</em></strong></div>
-          </div>
-          <div className="status-rail-metric">
-            <span className="status-rail-icon"><i className="fa-solid fa-door-open" /></span>
-            <div><small>Open slots</small><strong>{statusLive ? freeSlots : "—"}</strong></div>
-          </div>
-          <div className="status-rail-metric">
-            <span className="status-rail-icon"><i className="fa-solid fa-memory" /></span>
-            <div><small>Memory allocated</small><strong>{telemetry.ramGb ?? "—"}<em>{telemetry.ramGb !== null ? " GB" : ""}</em></strong></div>
-          </div>
-          <div className="status-rail-metric">
-            <span className="status-rail-icon"><i className="fa-solid fa-shield-halved" /></span>
-            <div><small>Access mode</small><strong className="metric-word">Whitelist</strong></div>
-          </div>
+        <section className="ops-metrics" aria-label="Server overview">
+          <div><span>Players online</span><strong>{statusLive ? players : "—"}<small> / {max}</small></strong><span>{statusLive ? `${freeSlots} slots available` : "Live data unavailable"}</span></div>
+          <div><span>Memory allocated</span><strong>{telemetry.source === "live" ? telemetry.ramGb ?? "—" : "—"}<small>{telemetry.source === "live" && telemetry.ramGb !== null ? " GB" : ""}</small></strong><span>{telemetry.source === "live" ? "Host allocation" : "Telemetry unavailable"}</span></div>
+          <div><span>Minecraft version</span><strong className="ops-metric-text">{version}</strong><span>{software}{!statusLive ? " · configured" : ""}</span></div>
+          <div><span>Access</span><strong className="ops-metric-text">Whitelist</strong><span>Members only</span></div>
         </section>
 
-        <div className="status-dashboard-grid">
-          <div className="status-dashboard-main">
-            <ConsolePanel telemetry={telemetry} loading={telemetryLoading} />
-
-            <section className="status-panel status-activity" aria-labelledby="activity-title">
-              <div className="status-panel-head">
-                <div>
-                  <span className="status-section-kicker"><i className="fa-solid fa-chart-line" /> Session telemetry</span>
-                  <h2 id="activity-title">Player activity</h2>
-                </div>
-                <span className="status-panel-context">This device · latest 36 checks</span>
-              </div>
+        <div className="ops-content-grid">
+          <div className="ops-main">
+            <section className="ops-panel" aria-labelledby="activity-title">
+              <div className="ops-panel-head"><h2 id="activity-title">Player activity</h2></div>
               <ActivityChart points={activity} max={max} />
             </section>
 
-            <section className="status-panel status-roster" aria-labelledby="roster-title">
-              <div className="status-panel-head">
-                <div>
-                  <span className="status-section-kicker"><i className="fa-solid fa-gamepad" /> Live roster</span>
-                  <h2 id="roster-title">Inside the realm</h2>
-                </div>
-                <span className={`roster-count ${online ? "online" : ""}`}>{statusLive ? `${players} online` : "Unknown"}</span>
-              </div>
-              <div className="status-capacity-track" role="img" aria-label={`${players} of ${max} player slots occupied`}>
-                <span style={{ width: `${capacityPct}%` }} />
-              </div>
-              <div className="status-capacity-labels"><span>{capacityPct}% occupied</span><span>{freeSlots} slots open</span></div>
-              {statusLive && online && playerList.length ? (
-                <div className="status-player-grid">
-                  {playerList.map((name) => (
-                    <div key={name} className="status-player-chip">
+            <section className="ops-panel" aria-labelledby="roster-title">
+              <div className="ops-panel-head"><h2 id="roster-title">Online players</h2><span className="ops-label">{statusLive ? `${players} / ${max}` : "Unavailable"}</span></div>
+              <div className="ops-roster-body">
+                {statusLive ? <><div className="ops-capacity-track" role="img" aria-label={`${players} of ${max} player slots occupied`}><span style={{ width: `${capacityPct}%` }} /></div><div className="ops-capacity-labels"><span>{capacityPct}% occupied</span><span>{freeSlots} slots open</span></div></> : null}
+                {statusLive && online && playerList.length ? (
+                  <div className="ops-player-grid">
+                    {playerList.map((name) => <div key={name} className="ops-player">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={minotarUrl(name)} alt="" loading="lazy" width={34} height={34} />
-                      <span><strong>{name}</strong><small>In game now</small></span>
-                      <i className="fa-solid fa-signal" aria-label="Online" />
-                    </div>
-                  ))}
-                  {playerList.length < players ? (
-                    <p className="status-roster-note">The server reports {players} online but only shares {playerList.length} names.</p>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="status-roster-empty">
-                  <span><i className={`fa-solid ${online ? "fa-wind" : "fa-bed"}`} /></span>
-                  <div><strong>No visible players</strong><p>{rosterMessage}</p></div>
-                </div>
-              )}
+                      <img src={minotarUrl(name)} alt="" loading="lazy" width={32} height={32} /><strong>{name}</strong><span className="ops-dot is-live" aria-label="Online" />
+                    </div>)}
+                    {playerList.length < players ? <p className="ops-helper">{players} online; {playerList.length} names shared by the server.</p> : null}
+                  </div>
+                ) : <div className="ops-roster-empty"><i className="fa-solid fa-user-group" aria-hidden="true" /><p>{rosterMessage}</p></div>}
+              </div>
             </section>
+
+            <ConsolePanel telemetry={telemetry} loading={telemetryLoading} />
           </div>
 
-          <aside className="status-dashboard-side" aria-label="Server details and controls">
-            <section className="status-panel status-capacity-card" aria-labelledby="capacity-title">
-              <div className="status-panel-head compact">
-                <div>
-                  <span className="status-section-kicker"><i className="fa-solid fa-gauge-high" /> Load</span>
-                  <h2 id="capacity-title">Realm capacity</h2>
-                </div>
-              </div>
-              <div className="status-capacity-ring-row">
-                <div
-                  className="status-capacity-ring"
-                  style={{ "--capacity-angle": `${capacityPct * 3.6}deg` } as CSSProperties}
-                  role="img"
-                  aria-label={`${capacityPct}% of player capacity in use`}
-                >
-                  <div><strong>{capacityPct}%</strong><span>occupied</span></div>
-                </div>
-                <dl className="status-capacity-facts">
-                  <div><dt>Playing</dt><dd>{statusLive ? players : "—"}</dd></div>
-                  <div><dt>Available</dt><dd>{statusLive ? freeSlots : "—"}</dd></div>
-                  <div><dt>Total</dt><dd>{max}</dd></div>
-                </dl>
+          <aside className="ops-side" aria-label="Server details and controls">
+            <section className="ops-panel" aria-labelledby="control-title">
+              <div className="ops-panel-head"><h2 id="control-title">Server controls</h2><i className="fa-solid fa-sliders" aria-hidden="true" /></div>
+              <div className="ops-control-body">
+                {control === null ? controlError ? <div className="ops-control-message"><p>Couldn’t check your access.</p><button className="ops-text-button" onClick={refreshControl}>Retry access check <i className="fa-solid fa-arrow-right" aria-hidden="true" /></button></div>
+                  : <p className="ops-helper"><i className="fa-solid fa-spinner fa-spin" aria-hidden="true" /> Checking your access…</p>
+                : !control.configured ? <div className="ops-control-message"><span className="ops-control-icon"><i className="fa-solid fa-lock" aria-hidden="true" /></span><p>Host controls are not connected.</p></div>
+                : control.allowed ? <>
+                  <div className="ops-control-buttons"><button onClick={() => void runControl("start")} disabled={controlBusy !== null || !canStart}><i className={`fa-solid ${controlBusy === "start" ? "fa-spinner fa-spin" : "fa-play"}`} aria-hidden="true" /> Start server</button><button className="stop" onClick={() => void runControl("stop")} disabled={controlBusy !== null || !canStop}><i className={`fa-solid ${controlBusy === "stop" ? "fa-spinner fa-spin" : "fa-stop"}`} aria-hidden="true" /> Stop</button></div>
+                  <p className="ops-helper">{transitional ? "An operation is in progress." : !statusLive ? "Controls require live server status." : online ? "The server is accepting players." : "Ready to start."}</p>
+                </> : <div className="ops-control-message"><span className="ops-control-icon"><i className="fa-solid fa-lock" aria-hidden="true" /></span><p>{user ? "Verify your membership to access server controls." : "Sign in to manage the server."}</p><Link className="ops-button ops-control-link" href={user ? "/settings" : "/login"}>{user ? "Verify membership" : "Sign in with Discord"}<i className="fa-solid fa-arrow-right" aria-hidden="true" /></Link></div>}
               </div>
             </section>
 
-            <section className="status-panel status-connection" aria-labelledby="connection-title">
-              <div className="status-panel-head compact">
-                <div>
-                  <span className="status-section-kicker"><i className="fa-solid fa-link" /> Connection</span>
-                  <h2 id="connection-title">Server details</h2>
-                </div>
-              </div>
-              <button className="status-address-row" onClick={() => void copy()}>
-                <span><small>Address</small><code>{siteConfig.address}</code></span>
-                <i className={`fa-solid ${copied ? "fa-check" : "fa-copy"}`} aria-hidden="true" />
-              </button>
-              <dl className="status-detail-list">
-                <div><dt>Version</dt><dd>{version}</dd></div>
-                <div><dt>Software</dt><dd>{software}</dd></div>
-                <div><dt>Difficulty</dt><dd>{siteConfig.difficulty}</dd></div>
-                <div><dt>Whitelist</dt><dd className="is-good">{siteConfig.whitelist}</dd></div>
-                <div><dt>Region</dt><dd>{siteConfig.location}</dd></div>
-                <div><dt>Refresh</dt><dd>{transitional ? "12 seconds" : "30 seconds"}</dd></div>
-              </dl>
+            <section className="ops-panel" aria-labelledby="connection-title">
+              <div className="ops-panel-head"><h2 id="connection-title">Server details</h2><i className="fa-solid fa-server" aria-hidden="true" /></div>
+              <dl className="ops-details"><div><dt>Edition</dt><dd>Java</dd></div><div><dt>Software</dt><dd>{software}</dd></div><div><dt>Version</dt><dd>{version}</dd></div><div><dt>Difficulty</dt><dd>{siteConfig.difficulty}</dd></div><div><dt>Whitelist</dt><dd>{siteConfig.whitelist}</dd></div><div><dt>Region</dt><dd>{siteConfig.location}</dd></div><div><dt>Status refresh</dt><dd>{transitional ? "12 seconds" : "30 seconds"}</dd></div></dl>
             </section>
-
-            <section className="status-panel status-control" aria-labelledby="control-title">
-              <div className="status-panel-head compact">
-                <div>
-                  <span className="status-section-kicker"><i className="fa-solid fa-sliders" /> Operations</span>
-                  <h2 id="control-title">Realm control</h2>
-                </div>
-              </div>
-              {control === null ? (
-                controlError ? (
-                  <div className="status-control-message">
-                    <i className="fa-solid fa-triangle-exclamation" /> Couldn&apos;t check your access.{" "}
-                    <button
-                      className="text-[var(--accent)] hover:text-[var(--accent-bright)] transition"
-                      onClick={refreshControl}
-                    >
-                      Retry
-                    </button>
-                  </div>
-                ) : (
-                  <div className="status-control-message"><i className="fa-solid fa-spinner fa-spin" /> Checking your access…</div>
-                )
-              ) : !control.configured ? (
-                <div className="status-control-message"><i className="fa-solid fa-lock" /> Host controls are not connected.</div>
-              ) : control.allowed ? (
-                <>
-                  <div className="status-control-buttons">
-                    <button onClick={() => void runControl("start")} disabled={controlBusy !== null || !canStart}>
-                      <i className={`fa-solid ${controlBusy === "start" ? "fa-spinner fa-spin" : "fa-play"}`} /> Start
-                    </button>
-                    <button className="stop" onClick={() => void runControl("stop")} disabled={controlBusy !== null || !canStop}>
-                      <i className={`fa-solid ${controlBusy === "stop" ? "fa-spinner fa-spin" : "fa-stop"}`} /> Stop
-                    </button>
-                  </div>
-                  <p>{transitional ? "A server transition is already in progress." : online ? "The realm is online and accepting players." : "The realm is ready for an authorized start."}</p>
-                </>
-              ) : user ? (
-                <div className="status-control-gate">
-                  <p>Verify your Discord membership to unlock server operations.</p>
-                  <Link href="/settings"><i className="fa-solid fa-user-check" /> Verify in settings</Link>
-                </div>
-              ) : (
-                <div className="status-control-gate">
-                  <p>Members can start or stop the realm after signing in.</p>
-                  <Link href="/login"><i className="fa-brands fa-discord" /> Sign in with Discord</Link>
-                </div>
-              )}
-            </section>
-
-            <div className="status-source-note">
-              <i className={`fa-solid ${statusLive ? "fa-circle-check" : "fa-triangle-exclamation"}`} aria-hidden="true" />
-              <span><strong>{statusLive ? "Live host data" : "Fallback data"}</strong>{statusLive ? "Status is supplied by the server host and refreshed automatically." : "Live host data is temporarily unavailable. Displayed configuration values may be defaults."}</span>
-            </div>
+            <div className="ops-source-note"><i className={`fa-solid ${statusLive ? "fa-circle-check" : "fa-circle-info"}`} aria-hidden="true" /><p>{statusLive ? "Status from the server host. Updates automatically." : "The host is unavailable. Configuration details may be defaults."}</p></div>
           </aside>
         </div>
       </div>
