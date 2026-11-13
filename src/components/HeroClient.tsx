@@ -31,7 +31,11 @@ export function HeroClient() {
         <Image src="/techsteal-hero.jpeg" alt="A Minecraft valley with mountains, forests, and a winding river" fill priority sizes="100vw" className="world-image" />
         <div className="world-shade" />
         <div className="world-content">
-          <span className="world-label"><span />{siteConfig.season}<span className="world-label-divider">/</span>Private Minecraft server</span>
+          <div className="season-banner" role="status">
+            <i className="fa-solid fa-wand-magic-sparkles" aria-hidden="true" />
+            <span>Season 6 — very soon</span>
+          </div>
+          <span className="world-label"><span />{siteConfig.previousSeason} has wrapped<span className="world-label-divider">/</span>Private Minecraft server</span>
           <h1 id="home-title" className="home-wordmark">{siteConfig.name}</h1>
           <button className="hero-address" onClick={() => void copy()} aria-label={`Copy server address ${siteConfig.address}`}><span>{copied ? "Address copied" : siteConfig.address}</span><i className={copied ? "fa-solid fa-check" : "fa-regular fa-copy"} aria-hidden="true" /></button>
           <div className="hero-actions"><Link href="/join" className="btn-primary">Join the server <i className="fa-solid fa-arrow-right" aria-hidden="true" /></Link><Link href="/status" className="btn-secondary">Server status <span className={`home-status-dot ${live && status.online ? "is-online" : ""}`} /></Link></div>

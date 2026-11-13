@@ -149,8 +149,8 @@ export default function StatusPage() {
       .then((response) => (response.ok ? response.json() : null))
       .then((data: { configured?: boolean; allowed?: boolean } | null) => {
         if (controlSeq.current !== seq) return;
-        // A 429/503/network blip used to leave `control` null forever â€” an
-        // eternal "Checking your accessâ€¦" spinner. Surface it with a retry.
+        // A 429/503/network blip used to leave `control` null forever — an
+        // eternal "Checking your access…" spinner. Surface it with a retry.
         if (!data) {
           setControlError(true);
           return;
@@ -230,13 +230,13 @@ export default function StatusPage() {
       });
       const data = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) {
-        show(`Couldnâ€™t ${action} the server`, data.error ?? "Try again in a moment.", "error");
+        show(`Couldn’t ${action} the server`, data.error ?? "Try again in a moment.", "error");
         return;
       }
       show(action === "start" ? "Server starting" : "Server stopping", "Live tracking is active on this page.");
       void refetch();
     } catch {
-      show(`Couldnâ€™t ${action} the server`, "Something went wrong.", "error");
+      show(`Couldn’t ${action} the server`, "Something went wrong.", "error");
     } finally {
       setControlBusy(null);
     }

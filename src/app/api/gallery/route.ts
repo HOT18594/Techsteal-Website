@@ -6,7 +6,7 @@ import { fallbackGallery } from "@/lib/fallback-data";
 import { getSessionUser } from "@/lib/auth";
 import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, canPostToGallery } from "@/lib/accounts";
 import { isRateLimited } from "@/lib/rate-limit";
-import { GALLERY_CATEGORIES } from "@/lib/storage";
+import { GALLERY_CATEGORIES, storagePathFromUrl } from "@/lib/storage";
 import { publicRow } from "@/lib/public-row";
 
 export const dynamic = "force-dynamic";
@@ -15,10 +15,11 @@ const MAX_IMAGES = 8;
 
 /** Images must live in this project's Supabase storage — gallery posts are
  * uploaded files, not arbitrary hotlinks (which could rot or smuggle
- * tracking). Forum embeds have no such rule; the gallery grid does. */
+ * tracking). Forum embeds have no such rule; the gallery grid does.
+ * storagePathFromUrl (not a bare prefix check) so a post can't point at
+ * another public bucket on the same project and still pass. */
 function isOurStorageUrl(url: string): boolean {
-  const base = process.env.SUPABASE_URL?.replace(/\/$/, "");
-  return Boolean(base) && url.startsWith(`${base}/storage/v1/object/public/`);
+  return storagePathFromUrl(url) !== null;
 }
 
 // List all gallery items, featured first then newest, with comment counts.

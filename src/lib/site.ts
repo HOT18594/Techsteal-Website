@@ -18,7 +18,8 @@ export const siteConfig = {
     worldSize: "4.2",
     mapSize: "60k×60k",
   },
-  season: "Season 5",
+  season: "Season 6",
+  previousSeason: "Season 5",
   assistant: {
     name: "Chatty Jr.",
     initial: "C",

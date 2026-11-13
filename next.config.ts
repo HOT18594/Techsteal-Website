@@ -6,6 +6,8 @@ const nextConfig: NextConfig = {
   // `qualities` allow-lists the non-default quality the hero image requests
   // (required config from Next.js 16).
   images: { unoptimized: true, qualities: [85] },
+  // Don't advertise the framework in response headers (fingerprinting).
+  poweredByHeader: false,
   // Security headers. The site carries a 7-day session cookie and admin
   // actions (role changes, member removal, server start/stop), so framing
   // the site from a third party must be impossible (clickjacking).
@@ -22,6 +24,12 @@ const nextConfig: NextConfig = {
           {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+          },
+          // A 7-day session cookie must never travel over a downgraded or
+          // stripped connection — force HTTPS for two years (preload).
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains; preload",
           },
         ],
       },

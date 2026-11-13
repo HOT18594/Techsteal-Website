@@ -334,7 +334,7 @@ export async function PUT(request: NextRequest) {
   }
 
   const [thread] = await db
-    .select({ authorId: forumThreads.authorId })
+    .select({ authorId: forumThreads.authorId, content: forumThreads.content })
     .from(forumThreads)
     .where(eq(forumThreads.id, id))
     .limit(1);
@@ -350,6 +350,16 @@ export async function PUT(request: NextRequest) {
     }
   }
 
+  // Editing the body can drop embedded images. Collect old embeds that are
+  // no longer in the new text so they get garbage-collected like the delete
+  // path does — without this, every edit leaked its removed uploads in the
+  // bucket forever.
+  const newEmbeds = content !== undefined ? new Set(extractStorageUrls(content)) : null;
+  const removedEmbeds =
+    newEmbeds === null
+      ? []
+      : extractStorageUrls(thread.content).filter((url) => !newEmbeds.has(url));
+
   const rows = await db
     .update(forumThreads)
     .set({
@@ -363,6 +373,9 @@ export async function PUT(request: NextRequest) {
   // result means the row vanished — answer 404, not `publicRow(undefined)`.
   if (rows.length === 0) {
     return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+  }
+  if (removedEmbeds.length > 0) {
+    await deleteImagesByUrl(removedEmbeds);
   }
   return NextResponse.json(publicRow(rows[0]));
 }

@@ -20,6 +20,10 @@ function cleanConsoleLine(line: string): string {
     .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
     .replace(/(authorization\s*:\s*bearer\s+)[^\s]+/gi, "$1[hidden]")
+    // Join/disconnect and handshake lines carry player IPs. Requires a full
+    // 4-octet IPv4 (with optional port), so game versions like 1.21.4 and
+    // 3-part mod versions never match.
+    .replace(/\b\d{1,3}(?:\.\d{1,3}){3}(?::\d{1,5})?\b/g, "[ip]")
     .trim();
 }
 

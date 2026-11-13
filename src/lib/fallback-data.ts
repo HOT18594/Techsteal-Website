@@ -25,7 +25,9 @@ export const fallbackTimeline: TimelineEvent[] = [
   { date: "Concluded", title: "Season 1", era: "Past Seasons", major: true, description: "Season 1 has passed — it ran before this website existed. The world is closed, but it started everything." },
   { date: "Concluded", title: "Season 2", era: "Past Seasons", major: true, description: "Season 2 has passed — another world from before the site launched. Its story lives on in the community." },
   { date: "Concluded", title: "Season 3", era: "Past Seasons", major: true, description: "Season 3 has passed — the server kept growing through it, still before anyone could track it here." },
-  { date: "Concluded", title: "Season 4", era: "Past Seasons", major: true, description: "Season 4 has passed — the final season before the website launched. The site started during Season 5, the current one." },
+  { date: "Concluded", title: "Season 4", era: "Past Seasons", major: true, description: "Season 4 has passed — the final season before the website launched. The site started during Season 5." },
+  { date: "Concluded", title: "Season 5", era: "Past Seasons", major: true, description: "Season 5 has wrapped — the first season the website lived through. Its world closes its story here." },
+  { date: "Announced", title: "Season 6", era: "Upcoming", major: true, description: "Season 6 is coming very soon — no date yet. Watch the homepage banner." },
 ];
 
 export const fallbackRules: RuleSection[] = [

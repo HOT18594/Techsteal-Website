@@ -34,7 +34,7 @@ export const metadata: Metadata = {
     default: "Techsteal",
     template: "%s · Techsteal",
   },
-  description: `Official website for the ${siteConfig.name} private Minecraft server — status, forum, members, gallery, and rules.`,
+  description: `Official website for the ${siteConfig.name} private Minecraft server — Season 6 coming very soon. Status, forum, members, gallery, and rules.`,
   openGraph: {
     title: "Techsteal",
     description: `Status, forum, members, gallery, and rules for the ${siteConfig.name} Minecraft server.`,

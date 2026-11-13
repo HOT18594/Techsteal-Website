@@ -9,6 +9,7 @@ import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { serializePoll } from "@/lib/polls";
 import { publicRow } from "@/lib/public-row";
 import { parseBodyId, parseRouteId } from "@/lib/route-ids";
+import { deleteImagesByUrl, extractStorageUrls } from "@/lib/storage";
 import { shouldCountView } from "@/lib/view-counter";
 
 export const dynamic = "force-dynamic";
@@ -320,7 +321,7 @@ export async function PUT(
   }
 
   const [reply] = await db
-    .select({ authorId: forumReplies.authorId })
+    .select({ authorId: forumReplies.authorId, content: forumReplies.content })
     .from(forumReplies)
     .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
     .limit(1);
@@ -338,6 +339,11 @@ export async function PUT(
     }
   }
 
+  // Same embed GC as the thread edit: removed images are collected and
+  // deleted after a successful update (best-effort, never breaks the edit).
+  const newEmbeds = new Set(extractStorageUrls(content));
+  const removedEmbeds = extractStorageUrls(reply.content).filter((url) => !newEmbeds.has(url));
+
   const rows = await db
     .update(forumReplies)
     .set({ content, editedAt: new Date() })
@@ -345,6 +351,9 @@ export async function PUT(
     .returning();
   if (rows.length === 0) {
     return NextResponse.json({ error: "Reply not found" }, { status: 404 });
+  }
+  if (removedEmbeds.length > 0) {
+    await deleteImagesByUrl(removedEmbeds);
   }
   const avatars = await resolveAuthorAvatars([rows[0]]);
   const info = avatarInfoFor(avatars, rows[0]);

@@ -117,21 +117,6 @@ body {
   line-height: 1;
 }
 
-/* ---------- Scroll progress bar (driven by ScrollFx) ---------- */
-#scroll-progress {
-  position: fixed;
-  top: 0;
-  left: 0;
-  height: 3px;
-  width: 0;
-  background: linear-gradient(90deg, var(--accent), var(--diamond));
-  box-shadow: none;
-  /* Below the modal layer (90) so it never draws a bright line across an
-     open dialog's backdrop. */
-  z-index: 80;
-  pointer-events: none;
-}
-
 /* ---------- Buttons ---------- */
 .btn-primary {
   display: inline-flex;
@@ -2226,71 +2211,6 @@ button:focus-visible {
   }
 }
 
-/* ============================================================
-   Custom cursor — glowing dot + trailing halo
-   ============================================================ */
-html.custom-cursor,
-html.custom-cursor * {
-  cursor: none !important;
-}
-html.custom-cursor input,
-html.custom-cursor textarea,
-html.custom-cursor select,
-html.custom-cursor [contenteditable] {
-  cursor: auto !important;
-}
-
-.cursor-dot,
-.cursor-ring {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 9999;
-  pointer-events: none;
-  opacity: 0;
-  will-change: transform;
-}
-.cursor-dot {
-  width: 8px;
-  height: 8px;
-  margin: -4px 0 0 -4px;
-  border-radius: 50%;
-  background: var(--accent-bright);
-  box-shadow: none;
-  /* NOTE: no transform/scale transitions here — CursorFx writes the full
-     transform (position + scale) every frame; any transitioned scale
-     would race it and glitch over hover targets. */
-  transition: opacity 0.25s;
-}
-.cursor-dot.cursor-visible {
-  opacity: 1;
-}
-
-.cursor-ring {
-  width: 32px;
-  height: 32px;
-  margin: -16px 0 0 -16px;
-  border: 1.5px solid rgba(196, 203, 183, 0.75);
-  border-radius: 50%;
-  background: transparent;
-  box-shadow: none;
-  /* same rule as above: position + scale live in the JS transform */
-  transition: opacity 0.2s, border-color 0.2s;
-}
-.cursor-ring.cursor-visible {
-  opacity: 1;
-}
-.cursor-ring.cursor-hover {
-  border-color: var(--accent-bright);
-  box-shadow: none;
-}
-
-/* Over text fields the native caret takes over — fade the custom cursor out */
-html.custom-cursor.cursor-on-text .cursor-dot,
-html.custom-cursor.cursor-on-text .cursor-ring {
-  opacity: 0.1;
-}
-
 /* ---------- Respect reduced motion ---------- */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -2300,9 +2220,6 @@ html.custom-cursor.cursor-on-text .cursor-ring {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
-  }
-  #scroll-progress {
-    display: none;
   }
 }
 /* Pinned thread cards - accent left edge + faint glow so they read as float-first */
