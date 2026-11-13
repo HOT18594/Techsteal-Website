@@ -28,7 +28,7 @@ export function HeroClient() {
   return (
     <div className="home-page">
       <section className="world-hero" aria-labelledby="home-title">
-        <Image src="/techsteal-hero.jpeg" alt="A Minecraft valley with mountains, forests, and a winding river" fill priority sizes="100vw" className="world-image" />
+        <Image src="/techsteal-hero.jpeg" alt="A voxel valley with a mountain pagoda, torii gate, floating islands, waterfalls, and rain at golden hour" fill priority sizes="100vw" className="world-image" />
         <div className="world-shade" />
         <div className="world-content">
           <div className="season-banner" role="status">

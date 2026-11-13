@@ -1,6 +1,6 @@
 .home-page { width: 100%; }
 .world-hero { position: relative; min-height: 700px; height: min(880px, 96svh); isolation: isolate; overflow: hidden; }
-.world-image { object-fit: cover; object-position: 58% center; }
+.world-image { object-fit: cover; object-position: 52% center; }
 .world-shade { position: absolute; inset: 0; background: linear-gradient(rgba(12, 12, 12, 0.28), rgba(12, 12, 12, 0.28)), linear-gradient(0deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 40%, transparent) 16%, color-mix(in srgb, var(--bg) 9%, transparent) 60%, color-mix(in srgb, var(--bg) 40%, transparent)), linear-gradient(90deg, color-mix(in srgb, var(--bg) 19%, transparent), transparent 60%); }
 .world-content { position: relative; min-height: 100%; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 110px 24px 80px; }
 .world-label { display: flex; align-items: center; gap: 10px; font-size: 11px; color: #f0eee5d0; letter-spacing: .07em; }
@@ -64,7 +64,7 @@
 @media (max-width: 900px) { .world-hero { min-height: 630px; } .community-card { padding: 22px; } .community-card-bottom h3 { font-size: 24px; } .home-shortcuts a { padding: 22px 12px; gap: 10px; } }
 @media (max-width: 600px) {
   .world-hero { min-height: 620px; height: 88svh; }
-  .world-image { object-position: 63% center; }
+  .world-image { object-position: 52% center; }
   .world-shade { background: linear-gradient(0deg, var(--bg), color-mix(in srgb, var(--bg) 27%, transparent) 23%, color-mix(in srgb, var(--bg) 27%, transparent) 70%, color-mix(in srgb, var(--bg) 60%, transparent)); }
   .world-content { padding: 110px 20px 75px; }
   .world-label { font-size: 9px; gap: 7px; }
