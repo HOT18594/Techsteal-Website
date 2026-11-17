@@ -295,6 +295,9 @@ export function PollViewer({
               className={`poll-option ${mine ? "mine" : ""}`}
               aria-label={`Vote: ${opt.text}${showResults ? ` — ${count} of ${total} votes` : ""}`}
             >
+              {showResults ? (
+                <span className="poll-option-bar" style={{ width: `${pct}%` }} aria-hidden="true" />
+              ) : null}
               <span className="poll-option-label">
                 {showResults ? (
                   <i
@@ -309,7 +312,9 @@ export function PollViewer({
               </span>
               {showResults ? (
                 <span className="poll-option-result">
-                  <span className="poll-option-bar" style={{ width: `${pct}%` }} aria-hidden="true" />
+                  {/* Raw count next to the share: "3 · 27%" answers "how many
+                      people" without making the reader do arithmetic. */}
+                  <span className="poll-option-count">{count}</span>
                   <span className="poll-option-pct">{pct}%</span>
                 </span>
               ) : null}

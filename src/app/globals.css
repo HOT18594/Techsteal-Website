@@ -2488,10 +2488,11 @@ button:focus-visible {
   justify-content: space-between;
   gap: 12px;
   width: 100%;
+  min-height: 46px;
   text-align: left;
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 10px 14px;
+  padding: 11px 14px;
   font-size: 14px;
   color: var(--fg-2);
   background: var(--bg-2);
@@ -2523,25 +2524,36 @@ button:focus-visible {
   flex-shrink: 0;
   z-index: 1;
 }
+/* The fill grows from the LEFT edge, like every other progress bar people
+   already know. It used to be anchored right with a gradient fading out to the
+   left, which read as a smudge next to the percentage instead of a share. */
 .poll-option-bar {
   position: absolute;
   top: 0;
-  right: 0;
   bottom: 0;
-  background: linear-gradient(90deg, transparent, rgba(190, 202, 168, 0.18));
-  border-left: 2px solid rgba(190, 202, 168, 0.55);
-  transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  left: 0;
+  background: rgba(190, 202, 168, 0.18);
+  border-right: 1px solid rgba(190, 202, 168, 0.45);
+  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
   pointer-events: none;
 }
 .poll-option.mine .poll-option-bar {
-  background: linear-gradient(90deg, transparent, rgba(190, 202, 168, 0.3));
+  background: rgba(190, 202, 168, 0.3);
+  border-right-color: rgba(190, 202, 168, 0.75);
+}
+.poll-option-count {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 1.6em;
+  text-align: right;
 }
 .poll-option-pct {
   font-size: 12px;
   font-weight: 700;
   color: var(--diamond);
   font-variant-numeric: tabular-nums;
-  min-width: 2.5em;
+  min-width: 2.6em;
   text-align: right;
 }
 
