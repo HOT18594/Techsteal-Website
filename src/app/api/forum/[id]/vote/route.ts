@@ -59,31 +59,37 @@ export async function POST(
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
 
-  const [poll] = await db
-    .select()
-    .from(forumPolls)
-    .where(eq(forumPolls.threadId, threadId))
-    .limit(1);
-  if (!poll) {
-    return NextResponse.json({ error: "This thread has no poll." }, { status: 404 });
-  }
-  if (new Date(poll.endsAt).getTime() <= Date.now()) {
-    return NextResponse.json({ error: "This poll has ended." }, { status: 423 });
-  }
-  if (!(poll.options ?? []).some((o) => o.id === optionId)) {
-    return NextResponse.json({ error: "Unknown poll option." }, { status: 400 });
-  }
+  // A pooler blip answers 503 JSON, never Next's generic HTML 500.
+  try {
+    const [poll] = await db
+      .select()
+      .from(forumPolls)
+      .where(eq(forumPolls.threadId, threadId))
+      .limit(1);
+    if (!poll) {
+      return NextResponse.json({ error: "This thread has no poll." }, { status: 404 });
+    }
+    if (new Date(poll.endsAt).getTime() <= Date.now()) {
+      return NextResponse.json({ error: "This poll has ended." }, { status: 423 });
+    }
+    if (!(poll.options ?? []).some((o) => o.id === optionId)) {
+      return NextResponse.json({ error: "Unknown poll option." }, { status: 400 });
+    }
 
-  await db
-    .insert(forumPollVotes)
-    .values({ pollId: poll.id, userId: user.id, optionId })
-    .onConflictDoUpdate({
-      target: [forumPollVotes.pollId, forumPollVotes.userId],
-      set: { optionId, createdAt: new Date() },
-    });
+    await db
+      .insert(forumPollVotes)
+      .values({ pollId: poll.id, userId: user.id, optionId })
+      .onConflictDoUpdate({
+        target: [forumPollVotes.pollId, forumPollVotes.userId],
+        set: { optionId, createdAt: new Date() },
+      });
 
-  const serialized = await serializePoll(db, threadId, user.id);
-  return NextResponse.json({ poll: serialized });
+    const serialized = await serializePoll(db, threadId, user.id);
+    return NextResponse.json({ poll: serialized });
+  } catch (err) {
+    console.error("api/forum/[id]/vote: write failed", err);
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
 }
 
 // Remove the caller's vote (allowed until the poll ends).
@@ -118,20 +124,25 @@ export async function DELETE(
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
 
-  const [poll] = await db
-    .select()
-    .from(forumPolls)
-    .where(eq(forumPolls.threadId, threadId))
-    .limit(1);
-  if (!poll) {
-    return NextResponse.json({ error: "This thread has no poll." }, { status: 404 });
+  try {
+    const [poll] = await db
+      .select()
+      .from(forumPolls)
+      .where(eq(forumPolls.threadId, threadId))
+      .limit(1);
+    if (!poll) {
+      return NextResponse.json({ error: "This thread has no poll." }, { status: 404 });
+    }
+    if (new Date(poll.endsAt).getTime() <= Date.now()) {
+      return NextResponse.json({ error: "This poll has ended." }, { status: 423 });
+    }
+    await db
+      .delete(forumPollVotes)
+      .where(and(eq(forumPollVotes.pollId, poll.id), eq(forumPollVotes.userId, user.id)));
+    const serialized = await serializePoll(db, threadId, user.id);
+    return NextResponse.json({ poll: serialized });
+  } catch (err) {
+    console.error("api/forum/[id]/vote: delete failed", err);
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
-  if (new Date(poll.endsAt).getTime() <= Date.now()) {
-    return NextResponse.json({ error: "This poll has ended." }, { status: 423 });
-  }
-  await db
-    .delete(forumPollVotes)
-    .where(and(eq(forumPollVotes.pollId, poll.id), eq(forumPollVotes.userId, user.id)));
-  const serialized = await serializePoll(db, threadId, user.id);
-  return NextResponse.json({ poll: serialized });
 }

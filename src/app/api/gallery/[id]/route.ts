@@ -10,6 +10,8 @@ import { publicRow } from "@/lib/public-row";
 import { parseRouteId } from "@/lib/route-ids";
 import { shouldCountView } from "@/lib/view-counter";
 import { deleteImagesByUrl } from "@/lib/storage";
+import { markdownExcerpt } from "@/lib/excerpt";
+import { mentionRecipients, notify, notifyMany } from "@/lib/notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -37,49 +39,56 @@ export async function GET(
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
 
-  const items = await db.select().from(galleryItems).where(eq(galleryItems.id, itemId)).limit(1);
-  if (items.length === 0) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  // A pooler blip must answer 503 JSON like the list routes, not escape as
+  // Next's generic HTML 500.
+  try {
+    const items = await db.select().from(galleryItems).where(eq(galleryItems.id, itemId)).limit(1);
+    if (items.length === 0) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    let item = items[0];
+
+    const user = await getSessionUser();
+    // rateLimitIp takes the LAST x-forwarded-for entry (our own edge's) —
+    // deduping on the client-controlled first entry let anyone inflate views.
+    const viewer = user?.id ?? rateLimitIp(request);
+    if (shouldCountView("gallery", itemId, viewer)) {
+      const [bumped] = await db
+        .update(galleryItems)
+        .set({ views: sql`${galleryItems.views} + 1` })
+        .where(eq(galleryItems.id, itemId))
+        .returning({ views: galleryItems.views });
+      if (bumped) item = { ...item, views: bumped.views };
+    }
+
+    const comments = await db
+      .select()
+      .from(galleryComments)
+      .where(eq(galleryComments.itemId, itemId))
+      .orderBy(asc(galleryComments.createdAt));
+
+    // One avatar lookup covers the poster and every commenter.
+    const avatars = await resolveAuthorAvatars([item, ...comments]);
+    const builderInfo = avatarInfoFor(avatars, item);
+    const itemOut = {
+      ...publicRow(item),
+      liked: user ? ((item.likedBy ?? []) as string[]).includes(user.id) : false,
+      builderAvatar: builderInfo?.avatarUrl ?? null,
+      // Authoritative count for the lightbox header. Without it the header read
+      // the (possibly stale) grid value and showed 0 while comments rendered
+      // right below it.
+      commentCount: comments.length,
+    };
+    const enriched = comments.map((c) => {
+      const info = avatarInfoFor(avatars, c);
+      return { ...publicRow(c), avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? "avatar-1" };
+    });
+
+    return NextResponse.json({ item: itemOut, comments: enriched });
+  } catch (err) {
+    console.error("api/gallery/[id]: detail query failed", err);
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
-  let item = items[0];
-
-  const user = await getSessionUser();
-  // rateLimitIp takes the LAST x-forwarded-for entry (our own edge's) —
-  // deduping on the client-controlled first entry let anyone inflate views.
-  const viewer = user?.id ?? rateLimitIp(request);
-  if (shouldCountView("gallery", itemId, viewer)) {
-    const [bumped] = await db
-      .update(galleryItems)
-      .set({ views: sql`${galleryItems.views} + 1` })
-      .where(eq(galleryItems.id, itemId))
-      .returning({ views: galleryItems.views });
-    if (bumped) item = { ...item, views: bumped.views };
-  }
-
-  const comments = await db
-    .select()
-    .from(galleryComments)
-    .where(eq(galleryComments.itemId, itemId))
-    .orderBy(asc(galleryComments.createdAt));
-
-  // One avatar lookup covers the poster and every commenter.
-  const avatars = await resolveAuthorAvatars([item, ...comments]);
-  const builderInfo = avatarInfoFor(avatars, item);
-  const itemOut = {
-    ...publicRow(item),
-    liked: user ? ((item.likedBy ?? []) as string[]).includes(user.id) : false,
-    builderAvatar: builderInfo?.avatarUrl ?? null,
-    // Authoritative count for the lightbox header. Without it the header read
-    // the (possibly stale) grid value and showed 0 while comments rendered
-    // right below it.
-    commentCount: comments.length,
-  };
-  const enriched = comments.map((c) => {
-    const info = avatarInfoFor(avatars, c);
-    return { ...publicRow(c), avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? "avatar-1" };
-  });
-
-  return NextResponse.json({ item: itemOut, comments: enriched });
 }
 
 // Add a comment to a gallery post. Any signed-in member (not banned) can
@@ -125,7 +134,7 @@ export async function POST(
   }
 
   const [item] = await db
-    .select({ id: galleryItems.id })
+    .select({ id: galleryItems.id, authorId: galleryItems.authorId })
     .from(galleryItems)
     .where(eq(galleryItems.id, itemId))
     .limit(1);
@@ -147,6 +156,33 @@ export async function POST(
     .insert(galleryComments)
     .values({ itemId, content, author: username, authorId: user.id })
     .returning();
+
+  // Notify the build's owner and any @mentions (best-effort; the owner is
+  // excluded from mentions so they don't get two pings).
+  const excerpt = markdownExcerpt(content, 140);
+  await notify({
+    userId: item.authorId,
+    actorId: user.id,
+    actorName: username,
+    type: "gallery_comment",
+    itemId,
+    replyId: created.id,
+    excerpt,
+  });
+  const mentioned = await mentionRecipients(content, user.id);
+  await notifyMany(
+    mentioned
+      .filter((id) => id !== item.authorId)
+      .map((id) => ({
+        userId: id,
+        actorId: user.id,
+        actorName: username,
+        type: "mention" as const,
+        itemId,
+        replyId: created.id,
+        excerpt,
+      }))
+  );
 
   const avatars = await resolveAuthorAvatars([created]);
   const info = avatarInfoFor(avatars, created);
@@ -261,7 +297,7 @@ export async function DELETE(
   // every deleted post left its files in the bucket forever. Best-effort by
   // design — deleteImagesByUrl logs and returns instead of throwing, so a
   // storage hiccup can't fail a delete that already succeeded.
-  await deleteImagesByUrl([item.image, ...(item.images ?? [])]);
+  await deleteImagesByUrl([item.image, ...(item.images ?? [])], { id: user.id, isAdmin: !isOwner });
   return NextResponse.json({ ok: true });
 }
 

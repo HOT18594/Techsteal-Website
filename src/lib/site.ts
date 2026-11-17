@@ -5,21 +5,29 @@
 
 export const siteConfig = {
   name: "TECHSTEAL",
-  address: "play.techsteal.space",
-  version: "1.21.4",
-  software: "Paper",
+  address: "techstealseason6.exaroton.me:19457",
+  version: "1.21.11",
+  software: "Fabric",
   difficulty: "Hard",
   whitelist: "Enabled",
   location: "FRA · EU",
-  maxPlayers: 8,
+  maxPlayers: 10,
   stats: {
     tps: "20.0",
-    uptimeDays: "120",
-    worldSize: "4.2",
+    uptimeDays: "0",
+    worldSize: "0.0",
     mapSize: "60k×60k",
   },
   season: "Season 6",
   previousSeason: "Season 5",
+  // Whether the current season has publicly launched. While false the site
+  // says "coming soon", the server start/stop panel is hidden, and the
+  // control API refuses actions. Flip to true on launch day.
+  seasonLive: false,
+  // Launch date of the current season — the home stats tile counts "days
+  // live" from here once seasonLive is true. Adjust if the world opens on a
+  // different day.
+  seasonStart: "2026-11-13",
   assistant: {
     name: "Chatty Jr.",
     initial: "C",

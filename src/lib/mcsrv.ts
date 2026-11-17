@@ -23,7 +23,9 @@ interface McsrResponse {
 export async function getServerStatus(): Promise<ServerStatus> {
   const host = process.env.MINECRAFT_SERVER ?? siteConfig.address;
   const port = process.env.MINECRAFT_PORT;
-  const url = `https://api.mcsrvstat.us/3/${host}${port ? `?port=${port}` : ""}`;
+  // mcsrvstat.us only honors the port inside the path (host:port) — a
+  // ?port= query param is silently ignored and always pings 25565.
+  const url = `https://api.mcsrvstat.us/3/${host}${port ? `:${port}` : ""}`;
 
   try {
     // Must time out: live-status single-flights the promise it returns, so

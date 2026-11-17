@@ -375,7 +375,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Thread not found" }, { status: 404 });
   }
   if (removedEmbeds.length > 0) {
-    await deleteImagesByUrl(removedEmbeds);
+    await deleteImagesByUrl(removedEmbeds, { id: user.id, isAdmin: !isOwner });
   }
   return NextResponse.json(publicRow(rows[0]));
 }
@@ -515,7 +515,7 @@ export async function DELETE(request: NextRequest) {
     ...deleted.replyContents.flatMap((r) => extractStorageUrls(r.content ?? "")),
   ];
   if (embedUrls.length > 0) {
-    await deleteImagesByUrl(embedUrls);
+    await deleteImagesByUrl(embedUrls, { id: user.id, isAdmin: !isOwner });
   }
   return NextResponse.json({ ok: true });
 }

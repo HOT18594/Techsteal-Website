@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { and, eq, ne } from "drizzle-orm";
+import { and, ne, sql } from "drizzle-orm";
 import { addPermissions, findAccount, updateAccount } from "@/lib/accounts";
 import { getSessionUser, setSession } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { getAdminCode } from "@/lib/admin-code";
 import { isValidMcName } from "@/lib/mc-name";
@@ -104,7 +105,8 @@ export async function PATCH(request: NextRequest) {
   // A linked Minecraft name must belong to exactly one member: the client
   // checks Mojang before saving, but a direct API caller could otherwise
   // claim any name — including one another member already wears — and read
-  // as them in the directory and forum avatar fallbacks.
+  // as them in the directory and forum avatar fallbacks. Case-insensitive:
+  // Mojang treats "Notch" and "notch" as the same account.
   if (patch.minecraftUsername) {
     const db = getDb();
     if (db) {
@@ -112,7 +114,10 @@ export async function PATCH(request: NextRequest) {
         .select({ id: profiles.id })
         .from(profiles)
         .where(
-          and(eq(profiles.minecraftUsername, patch.minecraftUsername), ne(profiles.id, account.id))
+          and(
+            sql`lower(${profiles.minecraftUsername}) = ${patch.minecraftUsername.toLowerCase()}`,
+            ne(profiles.id, account.id)
+          )
         )
         .limit(1);
       if (taken) {
@@ -164,9 +169,9 @@ export async function PATCH(request: NextRequest) {
   try {
     updated = await updateAccount(account.id, patch);
   } catch (err) {
-    // 23505 = unique violation on profiles_mc_name_uq. The SELECT above is a
-    // check-then-write that races under concurrent claims; the partial unique
-    // index is the real guarantee — surface the same friendly 409 here.
+    // 23505 = unique violation on profiles_mc_name_lower_uq. The SELECT above
+    // is a check-then-write that races under concurrent claims; the partial
+    // unique index is the real guarantee — surface the same friendly 409 here.
     if ((err as { code?: string } | null)?.code === "23505") {
       return NextResponse.json(
         { error: "That Minecraft username is already linked to another member." },
@@ -186,8 +191,14 @@ export async function PATCH(request: NextRequest) {
   if (updated && claimedAdmin) {
     // The server_control grant is merged in SQL — the old read-modify-write
     // of the whole array could erase a permission an admin granted a moment
-    // earlier (or be erased by a concurrent verify).
-    updated = (await addPermissions(account.id, ["server_control"])) ?? updated;
+    // earlier (or be erased by a concurrent verify). Best-effort: the admin
+    // promotion above already committed, so a failed grant must not answer
+    // 500/503 as if the whole save failed — log it and keep the promotion.
+    try {
+      updated = (await addPermissions(account.id, ["server_control"])) ?? updated;
+    } catch (err) {
+      console.error("profile PATCH: server_control grant failed", err);
+    }
   }
   if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -199,6 +210,18 @@ export async function PATCH(request: NextRequest) {
     permissions: updated.permissions,
     avatarUrl: updated.avatarUrl,
   });
+
+  // A successful admin-code promotion is a privileged event — record it.
+  if (claimedAdmin) {
+    await logAudit({
+      actorId: updated.id,
+      actorName: updated.username,
+      action: "admin_code",
+      targetId: updated.id,
+      targetName: updated.username,
+      detail: "Promoted to admin via admin code",
+    });
+  }
 
   return NextResponse.json({ profile: updated });
 }

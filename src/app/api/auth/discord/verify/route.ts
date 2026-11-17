@@ -95,10 +95,24 @@ export async function POST() {
       { status: 503 }
     );
   }
-  if (!account.banned) {
+  if (account.banned) {
+    // A banned account must not be told it's "verified" — nothing was
+    // persisted and the answer would be a lie.
+    return NextResponse.json(
+      { error: "Your account no longer exists on this server." },
+      { status: 403 }
+    );
+  }
+  try {
     // Idempotent for verify; for a "left the server" answer it revokes
     // exactly the perks earned from verification.
     await applyDiscordVerification(user.id, verified);
+  } catch (err) {
+    console.error("discord verify: persistence failed", err);
+    return NextResponse.json(
+      { error: "Couldn't save the verification result — try again in a moment." },
+      { status: 503 }
+    );
   }
 
   return NextResponse.json({ configured: true, verified });

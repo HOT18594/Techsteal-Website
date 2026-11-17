@@ -163,7 +163,77 @@ export const profiles = pgTable("profiles", {
   // A linked Minecraft name must belong to exactly one member: the
   // check-then-write in PATCH /api/profile races under concurrent claims,
   // so the database gets the final word (partial index — many NULLs allowed).
-  uniqueIndex("profiles_mc_name_uq")
-    .on(t.minecraftUsername)
+  // lower() because Mojang names are case-insensitive — "Notch" and "notch"
+  // are the same account and must not be claimable by two members.
+  uniqueIndex("profiles_mc_name_lower_uq")
+    .on(sql`lower(${t.minecraftUsername})`)
     .where(sql`minecraft_username is not null`),
 ]);
+
+// Per-user notification inbox. Rows are generated server-side when something
+// happens that concerns a member (a reply to their thread, a like, an
+// @mention, a comment/like on their build). `read` is the unread flag the
+// navbar bell counts; marking read never deletes the row.
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: serial("id").primaryKey(),
+    // Recipient account id ("discord:<id>").
+    userId: text("user_id").notNull(),
+    // Who triggered it (empty for system events).
+    actorId: text("actor_id").notNull().default(""),
+    actorName: text("actor_name").notNull().default(""),
+    // "reply" | "like" | "mention" | "gallery_comment" | "gallery_like"
+    type: text("type").notNull(),
+    // Link targets — a forum event carries threadId (+ replyId), a gallery
+    // event carries itemId. Nullable so one table serves both surfaces.
+    threadId: integer("thread_id"),
+    replyId: integer("reply_id"),
+    itemId: integer("item_id"),
+    excerpt: text("excerpt").notNull().default(""),
+    read: boolean("is_read").notNull().default(false),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  // The bell reads one user's newest-first inbox and counts their unread.
+  (t) => [index("notifications_user_created_idx").on(t.userId, t.createdAt)]
+);
+
+// Append-only admin audit trail: server start/stop, ban/unban, role and
+// permission changes, admin-code claims. Never updated or deleted from the
+// app — it is the record of who did what.
+export const auditLog = pgTable(
+  "audit_log",
+  {
+    id: serial("id").primaryKey(),
+    actorId: text("actor_id").notNull().default(""),
+    actorName: text("actor_name").notNull().default(""),
+    // "server_start" | "server_stop" | "ban" | "unban" | "role_change"
+    // | "permission_grant" | "permission_revoke" | "admin_code"
+    action: text("action").notNull(),
+    targetId: text("target_id").notNull().default(""),
+    targetName: text("target_name").notNull().default(""),
+    detail: text("detail").notNull().default(""),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (t) => [index("audit_log_created_idx").on(t.createdAt)]
+);
+
+// Sitewide announcements written from the admin panel. The newest active row
+// renders as a bar under the navbar; older or inactive rows are ignored. Kept
+// deliberately small — a title, optional body, a tone, and an on/off switch.
+export const announcements = pgTable(
+  "announcements",
+  {
+    id: serial("id").primaryKey(),
+    title: text("title").notNull(),
+    body: text("body").notNull().default(""),
+    // "info" | "warning" | "critical" — drives the bar's accent only.
+    tone: text("tone").notNull().default("info"),
+    active: boolean("active").notNull().default(true),
+    authorId: text("author_id").notNull().default(""),
+    authorName: text("author_name").notNull().default(""),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  // The public read is "active rows, newest first".
+  (t) => [index("announcements_active_created_idx").on(t.active, t.createdAt)]
+);

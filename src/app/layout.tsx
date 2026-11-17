@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { BackToTop } from "@/components/BackToTop";
 import { Footer } from "@/components/Footer";
 import { Navbar } from "@/components/Navbar";
+import { AnnouncementBar } from "@/components/AnnouncementBar";
 import { OnboardingReminder } from "@/components/OnboardingReminder";
 import { PageEnter } from "@/components/PageEnter";
 import { PollAnnouncement } from "@/components/PollAnnouncement";
@@ -12,6 +13,10 @@ import { ToastProvider } from "@/components/Toast";
 import { PaletteProvider } from "@/components/PaletteProvider";
 import { paletteBootstrap } from "@/lib/palettes";
 import { siteConfig } from "@/lib/site";
+// Self-hosted Font Awesome: the old cdnjs <link> was render-blocking, so on
+// networks that block or blackhole the CDN every page stayed blank until the
+// request timed out. Bundled CSS + webfonts remove the third-party dependency.
+import "@fortawesome/fontawesome-free/css/all.min.css";
 import "./globals.css";
 import "./palettes.css";
 
@@ -34,7 +39,7 @@ export const metadata: Metadata = {
     default: "Techsteal",
     template: "%s · Techsteal",
   },
-  description: `Official website for the ${siteConfig.name} private Minecraft server — Season 6 coming very soon. Status, forum, members, gallery, and rules.`,
+  description: `Official website for the ${siteConfig.name} private Minecraft server — ${siteConfig.season} is ${siteConfig.seasonLive ? "live" : "coming soon"}. Status, forum, members, gallery, and rules.`,
   openGraph: {
     title: "Techsteal",
     description: `Status, forum, members, gallery, and rules for the ${siteConfig.name} Minecraft server.`,
@@ -44,6 +49,11 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
   },
+  alternates: {
+    types: {
+      "application/rss+xml": "/forum/rss.xml",
+    },
+  },
 };
 
 export const viewport: Viewport = {
@@ -52,21 +62,21 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={grotesk.variable} suppressHydrationWarning>
+    <html lang="en" className={grotesk.variable} data-scroll-behavior="smooth" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: paletteBootstrap }} />
-        {/* Preconnect warms the CDN connection so the FontAwesome stylesheet
-            doesn't wait on a full TLS handshake after discovery. */}
-        <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossOrigin="" />
-        <link
-          rel="stylesheet"
-          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
-        />
       </head>
       <body className="antialiased min-h-screen flex flex-col">
+        <noscript>
+          <div className="noscript-banner">
+            JavaScript is turned off — sign-in, the forum, and live status need it.
+            Enable JavaScript for the full experience.
+          </div>
+        </noscript>
         <PaletteProvider><ToastProvider>
           <RevealObserver />
           <Navbar />
+          <AnnouncementBar />
           <OnboardingReminder />
           <PollAnnouncement />
           <main className="flex-1 flex flex-col">

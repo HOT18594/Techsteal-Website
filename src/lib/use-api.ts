@@ -50,7 +50,7 @@ function acquireRequest(path: string) {
   };
 }
 
-export function useApi<T>(path: string, initial: T) {
+export function useApi<T>(path: string, initial: T, enabled = true) {
   const [data, setData] = useState<T>(initial);
   const [dataPath, setDataPath] = useState(path);
   // Background polls leave the existing UI in place while they run.
@@ -66,7 +66,7 @@ export function useApi<T>(path: string, initial: T) {
   useEffect(() => { fallback.current = initial; }, [initial]);
 
   const load = useCallback(async () => {
-    if (!mounted.current || activePath.current !== path) return;
+    if (!enabled || !mounted.current || activePath.current !== path) return;
     const reqId = ++reqRef.current;
     // Acquire first, so repeated calls from this consumer can join the same
     // flight instead of briefly dropping its last subscriber and aborting it.
@@ -93,7 +93,7 @@ export function useApi<T>(path: string, initial: T) {
         setLoading(false);
       }
     }
-  }, [path]);
+  }, [path, enabled]);
 
   useEffect(() => {
     mounted.current = true;
@@ -102,15 +102,18 @@ export function useApi<T>(path: string, initial: T) {
     setData(fallback.current);
     setDataPath(path);
     setError(false);
-    setLoading(true);
-    void load();
+    // `enabled: false` means the caller must not hit this endpoint at all
+    // (e.g. admin-only telemetry for a signed-out visitor) — no fetch, no
+    // loading state, just the initial value.
+    setLoading(enabled);
+    if (enabled) void load();
     return () => {
       mounted.current = false;
       reqRef.current += 1;
       activeRequest.current?.release();
       activeRequest.current = null;
     };
-  }, [path, load]);
+  }, [path, load, enabled]);
 
   // Don't render the previous endpoint's data between a path change and its effect.
   return {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { fallbackMembers } from "@/lib/fallback-data";
 import type { Member } from "@/types";
 import { Avatar } from "@/components/Avatar";
@@ -143,7 +144,15 @@ export default function MembersPage() {
           /* Console-style member cards */
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 stagger">
             {visible.map((m) => (
-              <div key={m.id ?? m.name} className="member-card flex items-start gap-4">
+              <div key={m.id ?? m.name} className="member-card group">
+                {m.id ? (
+                  <Link
+                    href={`/members/${encodeURIComponent(m.id)}`}
+                    className="absolute inset-0 z-0"
+                    aria-label={`View profile: ${m.name}`}
+                  />
+                ) : null}
+                <div className="relative z-10 flex items-start gap-4 pointer-events-none">
                 <Avatar
                   name={m.name}
                   src={m.avatarUrl}
@@ -187,6 +196,7 @@ export default function MembersPage() {
                     />
                     {m.status === "online" ? "In-game right now" : "Offline"}
                   </div>
+                </div>
                 </div>
               </div>
             ))}

@@ -145,3 +145,63 @@
   .ops-details { padding-left: 20px; padding-right: 20px; }
 }
 
+/* --- Tabbed layout -------------------------------------------------- */
+.ops-tabs { display: flex; gap: 4px; margin: 26px 0 22px; border-bottom: 1px solid var(--ops-border); overflow-x: auto; }
+.ops-tab { display: inline-flex; align-items: center; gap: 9px; padding: 12px 16px; margin-bottom: -1px; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--ops-muted); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: color .15s, border-color .15s; }
+.ops-tab i { font-size: 12px; }
+.ops-tab:hover { color: var(--fg); }
+.ops-tab.is-active { color: var(--ops-accent); border-bottom-color: var(--ops-accent); }
+.ops-tab-badge { min-width: 20px; padding: 2px 7px; border-radius: 999px; background: var(--bg-3); border: 1px solid var(--ops-border); color: var(--ops-muted); font-size: 10px; font-weight: 600; text-align: center; }
+.ops-tab.is-active .ops-tab-badge { color: var(--ops-accent); border-color: var(--border-strong); }
+.ops-tabpanel { min-width: 0; }
+.ops-tabpanel .ops-metrics { margin-top: 0; }
+
+/* Console toolbar: level chips + search + copy */
+.ops-console-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 0 25px 17px; }
+.ops-console-tools .ops-console-toolbar { padding: 0; flex: 0 1 auto; }
+.ops-console-toolbar button { display: inline-flex; align-items: center; gap: 6px; }
+.ops-chip-count { color: var(--muted-2); font-size: 10px; font-variant-numeric: tabular-nums; }
+.ops-console-toolbar button.active .ops-chip-count { color: var(--ops-muted); }
+.ops-console-search { flex: 1 1 180px; display: flex; align-items: center; gap: 9px; min-width: 160px; padding: 8px 12px; background: var(--bg-3); border: 1px solid var(--ops-border); border-radius: 6px; }
+.ops-console-search i { color: var(--muted-2); font-size: 11px; }
+.ops-console-search input { flex: 1; min-width: 0; background: none; border: 0; outline: none; color: var(--fg); font-size: 12px; }
+.ops-console-search input::placeholder { color: var(--muted-2); }
+.ops-console-search:focus-within { border-color: var(--border-strong); }
+.ops-console-copy { display: inline-flex; align-items: center; gap: 8px; padding: 8px 13px; background: var(--bg-3); border: 1px solid var(--ops-border); border-radius: 6px; color: var(--fg-2); font-size: 11px; font-weight: 600; cursor: pointer; transition: background .15s, border-color .15s; }
+.ops-console-copy:hover:not(:disabled) { background: var(--card-hover); border-color: var(--border-strong); }
+.ops-console-copy:disabled { opacity: .45; cursor: not-allowed; }
+.ops-console-wrap { position: relative; }
+.ops-console-screen.tall { min-height: 320px; max-height: 520px; }
+.ops-console-jump { position: absolute; right: 18px; bottom: 14px; display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px; background: var(--bg-3); border: 1px solid var(--border-strong); border-radius: 999px; color: var(--fg); font-size: 11px; font-weight: 600; cursor: pointer; }
+.ops-console-jump:hover { background: var(--card-hover); }
+.ops-console-jump i { font-size: 10px; color: var(--ops-accent); }
+
+/* Players tab */
+.ops-player-grid.wide { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ops-inline-link { color: var(--ops-accent); font-weight: 600; }
+.ops-inline-link:hover { color: var(--accent-bright); }
+.ops-inline-link i { font-size: 10px; margin-left: 4px; }
+
+/* Manage tab */
+.ops-access-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.ops-access-list li { display: flex; align-items: flex-start; gap: 10px; color: var(--fg-2); font-size: 12px; line-height: 1.6; }
+.ops-access-list li i { color: #a6c88c; font-size: 11px; padding-top: 3px; }
+
+/* Access CTA strip below the tabs */
+.ops-access-cta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 22px; padding: 16px 20px; border: 1px solid var(--ops-border); border-radius: 8px; background: var(--bg-2); }
+.ops-access-cta > i { color: var(--muted-2); font-size: 13px; }
+.ops-access-cta p { flex: 1; min-width: 200px; margin: 0; color: var(--ops-muted); font-size: 12px; line-height: 1.6; }
+
+@media (max-width: 800px) {
+  .ops-player-grid.wide { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .ops-tabs { margin: 20px 0 16px; }
+  .ops-tab { padding: 11px 12px; font-size: 12px; }
+  .ops-console-tools { padding: 0 15px 15px; }
+  .ops-console-search { flex-basis: 100%; }
+  .ops-console-screen.tall { min-height: 260px; max-height: 420px; }
+  .ops-player-grid.wide { grid-template-columns: 1fr; }
+  .ops-access-cta { padding: 14px 16px; }
+}
+

@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const url = await uploadImage(buffer, sniffed, file.name, "embeds");
+    const url = await uploadImage(buffer, sniffed, file.name, "embeds", user.id);
     return NextResponse.json({ url }, { status: 201 });
   } catch (err) {
     console.error("upload: embed failed", err);

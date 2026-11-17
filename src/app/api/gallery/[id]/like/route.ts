@@ -7,6 +7,7 @@ import { ACCOUNT_DB_ERROR_MESSAGE, accountGate } from "@/lib/accounts";
 import { isRateLimited } from "@/lib/rate-limit";
 import { publicRow } from "@/lib/public-row";
 import { parseRouteId } from "@/lib/route-ids";
+import { notify } from "@/lib/notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -50,32 +51,51 @@ export async function POST(
     return NextResponse.json({ error: "Slow down a little." }, { status: 429 });
   }
 
-  const updated = await db.transaction(async (tx) => {
-    const locked = await tx
-      .select()
-      .from(galleryItems)
-      .where(eq(galleryItems.id, itemId))
-      .for("update")
-      .limit(1);
-    if (locked.length === 0) return null;
-    const currentLikedBy = (locked[0].likedBy ?? []) as string[];
-    const already = currentLikedBy.includes(user.id);
-    const updatedLikedBy = already
-      ? currentLikedBy.filter((x) => x !== user.id)
-      : [...currentLikedBy, user.id];
-    const [row] = await tx
-      .update(galleryItems)
-      .set({ likedBy: updatedLikedBy, likes: updatedLikedBy.length })
-      .where(eq(galleryItems.id, itemId))
-      .returning();
-    return row;
-  });
-  if (!updated) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
+  // A pooler blip answers 503 JSON, never Next's generic HTML 500.
+  try {
+    const updated = await db.transaction(async (tx) => {
+      const locked = await tx
+        .select()
+        .from(galleryItems)
+        .where(eq(galleryItems.id, itemId))
+        .for("update")
+        .limit(1);
+      if (locked.length === 0) return null;
+      const currentLikedBy = (locked[0].likedBy ?? []) as string[];
+      const already = currentLikedBy.includes(user.id);
+      const updatedLikedBy = already
+        ? currentLikedBy.filter((x) => x !== user.id)
+        : [...currentLikedBy, user.id];
+      const [row] = await tx
+        .update(galleryItems)
+        .set({ likedBy: updatedLikedBy, likes: updatedLikedBy.length })
+        .where(eq(galleryItems.id, itemId))
+        .returning();
+      return row;
+    });
+    if (!updated) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
-  return NextResponse.json({
-    item: publicRow(updated),
-    liked: (updated.likedBy ?? []).includes(user.id),
-  });
+    const liked = (updated.likedBy ?? []).includes(user.id);
+    // Only notify on an added like, never on an un-like.
+    if (liked) {
+      await notify({
+        userId: updated.authorId,
+        actorId: user.id,
+        actorName: gate.account?.username ?? user.username,
+        type: "gallery_like",
+        itemId,
+        excerpt: updated.title,
+      });
+    }
+
+    return NextResponse.json({
+      item: publicRow(updated),
+      liked,
+    });
+  } catch (err) {
+    console.error("api/gallery/[id]/like: transaction failed", err);
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
 }

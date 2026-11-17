@@ -10,7 +10,6 @@
 
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { siteConfig } from "@/lib/site";
 import { Avatar } from "@/components/Avatar";
 import { Markdown } from "@/components/Markdown";
@@ -120,15 +119,25 @@ function loadHistory(): ChatMessage[] | null {
   }
 }
 
-function ChattyLogo({ size, className = "" }: { size: number; className?: string }) {
+// Brand mark: a geometric spark. Drawn inline so it stays crisp at every size,
+// inherits the active palette's accent through currentColor, and costs zero
+// bytes — the previous 706 KB PNG was downloaded to render a 30 px avatar.
+function ChattyLogo({ size = 24, className = "" }: { size?: number; className?: string }) {
   return (
-    <Image
-      src="/chatty-jr-logo.png"
-      alt=""
+    <svg
+      viewBox="0 0 24 24"
       width={size}
       height={size}
-      className={`chatty-logo-image ${className}`}
-    />
+      className={`chatty-mark ${className}`}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        d="M11.5 2.4c.42 4.83 3.05 7.46 7.88 7.88-4.83.42-7.46 3.05-7.88 7.88-.42-4.83-3.05-7.46-7.88-7.88 4.83-.42 7.46-3.05 7.88-7.88Z"
+        fill="currentColor"
+      />
+      <circle cx="18.6" cy="18.6" r="2.4" fill="currentColor" opacity=".5" />
+    </svg>
   );
 }
 
@@ -280,9 +289,11 @@ export function Chatty() {
   const [activeTools, setActiveTools] = useState<ToolTrace[]>([]); // tools used by the reply in flight
   const [hydrated, setHydrated] = useState(false);
   const [selectedModel, setSelectedModel] = useState<ChatModelId>(DEFAULT_CHAT_MODEL);
+  const [modelOpen, setModelOpen] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const modelRef = useRef<HTMLDivElement>(null);
   const nextId = useRef(1);
   const genRef = useRef(0);
   const controllerRef = useRef<AbortController | null>(null);
@@ -312,6 +323,23 @@ export function Chatty() {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [typing, user, hasAccess]);
+
+  // Model menu: close on outside click or Escape so it never strands open.
+  useEffect(() => {
+    if (!modelOpen) return;
+    const onDown = (event: MouseEvent) => {
+      if (!modelRef.current?.contains(event.target as Node)) setModelOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setModelOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [modelOpen]);
 
   // Load persisted history once, after mount — the initializer above must
   // NOT read localStorage, or SSR and client render different first frames
@@ -787,6 +815,7 @@ export function Chatty() {
   const onRetry = useCallback((text: string) => void actionsRef.current.send(text), []);
   const onRegenerate = useCallback(() => actionsRef.current.regenerate(), []);
 
+  const activeModel = CHAT_MODELS.find((model) => model.id === selectedModel) ?? CHAT_MODELS[0];
   const gateClass = "assistant-gate";
 
   const consoleBody = sessionLoading ? (
@@ -831,9 +860,7 @@ export function Chatty() {
         <div className="assistant-thread" role="log" aria-live="polite" aria-relevant="additions text">
           {isEmpty && !typing ? (
             <div className="assistant-welcome">
-              <div className="assistant-welcome-character" aria-hidden="true"><ChattyLogo size={80} /></div>
-              <p className="assistant-eyebrow">Hey{user?.username ? `, ${user.username}` : " there"}</p>
-              <h2>Need a hand?</h2>
+              <h2>Ask anything</h2>
               <div className="assistant-prompt-grid">
                 {SUGGESTIONS.map((suggestion) => (
                   <button
@@ -956,9 +983,6 @@ export function Chatty() {
             )}
           </div>
         </div>
-        <p className="assistant-composer-caption">
-          {ai.name} can make mistakes. <span><kbd>Shift+Enter</kbd> for a new line</span>
-        </p>
       </div>
     </div>
   );
@@ -972,7 +996,6 @@ export function Chatty() {
           </div>
           <div>
             <h1>{ai.name}</h1>
-            <p>Techsteal assistant</p>
           </div>
         </div>
 
@@ -993,38 +1016,51 @@ export function Chatty() {
         </div>
 
         <div className="assistant-rail-bottom">
-          <span className="assistant-connection"><span aria-hidden="true" /> Site knowledge connected</span>
           {user ? <div className="assistant-account"><Avatar name={user.username} src={user.avatarUrl} size="sm" /><div><strong>{user.username}</strong><span>{hasAccess ? "Member access" : "Verification needed"}</span></div><Link href="/settings" aria-label="Account settings"><i className="fa-solid fa-gear" /></Link></div> : <Link href="/login" className="assistant-rail-signin"><i className="fa-brands fa-discord" /> Sign in</Link>}
         </div>
       </aside>
 
       <section className="assistant-console">
         <div className="assistant-console-bar">
-          <div className="assistant-console-title">
-            <div>
-              <strong>Conversation</strong>
-            </div>
-          </div>
           <div className="assistant-console-actions">
-            <label className="assistant-model-picker">
-              <i className="fa-solid fa-microchip" aria-hidden="true" />
-              <span className="sr-only">Assistant model</span>
-              <select
-                value={selectedModel}
-                onChange={(event) => {
-                  if (isChatModelId(event.target.value)) setSelectedModel(event.target.value);
-                }}
+            <div className="model-menu" ref={modelRef}>
+              <button
+                type="button"
+                className={`model-menu-trigger ${modelOpen ? "is-open" : ""}`}
+                onClick={() => setModelOpen((open) => !open)}
                 disabled={typing}
-                aria-label="Assistant model"
+                aria-haspopup="listbox"
+                aria-expanded={modelOpen}
+                aria-label={`Assistant model: ${activeModel.label}`}
               >
-                {CHAT_MODELS.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.label}
-                  </option>
-                ))}
-              </select>
-              <i className="fa-solid fa-chevron-down" aria-hidden="true" />
-            </label>
+                <span className="model-menu-name">{activeModel.label}</span>
+                <span className="model-menu-tier">{activeModel.tier}</span>
+                <i className="fa-solid fa-chevron-down" aria-hidden="true" />
+              </button>
+              {modelOpen ? (
+                <div className="model-menu-list" role="listbox" aria-label="Assistant model">
+                  {CHAT_MODELS.map((model) => (
+                    <button
+                      key={model.id}
+                      type="button"
+                      role="option"
+                      aria-selected={model.id === selectedModel}
+                      className={`model-menu-item ${model.id === selectedModel ? "is-selected" : ""}`}
+                      onClick={() => {
+                        setSelectedModel(model.id);
+                        setModelOpen(false);
+                      }}
+                    >
+                      <span className="model-menu-name">{model.label}</span>
+                      <span className="model-menu-tier">{model.tier}</span>
+                      {model.id === selectedModel ? (
+                        <i className="fa-solid fa-check model-menu-check" aria-hidden="true" />
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             <button
               type="button"
               className={`assistant-search-toggle ${webSearchEnabled ? "is-on" : ""}`}

@@ -11,6 +11,8 @@ import { publicRow } from "@/lib/public-row";
 import { parseBodyId, parseRouteId } from "@/lib/route-ids";
 import { deleteImagesByUrl, extractStorageUrls } from "@/lib/storage";
 import { shouldCountView } from "@/lib/view-counter";
+import { markdownExcerpt } from "@/lib/excerpt";
+import { mentionRecipients, notify, notifyMany } from "@/lib/notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -31,54 +33,61 @@ export async function GET(
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
 
-  const threads = await db
-    .select()
-    .from(forumThreads)
-    .where(eq(forumThreads.id, threadId))
-    .limit(1);
-  if (threads.length === 0) {
-    return NextResponse.json({ error: "Thread not found" }, { status: 404 });
-  }
-
-  // Viewed by session user id or client IP (signed-out readers count too).
-  // rateLimitIp takes the LAST x-forwarded-for entry — the one our own edge
-  // appended. The first entry is client-controlled, so deduping on it let
-  // anyone inflate views by rotating a fake header value per request.
-  const user = await getSessionUser();
-  const viewer = user?.id ?? rateLimitIp(request);
-  let thread = threads[0];
-  if (shouldCountView("forum", threadId, viewer)) {
-    const [bumped] = await db
-      .update(forumThreads)
-      .set({ views: sql`${forumThreads.views} + 1` })
+  // A pooler blip must answer 503 JSON like the list routes, not escape as
+  // Next's generic HTML 500 (clients read that as "the server rejected you").
+  try {
+    const threads = await db
+      .select()
+      .from(forumThreads)
       .where(eq(forumThreads.id, threadId))
-      .returning({ views: forumThreads.views });
-    if (bumped) thread = { ...thread, views: bumped.views };
+      .limit(1);
+    if (threads.length === 0) {
+      return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+    }
+
+    // Viewed by session user id or client IP (signed-out readers count too).
+    // rateLimitIp takes the LAST x-forwarded-for entry — the one our own edge
+    // appended. The first entry is client-controlled, so deduping on it let
+    // anyone inflate views by rotating a fake header value per request.
+    const user = await getSessionUser();
+    const viewer = user?.id ?? rateLimitIp(request);
+    let thread = threads[0];
+    if (shouldCountView("forum", threadId, viewer)) {
+      const [bumped] = await db
+        .update(forumThreads)
+        .set({ views: sql`${forumThreads.views} + 1` })
+        .where(eq(forumThreads.id, threadId))
+        .returning({ views: forumThreads.views });
+      if (bumped) thread = { ...thread, views: bumped.views };
+    }
+
+    const replies = await db
+      .select()
+      .from(forumReplies)
+      .where(eq(forumReplies.threadId, threadId))
+      .orderBy(desc(forumReplies.pinned), asc(forumReplies.createdAt));
+
+    const avatars = await resolveAuthorAvatars([thread, ...replies]);
+    const enrich = (row: { authorId?: string | null; author?: string | null; color: string }) => {
+      const info = avatarInfoFor(avatars, row);
+      return { avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? row.color };
+    };
+
+    const poll = await serializePoll(db, threadId, user?.id ?? null).catch(() => null);
+
+    // `liked` is derived per viewer; raw liker ids stay server-side.
+    const likedOf = (row: { likedBy?: unknown }) =>
+      user ? ((row.likedBy as string[] | null) ?? []).includes(user.id) : false;
+
+    return NextResponse.json({
+      thread: { ...publicRow(thread), ...enrich(thread), liked: likedOf(thread), hasPoll: poll !== null },
+      replies: replies.map((r) => ({ ...publicRow(r), ...enrich(r), liked: likedOf(r) })),
+      poll,
+    });
+  } catch (err) {
+    console.error("api/forum/[id]: detail query failed", err);
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
-
-  const replies = await db
-    .select()
-    .from(forumReplies)
-    .where(eq(forumReplies.threadId, threadId))
-    .orderBy(desc(forumReplies.pinned), asc(forumReplies.createdAt));
-
-  const avatars = await resolveAuthorAvatars([thread, ...replies]);
-  const enrich = (row: { authorId?: string | null; author?: string | null; color: string }) => {
-    const info = avatarInfoFor(avatars, row);
-    return { avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? row.color };
-  };
-
-  const poll = await serializePoll(db, threadId, user?.id ?? null).catch(() => null);
-
-  // `liked` is derived per viewer; raw liker ids stay server-side.
-  const likedOf = (row: { likedBy?: unknown }) =>
-    user ? ((row.likedBy as string[] | null) ?? []).includes(user.id) : false;
-
-  return NextResponse.json({
-    thread: { ...publicRow(thread), ...enrich(thread), liked: likedOf(thread), hasPoll: poll !== null },
-    replies: replies.map((r) => ({ ...publicRow(r), ...enrich(r), liked: likedOf(r) })),
-    poll,
-  });
 }
 
 // Reply to a thread (must be signed in; thread must not be locked).
@@ -160,7 +169,7 @@ export async function POST(
   // to gain an orphaned reply on a dead thread (no FK constraints exist).
   const outcome = await db.transaction(async (tx) => {
     const [parent] = await tx
-      .select({ id: forumThreads.id, locked: forumThreads.locked })
+      .select({ id: forumThreads.id, locked: forumThreads.locked, authorId: forumThreads.authorId })
       .from(forumThreads)
       .where(eq(forumThreads.id, threadId))
       .limit(1)
@@ -188,7 +197,7 @@ export async function POST(
       .set({ replies: sql`${forumThreads.replies} + 1`, last: new Date().toISOString() })
       .where(eq(forumThreads.id, threadId));
 
-    return { reply: inserted };
+    return { reply: inserted, threadAuthorId: parent.authorId };
   });
   if ("error" in outcome) {
     return outcome.error === "locked"
@@ -199,6 +208,34 @@ export async function POST(
       : NextResponse.json({ error: "Thread not found" }, { status: 404 });
   }
   const reply = outcome.reply;
+
+  // Notify the thread author and any @mentions. Best-effort: these never block
+  // or roll back the reply itself (the helpers swallow their own errors). The
+  // thread author is excluded from mentions so they don't get two pings.
+  const excerpt = markdownExcerpt(content, 140);
+  await notify({
+    userId: outcome.threadAuthorId,
+    actorId: user.id,
+    actorName: username,
+    type: "reply",
+    threadId,
+    replyId: reply.id,
+    excerpt,
+  });
+  const mentioned = await mentionRecipients(content, user.id);
+  await notifyMany(
+    mentioned
+      .filter((id) => id !== outcome.threadAuthorId)
+      .map((id) => ({
+        userId: id,
+        actorId: user.id,
+        actorName: username,
+        type: "mention" as const,
+        threadId,
+        replyId: reply.id,
+        excerpt,
+      }))
+  );
 
   const avatars = await resolveAuthorAvatars([reply]);
   const info = avatarInfoFor(avatars, reply);
@@ -245,13 +282,14 @@ export async function PATCH(
   }
 
   // Scope by threadId too — the reply must belong to THIS thread's URL.
-  // Only a real boolean flips the flag (Boolean("false") is `true`).
-  if (body.pinned !== undefined && typeof body.pinned !== "boolean") {
+  // A real boolean is REQUIRED: an absent `pinned` used to fall through to
+  // Boolean(undefined) === false and silently unpin an admin-pinned reply.
+  if (typeof body.pinned !== "boolean") {
     return NextResponse.json({ error: "pinned must be a boolean" }, { status: 400 });
   }
   const rows = await db
     .update(forumReplies)
-    .set({ pinned: Boolean(body.pinned) })
+    .set({ pinned: body.pinned })
     .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
     .returning();
   if (rows.length === 0) {
@@ -353,7 +391,7 @@ export async function PUT(
     return NextResponse.json({ error: "Reply not found" }, { status: 404 });
   }
   if (removedEmbeds.length > 0) {
-    await deleteImagesByUrl(removedEmbeds);
+    await deleteImagesByUrl(removedEmbeds, { id: user.id, isAdmin: !isOwner });
   }
   const avatars = await resolveAuthorAvatars([rows[0]]);
   const info = avatarInfoFor(avatars, rows[0]);
@@ -406,9 +444,10 @@ export async function DELETE(
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
 
-  // Ownership check, scoped to this thread's URL.
+  // Ownership check, scoped to this thread's URL. Content comes along so the
+  // delete path can garbage-collect the reply's embedded images.
   const [reply] = await db
-    .select({ authorId: forumReplies.authorId })
+    .select({ authorId: forumReplies.authorId, content: forumReplies.content })
     .from(forumReplies)
     .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
     .limit(1);
@@ -446,6 +485,13 @@ export async function DELETE(
   });
   if (!deleted) {
     return NextResponse.json({ error: "Reply not found" }, { status: 404 });
+  }
+
+  // Same best-effort embed GC as the thread-delete path — without it every
+  // deleted reply orphaned its uploaded images in the bucket forever.
+  const embedUrls = extractStorageUrls(reply.content);
+  if (embedUrls.length > 0) {
+    await deleteImagesByUrl(embedUrls, { id: user.id, isAdmin: !isOwner });
   }
 
   return NextResponse.json({ ok: true });

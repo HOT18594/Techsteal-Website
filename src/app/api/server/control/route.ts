@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
-import { ACCOUNT_DB_ERROR_MESSAGE, canControlServer, findAccount } from "@/lib/accounts";
+import { ACCOUNT_DB_ERROR_MESSAGE, canControlServer, checkAdmin, findAccount } from "@/lib/accounts";
+import { logAudit } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { exarotonAction, getExarotonConfig } from "@/lib/exaroton";
 import { isRateLimited } from "@/lib/rate-limit";
+import { siteConfig } from "@/lib/site";
 import type { Account } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +24,12 @@ export const dynamic = "force-dynamic";
 // hosting credits, so a stuck loop must not churn the queue.
 
 export async function GET() {
+  // Control stays closed to players until the season publicly launches — but
+  // an admin needs to boot and stop the world while preparing it, so the
+  // pre-launch lock never applies to them.
+  if (!siteConfig.seasonLive && (await checkAdmin()) !== "yes") {
+    return NextResponse.json({ configured: getExarotonConfig() !== null, allowed: false });
+  }
   const user = await getSessionUser();
   // Signed out can't control anything — answer from the cookie alone and skip
   // the account lookup entirely.
@@ -56,6 +64,16 @@ export async function POST(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // Fail closed before launch — except for admins, who need the controls to
+  // prepare the season. Everyone else is refused even on a hand-crafted
+  // request, not just by the hidden UI.
+  if (!siteConfig.seasonLive && (await checkAdmin()) !== "yes") {
+    return NextResponse.json(
+      { error: `Server control opens when ${siteConfig.season} launches.` },
+      { status: 403 }
+    );
+  }
+
   if (isRateLimited(`control:${user.id}`, 6, 60_000)) {
     return NextResponse.json(
       { error: "Too many control requests — wait a minute." },
@@ -83,10 +101,27 @@ export async function POST(request: NextRequest) {
   try {
     await exarotonAction(action);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Server control failed.";
-    const status = /not configured/i.test(msg) ? 503 : 502;
-    return NextResponse.json({ error: msg }, { status });
+    // Technical detail (env var names, fetch errors) stays in the server log —
+    // the client gets a short, warm message.
+    console.error("server control: action failed", err);
+    const notConfigured = err instanceof Error && /not configured/i.test(err.message);
+    return NextResponse.json(
+      {
+        error: notConfigured
+          ? "Server control isn't set up yet."
+          : "The server didn't respond — try again in a moment.",
+      },
+      { status: notConfigured ? 503 : 502 }
+    );
   }
+
+  await logAudit({
+    actorId: user.id,
+    actorName: user.username,
+    action: action === "start" ? "server_start" : "server_stop",
+    targetName: siteConfig.address,
+    detail: action === "start" ? "Started the Minecraft server" : "Stopped the Minecraft server",
+  });
 
   return NextResponse.json({ ok: true, action });
 }

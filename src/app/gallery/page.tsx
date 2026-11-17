@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fallbackGallery } from "@/lib/fallback-data";
-import { GALLERY_CATEGORIES } from "@/lib/storage";
+import { GALLERY_CATEGORIES } from "@/lib/gallery-categories";
 import { compressImage, MAX_UPLOAD_BYTES } from "@/lib/imaging";
 import { xhrUpload } from "@/lib/xhr-upload";
 import { categoryClass } from "@/lib/forum-categories";
@@ -93,6 +93,26 @@ export default function GalleryPage() {
   // not fire a second DELETE that 404s and toasts an error over the success.
   const [busyCommentId, setBusyCommentId] = useState<number | null>(null);
   const [busyLike, setBusyLike] = useState<number | null>(null);
+
+  // Deep link: /gallery?item=<id> opens that post's lightbox — used by profile
+  // build tiles and gallery notifications. Read the param once on mount, then
+  // wait for the grid to load so the id resolves to a real post. `done` keeps
+  // it from reopening after the visitor closes it (or on every local patch).
+  const deepLinkItem = useRef<number | null>(null);
+  const deepLinkDone = useRef(false);
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search).get("item");
+    const id = raw ? Number.parseInt(raw, 10) : NaN;
+    deepLinkItem.current = Number.isFinite(id) ? id : null;
+  }, []);
+  useEffect(() => {
+    if (deepLinkDone.current || deepLinkItem.current === null) return;
+    const target = displayItems.find((g) => g.id === deepLinkItem.current);
+    if (target?.id) {
+      setViewing({ itemId: target.id, image: 0 });
+      deepLinkDone.current = true;
+    }
+  }, [displayItems]);
 
   const categories = useMemo(() => {
     const set = new Set(displayItems.map((i) => i.category));

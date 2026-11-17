@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { CSSProperties } from "react";
+import type { CSSProperties, KeyboardEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SubPage } from "@/components/SubPage";
 import { useToast } from "@/components/Toast";
@@ -9,6 +9,7 @@ import { useCopyAddress } from "@/components/CopyIpButton";
 import { fallbackStatus } from "@/lib/fallback-data";
 import { minotarUrl } from "@/lib/minotar";
 import { siteConfig } from "@/lib/site";
+import { timeAgo } from "@/lib/time";
 import { useApi } from "@/lib/use-api";
 import { useSession } from "@/lib/use-session";
 import type { ServerStatus, ServerTelemetry, ServerTelemetryLine } from "@/types";
@@ -35,6 +36,14 @@ const EMPTY_TELEMETRY: ServerTelemetry = {
 
 type ActivityPoint = { at: number; players: number; max: number };
 type ConsoleFilter = "all" | ServerTelemetryLine["level"];
+type TabId = "overview" | "players" | "console" | "manage";
+
+const TAB_META: Record<TabId, { label: string; icon: string }> = {
+  overview: { label: "Overview", icon: "fa-gauge-high" },
+  players: { label: "Players", icon: "fa-user-group" },
+  console: { label: "Console", icon: "fa-terminal" },
+  manage: { label: "Manage", icon: "fa-sliders" },
+};
 
 function styleFor(status: ServerStatus) {
   if (status.source !== "live") return STATE_STYLE.unknown;
@@ -74,34 +83,109 @@ function ActivityChart({ points, max }: { points: ActivityPoint[]; max: number }
 }
 
 function ConsolePanel({ telemetry, loading }: { telemetry: ServerTelemetry; loading: boolean }) {
+  const { show } = useToast();
   const [filter, setFilter] = useState<ConsoleFilter>("all");
+  const [query, setQuery] = useState("");
+  // "Pinned" = glued to the newest line. Scrolling up unpins so a live
+  // refresh never yanks the view away from a line being read.
+  const [pinned, setPinned] = useState(true);
+  const screenRef = useRef<HTMLDivElement>(null);
+
+  const counts = useMemo(() => {
+    const c: Record<ConsoleFilter, number> = { all: telemetry.lines.length, info: 0, warning: 0, error: 0, chat: 0 };
+    for (const line of telemetry.lines) c[line.level] += 1;
+    return c;
+  }, [telemetry.lines]);
+
+  const visibleLines = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return telemetry.lines.filter(
+      (line) => (filter === "all" || line.level === filter) && (!q || line.text.toLowerCase().includes(q))
+    );
+  }, [telemetry.lines, filter, query]);
+
+  useEffect(() => {
+    const el = screenRef.current;
+    if (el && pinned) el.scrollTop = el.scrollHeight;
+  }, [visibleLines, pinned]);
+
+  const onScroll = () => {
+    const el = screenRef.current;
+    if (!el) return;
+    setPinned(el.scrollHeight - el.scrollTop - el.clientHeight < 40);
+  };
+
+  const jumpToLatest = () => {
+    setPinned(true);
+    const el = screenRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  };
+
+  const copyLines = async () => {
+    try {
+      await navigator.clipboard.writeText(visibleLines.map((line) => line.text).join("\n"));
+      show("Console copied", `${visibleLines.length} line${visibleLines.length === 1 ? "" : "s"} on your clipboard.`);
+    } catch {
+      show("Couldn’t copy", "Your browser blocked clipboard access.", "error");
+    }
+  };
+
   const filters: Array<{ id: ConsoleFilter; label: string }> = [
     { id: "all", label: "All" }, { id: "info", label: "Info" },
     { id: "warning", label: "Warnings" }, { id: "error", label: "Errors" }, { id: "chat", label: "Chat" },
   ];
-  const visibleLines = telemetry.lines.filter((line) => filter === "all" || line.level === filter).slice(-16);
+  const live = telemetry.source === "live";
+  const filtered = filter !== "all" || query.trim().length > 0;
+
   return (
     <section className="ops-panel ops-console" aria-labelledby="console-title">
       <div className="ops-panel-head">
         <h2 id="console-title">Server console</h2>
-        <span className="ops-label"><span className={`ops-dot ${telemetry.source === "live" ? "is-live" : ""}`} />
-          {loading ? "Connecting" : telemetry.source === "live" ? "Live snapshot" : "Unavailable"}</span>
+        <span className="ops-label"><span className={`ops-dot ${live ? "is-live" : ""}`} />
+          {loading ? "Connecting" : live ? "Live snapshot" : "Unavailable"}</span>
       </div>
-      <div className="ops-console-toolbar" aria-label="Filter console lines">
-        {filters.map((item) => <button key={item.id} type="button" aria-pressed={filter === item.id}
-          className={filter === item.id ? "active" : ""} onClick={() => setFilter(item.id)}>{item.label}</button>)}
+      <div className="ops-console-tools">
+        <div className="ops-console-toolbar" role="group" aria-label="Filter console lines by level">
+          {filters.map((item) => (
+            <button key={item.id} type="button" aria-pressed={filter === item.id}
+              className={filter === item.id ? "active" : ""} onClick={() => setFilter(item.id)}>
+              {item.label}<span className="ops-chip-count">{counts[item.id]}</span>
+            </button>
+          ))}
+        </div>
+        <label className="ops-console-search">
+          <i className="fa-solid fa-magnifying-glass" aria-hidden="true" />
+          <input type="search" value={query} placeholder="Search the log…"
+            aria-label="Search console lines" onChange={(event) => setQuery(event.target.value)} />
+        </label>
+        <button type="button" className="ops-console-copy" onClick={() => void copyLines()} disabled={visibleLines.length === 0}>
+          <i className="fa-regular fa-copy" aria-hidden="true" /> Copy
+        </button>
       </div>
-      <div className="ops-console-screen thin-scroll" role="log" aria-live="off" aria-label="Recent server console output">
-        {visibleLines.length ? visibleLines.map((line) => (
-          <div key={line.id} className={`ops-console-line ops-console-${line.level}`}>
-            <span className="ops-log-level">{line.level}</span><code>{line.text}</code>
-          </div>
-        )) : <div className="ops-empty-console"><i className="fa-solid fa-terminal" aria-hidden="true" />
-          <strong>{telemetry.source === "live" ? `No ${filter === "all" ? "recent" : filter} messages` : "Console unavailable"}</strong>
-          <p>{telemetry.source === "live" ? "New output appears on the next refresh." : "Waiting for a connection to the hosting panel."}</p>
-        </div>}
+      <div className="ops-console-wrap">
+        <div ref={screenRef} onScroll={onScroll} className="ops-console-screen tall thin-scroll" role="log" aria-live="off" aria-label="Recent server console output">
+          {visibleLines.length ? visibleLines.map((line) => (
+            <div key={line.id} className={`ops-console-line ops-console-${line.level}`}>
+              <span className="ops-log-level">{line.level}</span><code>{line.text}</code>
+            </div>
+          )) : <div className="ops-empty-console"><i className="fa-solid fa-terminal" aria-hidden="true" />
+            <strong>{live ? (filtered ? "No lines match" : "No recent messages") : "Console unavailable"}</strong>
+            <p>{live
+              ? filtered ? "Try a different level or search term." : "New output appears on the next refresh."
+              : "Waiting for a connection to the hosting panel."}</p>
+          </div>}
+        </div>
+        {!pinned && visibleLines.length > 0 ? (
+          <button type="button" className="ops-console-jump" onClick={jumpToLatest}>
+            <i className="fa-solid fa-arrow-down" aria-hidden="true" /> Latest
+          </button>
+        ) : null}
       </div>
-      <div className="ops-console-footer"><span>Read-only</span><span>Refreshes every 45s</span></div>
+      <div className="ops-console-footer">
+        <span>Read-only</span>
+        <span>Refreshes every 45s</span>
+        <span>{telemetry.sampledAt ? `Sampled ${timeAgo(telemetry.sampledAt)}` : "No sample yet"}</span>
+      </div>
     </section>
   );
 }
@@ -109,12 +193,16 @@ function ConsolePanel({ telemetry, loading }: { telemetry: ServerTelemetry; load
 export default function StatusPage() {
   const { show } = useToast();
   const { user, loading: sessionLoading } = useSession();
+  const isAdmin = user?.role === "admin";
   const { data: status, refetch, loading: statusLoading } = useApi<ServerStatus>("/api/status", fallbackStatus);
+  // Admin-only endpoint: non-admins never fetch it (no 401 polling noise),
+  // and the Console tab stays hidden for them.
   const {
     data: telemetry,
     refetch: refetchTelemetry,
     loading: telemetryLoading,
-  } = useApi<ServerTelemetry>("/api/server/telemetry", EMPTY_TELEMETRY);
+  } = useApi<ServerTelemetry>("/api/server/telemetry", EMPTY_TELEMETRY, isAdmin);
+  const [tab, setTab] = useState<TabId>("overview");
   const [refreshing, setRefreshing] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [now, setNow] = useState<number | null>(null);
@@ -141,8 +229,36 @@ export default function StatusPage() {
     [statusLive, status.playerList]
   );
 
+  const tabs = useMemo(() => {
+    const list: TabId[] = ["overview", "players"];
+    if (isAdmin) list.push("console");
+    if (control?.allowed && siteConfig.seasonLive) list.push("manage");
+    return list;
+  }, [isAdmin, control]);
+
+  // Signing out (or losing control access) while on a gated tab must not
+  // strand the visitor on a panel they can no longer use.
+  useEffect(() => {
+    if (!tabs.includes(tab)) setTab("overview");
+  }, [tabs, tab]);
+
+  const onTabListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const index = tabs.indexOf(tab);
+    let next = -1;
+    if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
+    else if (event.key === "ArrowLeft") next = (index - 1 + tabs.length) % tabs.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = tabs.length - 1;
+    if (next >= 0) {
+      event.preventDefault();
+      setTab(tabs[next]);
+      document.getElementById(`ops-tab-${tabs[next]}`)?.focus();
+    }
+  };
+
   const refreshControl = useCallback(() => {
-    if (sessionLoading) return;
+    // Control is hidden until the season launches — don't even probe access.
+    if (!siteConfig.seasonLive || sessionLoading) return;
     const seq = ++controlSeq.current;
     setControlError(false);
     fetch("/api/server/control")
@@ -174,9 +290,10 @@ export default function StatusPage() {
   }, [refetch, transitional]);
 
   useEffect(() => {
+    if (!isAdmin) return;
     const id = setInterval(() => void refetchTelemetry(), 45_000);
     return () => clearInterval(id);
-  }, [refetchTelemetry]);
+  }, [isAdmin, refetchTelemetry]);
 
   useEffect(() => {
     setUpdatedAt(Date.now());
@@ -213,7 +330,7 @@ export default function StatusPage() {
   const refreshAll = async () => {
     if (refreshing) return;
     setRefreshing(true);
-    await Promise.all([refetch(), refetchTelemetry()]);
+    await Promise.all([refetch(), ...(isAdmin ? [refetchTelemetry()] : [])]);
     refreshControl();
     setRefreshing(false);
   };
@@ -253,11 +370,17 @@ export default function StatusPage() {
         ? `${players} ${players === 1 ? "player is" : "players are"} online, but the server is not sharing names.`
         : "The realm is online and quiet right now.";
 
+  const tabBadge = (id: TabId): number | null => {
+    if (id === "players" && statusLive) return players;
+    if (id === "console" && telemetry.source === "live") return telemetry.lines.length;
+    return null;
+  };
+
   return (
     <SubPage className="max-w-[1320px]">
       <div className="ops-dashboard" style={{ "--ops-state": stateStyle.color } as CSSProperties}>
         <header className="ops-page-head">
-          <div><span className="ops-eyebrow">Techsteal / Java realm</span><h1>Server status</h1></div>
+          <div><span className="ops-eyebrow">Techsteal / {siteConfig.season} · Java realm</span><h1>Server status</h1></div>
           <div className="ops-page-actions">
             <span className="ops-freshness">{freshness}</span>
             <button className="ops-button" onClick={() => void refreshAll()} disabled={refreshing}>
@@ -285,26 +408,60 @@ export default function StatusPage() {
           </div>
         </section>
 
-        <section className="ops-metrics" aria-label="Server overview">
-          <div><span>Players online</span><strong>{statusLive ? players : "—"}<small> / {max}</small></strong><span>{statusLive ? `${freeSlots} slots available` : "Live data unavailable"}</span></div>
-          <div><span>Memory allocated</span><strong>{telemetry.source === "live" ? telemetry.ramGb ?? "—" : "—"}<small>{telemetry.source === "live" && telemetry.ramGb !== null ? " GB" : ""}</small></strong><span>{telemetry.source === "live" ? "Host allocation" : "Telemetry unavailable"}</span></div>
-          <div><span>Minecraft version</span><strong className="ops-metric-text">{version}</strong><span>{software}{!statusLive ? " · configured" : ""}</span></div>
-          <div><span>Access</span><strong className="ops-metric-text">Whitelist</strong><span>Members only</span></div>
-        </section>
+        <div className="ops-tabs" role="tablist" aria-label="Server information" onKeyDown={onTabListKeyDown}>
+          {tabs.map((id) => {
+            const badge = tabBadge(id);
+            return (
+              <button key={id} id={`ops-tab-${id}`} type="button" role="tab"
+                aria-selected={tab === id} aria-controls={`ops-panel-${id}`} tabIndex={tab === id ? 0 : -1}
+                className={`ops-tab ${tab === id ? "is-active" : ""}`} onClick={() => setTab(id)}>
+                <i className={`fa-solid ${TAB_META[id].icon}`} aria-hidden="true" />
+                {TAB_META[id].label}
+                {badge !== null ? <span className="ops-tab-badge">{badge}</span> : null}
+              </button>
+            );
+          })}
+        </div>
 
-        <div className="ops-content-grid">
-          <div className="ops-main">
-            <section className="ops-panel" aria-labelledby="activity-title">
-              <div className="ops-panel-head"><h2 id="activity-title">Player activity</h2></div>
-              <ActivityChart points={activity} max={max} />
+        {tab === "overview" ? (
+          <div id="ops-panel-overview" role="tabpanel" aria-labelledby="ops-tab-overview" className="ops-tabpanel">
+            <section className="ops-metrics" aria-label="Server overview">
+              <div><span>Players online</span><strong>{statusLive ? players : "—"}<small> / {max}</small></strong><span>{statusLive ? `${freeSlots} slots available` : "Live data unavailable"}</span></div>
+              {isAdmin ? (
+                <div><span>Memory allocated</span><strong>{telemetry.source === "live" ? telemetry.ramGb ?? "—" : "—"}<small>{telemetry.source === "live" && telemetry.ramGb !== null ? " GB" : ""}</small></strong><span>{telemetry.source === "live" ? "Host allocation" : "Telemetry unavailable"}</span></div>
+              ) : (
+                <div><span>Current season</span><strong className="ops-metric-text">{siteConfig.season}</strong><span>Fresh world · {siteConfig.previousSeason} concluded</span></div>
+              )}
+              <div><span>Minecraft version</span><strong className="ops-metric-text">{version}</strong><span>{software}{!statusLive ? " · configured" : ""}</span></div>
+              <div><span>Access</span><strong className="ops-metric-text">Whitelist</strong><span>Members only</span></div>
             </section>
 
+            <div className="ops-content-grid">
+              <div className="ops-main">
+                <section className="ops-panel" aria-labelledby="activity-title">
+                  <div className="ops-panel-head"><h2 id="activity-title">Player activity</h2></div>
+                  <ActivityChart points={activity} max={max} />
+                </section>
+              </div>
+              <aside className="ops-side" aria-label="Server details">
+                <section className="ops-panel" aria-labelledby="connection-title">
+                  <div className="ops-panel-head"><h2 id="connection-title">Server details</h2><i className="fa-solid fa-server" aria-hidden="true" /></div>
+                  <dl className="ops-details"><div><dt>Edition</dt><dd>Java</dd></div><div><dt>Software</dt><dd>{software}</dd></div><div><dt>Version</dt><dd>{version}</dd></div><div><dt>Difficulty</dt><dd>{siteConfig.difficulty}</dd></div><div><dt>Whitelist</dt><dd>{siteConfig.whitelist}</dd></div><div><dt>Region</dt><dd>{siteConfig.location}</dd></div><div><dt>Status refresh</dt><dd>{transitional ? "12 seconds" : "30 seconds"}</dd></div></dl>
+                </section>
+                <div className="ops-source-note"><i className={`fa-solid ${statusLive ? "fa-circle-check" : "fa-circle-info"}`} aria-hidden="true" /><p>{statusLive ? "Status from the server host. Updates automatically." : "The host is unavailable. Configuration details may be defaults."}</p></div>
+              </aside>
+            </div>
+          </div>
+        ) : null}
+
+        {tab === "players" ? (
+          <div id="ops-panel-players" role="tabpanel" aria-labelledby="ops-tab-players" className="ops-tabpanel">
             <section className="ops-panel" aria-labelledby="roster-title">
               <div className="ops-panel-head"><h2 id="roster-title">Online players</h2><span className="ops-label">{statusLive ? `${players} / ${max}` : "Unavailable"}</span></div>
               <div className="ops-roster-body">
                 {statusLive ? <><div className="ops-capacity-track" role="img" aria-label={`${players} of ${max} player slots occupied`}><span style={{ width: `${capacityPct}%` }} /></div><div className="ops-capacity-labels"><span>{capacityPct}% occupied</span><span>{freeSlots} slots open</span></div></> : null}
                 {statusLive && online && playerList.length ? (
-                  <div className="ops-player-grid">
+                  <div className="ops-player-grid wide">
                     {playerList.map((name) => <div key={name} className="ops-player">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={minotarUrl(name)} alt="" loading="lazy" width={32} height={32} /><strong>{name}</strong><span className="ops-dot is-live" aria-label="Online" />
@@ -312,33 +469,64 @@ export default function StatusPage() {
                     {playerList.length < players ? <p className="ops-helper">{players} online; {playerList.length} names shared by the server.</p> : null}
                   </div>
                 ) : <div className="ops-roster-empty"><i className="fa-solid fa-user-group" aria-hidden="true" /><p>{rosterMessage}</p></div>}
+                <p className="ops-helper">Names come live from the server host. <Link href="/members" className="ops-inline-link">Meet the community <i className="fa-solid fa-arrow-right" aria-hidden="true" /></Link></p>
               </div>
             </section>
+          </div>
+        ) : null}
 
+        {tab === "console" && isAdmin ? (
+          <div id="ops-panel-console" role="tabpanel" aria-labelledby="ops-tab-console" className="ops-tabpanel">
             <ConsolePanel telemetry={telemetry} loading={telemetryLoading} />
           </div>
+        ) : null}
 
-          <aside className="ops-side" aria-label="Server details and controls">
-            <section className="ops-panel" aria-labelledby="control-title">
-              <div className="ops-panel-head"><h2 id="control-title">Server controls</h2><i className="fa-solid fa-sliders" aria-hidden="true" /></div>
-              <div className="ops-control-body">
-                {control === null ? controlError ? <div className="ops-control-message"><p>Couldn’t check your access.</p><button className="ops-text-button" onClick={refreshControl}>Retry access check <i className="fa-solid fa-arrow-right" aria-hidden="true" /></button></div>
-                  : <p className="ops-helper"><i className="fa-solid fa-spinner fa-spin" aria-hidden="true" /> Checking your access…</p>
-                : !control.configured ? <div className="ops-control-message"><span className="ops-control-icon"><i className="fa-solid fa-lock" aria-hidden="true" /></span><p>Host controls are not connected.</p></div>
-                : control.allowed ? <>
-                  <div className="ops-control-buttons"><button onClick={() => void runControl("start")} disabled={controlBusy !== null || !canStart}><i className={`fa-solid ${controlBusy === "start" ? "fa-spinner fa-spin" : "fa-play"}`} aria-hidden="true" /> Start server</button><button className="stop" onClick={() => void runControl("stop")} disabled={controlBusy !== null || !canStop}><i className={`fa-solid ${controlBusy === "stop" ? "fa-spinner fa-spin" : "fa-stop"}`} aria-hidden="true" /> Stop</button></div>
-                  <p className="ops-helper">{transitional ? "An operation is in progress." : !statusLive ? "Controls require live server status." : online ? "The server is accepting players." : "Ready to start."}</p>
-                </> : <div className="ops-control-message"><span className="ops-control-icon"><i className="fa-solid fa-lock" aria-hidden="true" /></span><p>{user ? "Verify your membership to access server controls." : "Sign in to manage the server."}</p><Link className="ops-button ops-control-link" href={user ? "/settings" : "/login"}>{user ? "Verify membership" : "Sign in with Discord"}<i className="fa-solid fa-arrow-right" aria-hidden="true" /></Link></div>}
+        {tab === "manage" && control?.allowed && siteConfig.seasonLive ? (
+          <div id="ops-panel-manage" role="tabpanel" aria-labelledby="ops-tab-manage" className="ops-tabpanel">
+            <div className="ops-content-grid">
+              <div className="ops-main">
+                <section className="ops-panel" aria-labelledby="control-title">
+                  <div className="ops-panel-head"><h2 id="control-title">Server controls</h2><i className="fa-solid fa-sliders" aria-hidden="true" /></div>
+                  <div className="ops-control-body">
+                    <div className="ops-control-buttons"><button onClick={() => void runControl("start")} disabled={controlBusy !== null || !canStart}><i className={`fa-solid ${controlBusy === "start" ? "fa-spinner fa-spin" : "fa-play"}`} aria-hidden="true" /> Start server</button><button className="stop" onClick={() => void runControl("stop")} disabled={controlBusy !== null || !canStop}><i className={`fa-solid ${controlBusy === "stop" ? "fa-spinner fa-spin" : "fa-stop"}`} aria-hidden="true" /> Stop</button></div>
+                    <p className="ops-helper">{transitional ? "An operation is in progress." : !statusLive ? "Controls require live server status." : online ? "The server is accepting players." : "Ready to start."}</p>
+                    <p className="ops-helper">Every start/stop costs hosting credits and is rate-limited. Stopping disconnects all players — the world is saved first.</p>
+                  </div>
+                </section>
               </div>
-            </section>
+              <aside className="ops-side" aria-label="Control access">
+                <section className="ops-panel" aria-labelledby="access-title">
+                  <div className="ops-panel-head"><h2 id="access-title">Who can manage</h2><i className="fa-solid fa-key" aria-hidden="true" /></div>
+                  <div className="ops-control-body">
+                    <ul className="ops-access-list">
+                      <li><i className="fa-solid fa-circle-check" aria-hidden="true" /> Admins — always</li>
+                      <li><i className="fa-solid fa-circle-check" aria-hidden="true" /> Members verified in the official Discord</li>
+                      <li><i className="fa-solid fa-circle-check" aria-hidden="true" /> Anyone granted the server-control permission</li>
+                    </ul>
+                    <p className="ops-helper">Access is re-checked against the member database on every action, so it stays accurate even if a session is old.</p>
+                  </div>
+                </section>
+                <div className="ops-source-note"><i className="fa-solid fa-circle-check" aria-hidden="true" /><p>Connected to the hosting panel. Controls act on the {siteConfig.season} server.</p></div>
+              </aside>
+            </div>
+          </div>
+        ) : null}
 
-            <section className="ops-panel" aria-labelledby="connection-title">
-              <div className="ops-panel-head"><h2 id="connection-title">Server details</h2><i className="fa-solid fa-server" aria-hidden="true" /></div>
-              <dl className="ops-details"><div><dt>Edition</dt><dd>Java</dd></div><div><dt>Software</dt><dd>{software}</dd></div><div><dt>Version</dt><dd>{version}</dd></div><div><dt>Difficulty</dt><dd>{siteConfig.difficulty}</dd></div><div><dt>Whitelist</dt><dd>{siteConfig.whitelist}</dd></div><div><dt>Region</dt><dd>{siteConfig.location}</dd></div><div><dt>Status refresh</dt><dd>{transitional ? "12 seconds" : "30 seconds"}</dd></div></dl>
-            </section>
-            <div className="ops-source-note"><i className={`fa-solid ${statusLive ? "fa-circle-check" : "fa-circle-info"}`} aria-hidden="true" /><p>{statusLive ? "Status from the server host. Updates automatically." : "The host is unavailable. Configuration details may be defaults."}</p></div>
-          </aside>
-        </div>
+        {/* Visitors without control access still get a way in (or a retry). */}
+        {siteConfig.seasonLive && control !== null && control.configured && !control.allowed ? (
+          <div className="ops-access-cta">
+            <i className="fa-solid fa-lock" aria-hidden="true" />
+            <p>{user ? "Verify your Discord membership to unlock server controls." : "Sign in to manage the server."}</p>
+            <Link className="ops-button" href={user ? "/settings" : "/login"}>{user ? "Verify membership" : "Sign in with Discord"}<i className="fa-solid fa-arrow-right" aria-hidden="true" /></Link>
+          </div>
+        ) : null}
+        {siteConfig.seasonLive && control === null && controlError ? (
+          <div className="ops-access-cta">
+            <i className="fa-solid fa-circle-info" aria-hidden="true" />
+            <p>Couldn’t check your control access.</p>
+            <button className="ops-button" onClick={refreshControl}>Retry access check</button>
+          </div>
+        ) : null}
       </div>
     </SubPage>
   );

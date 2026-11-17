@@ -1,5 +1,3 @@
-"use client";
-
 import Link from "next/link";
 import { siteConfig } from "@/lib/site";
 import { CopyIpButton } from "@/components/CopyIpButton";
@@ -8,7 +6,7 @@ import { SubPage } from "@/components/SubPage";
 const STEPS = [
   {
     title: "Open Minecraft",
-    detail: "Make sure you're on the right version — the server runs on Java Edition.",
+    detail: `Make sure you're on the right version — the server runs Java Edition ${siteConfig.version} (${siteConfig.software}).`,
   },
   {
     title: "Go to Multiplayer",

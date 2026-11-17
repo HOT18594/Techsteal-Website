@@ -30,6 +30,9 @@ next-env.d.ts
 # one-off secret handoff file (secrets.env at repo root â€” unrelated to dotenv)
 secrets.env
 .git-token
+# agent handoff bundle (live secrets — never commit; repo is public)
+handoff/
+techsteal-handoff.zip
 # deployment tooling secrets reference (CODES.md lists values â€” keep local)
 scripts/CODES.md
 # keep ignoring any env variant (incl. .env.example copies)

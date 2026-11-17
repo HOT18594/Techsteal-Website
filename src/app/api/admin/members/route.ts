@@ -2,12 +2,14 @@ import { NextResponse } from "next/server";
 import {
   addPermissions,
   checkAdmin,
+  findAccount,
   listAccounts,
   removeAccount,
   removePermissions,
   updateAccount,
 } from "@/lib/accounts";
 import { getSessionUser } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 import type { Permission } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -130,6 +132,29 @@ export async function POST(request: Request) {
     );
   }
   if (!updated) return NextResponse.json({ error: "Account not found" }, { status: 404 });
+
+  // Record each privileged change against the actor and target. Best-effort:
+  // logAudit never throws, so a trail failure can't undo a committed change.
+  const actor = { actorId: admin.id, actorName: admin.username };
+  const target = { targetId: id, targetName: updated.username };
+  if (patch.role !== undefined) {
+    await logAudit({ ...actor, ...target, action: "role_change", detail: `Role set to ${updated.role}` });
+  }
+  if (grant.length > 0) {
+    await logAudit({ ...actor, ...target, action: "permission_grant", detail: grant.join(", ") });
+  }
+  if (revoke.length > 0) {
+    await logAudit({ ...actor, ...target, action: "permission_revoke", detail: revoke.join(", ") });
+  }
+  if (patch.permissions !== undefined) {
+    await logAudit({
+      ...actor,
+      ...target,
+      action: "permissions_set",
+      detail: patch.permissions.length ? patch.permissions.join(", ") : "Cleared all permissions",
+    });
+  }
+
   return NextResponse.json({ account: updated });
 }
 
@@ -149,12 +174,16 @@ export async function DELETE(request: Request) {
   }
 
   let removed: boolean;
+  let targetName = "";
   try {
+    // Read the name before banning so the audit trail records who was removed.
+    targetName = (await findAccount(id))?.username ?? "";
     removed = await removeAccount(id);
   } catch {
     return NextResponse.json(DB_DOWN, { status: 503 });
   }
   if (!removed) return NextResponse.json({ error: "Account not found" }, { status: 404 });
+  await logAudit({ actorId: admin.id, actorName: admin.username, action: "ban", targetId: id, targetName });
   return NextResponse.json({ ok: true });
 }
 
@@ -177,6 +206,13 @@ export async function PUT(request: Request) {
     return NextResponse.json(DB_DOWN, { status: 503 });
   }
   if (!restored) return NextResponse.json({ error: "Account not found" }, { status: 404 });
+  await logAudit({
+    actorId: guard.admin.id,
+    actorName: guard.admin.username,
+    action: "unban",
+    targetId: id,
+    targetName: restored.username,
+  });
   return NextResponse.json({ account: restored });
 }
 

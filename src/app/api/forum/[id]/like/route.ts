@@ -8,6 +8,8 @@ import { isRateLimited } from "@/lib/rate-limit";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { publicRow } from "@/lib/public-row";
 import { parseRouteId } from "@/lib/route-ids";
+import { markdownExcerpt } from "@/lib/excerpt";
+import { notify } from "@/lib/notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -71,12 +73,63 @@ export async function POST(
   // Locking read + write inside a transaction: two simultaneous "like"
   // clicks used to both read the old likedBy, both append the id, and
   // one vote would silently vanish. `FOR UPDATE` serializes them.
-  if (replyId !== null) {
+  // A pooler blip answers 503 JSON, never Next's generic HTML 500.
+  try {
+    if (replyId !== null) {
+      const updated = await db.transaction(async (tx) => {
+        const locked = await tx
+          .select()
+          .from(forumReplies)
+          .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
+          .for("update")
+          .limit(1);
+        if (locked.length === 0) return null;
+        const currentLikedBy = (locked[0].likedBy ?? []) as string[];
+        const already = currentLikedBy.includes(user.id);
+        const updatedLikedBy = already
+          ? currentLikedBy.filter((x) => x !== user.id)
+          : [...currentLikedBy, user.id];
+        const [row] = await tx
+          .update(forumReplies)
+          .set({ likedBy: updatedLikedBy, likes: updatedLikedBy.length })
+          .where(eq(forumReplies.id, replyId))
+          .returning();
+        return row;
+      });
+      if (!updated) {
+        return NextResponse.json({ error: "Reply not found" }, { status: 404 });
+      }
+
+      const avatars = await resolveAuthorAvatars([updated]);
+      const info = avatarInfoFor(avatars, updated);
+      const liked = (updated.likedBy ?? []).includes(user.id);
+      if (liked) {
+        await notify({
+          userId: updated.authorId,
+          actorId: user.id,
+          actorName: gate.account?.username ?? user.username,
+          type: "like",
+          threadId,
+          replyId: updated.id,
+          excerpt: markdownExcerpt(updated.content, 140),
+        });
+      }
+      return NextResponse.json({
+        // `color` must be resolved like the thread-detail GET does — the raw
+        // column default would visibly repaint the author's avatar tile when
+        // the client swaps this object into its list.
+        reply: { ...publicRow(updated), avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? updated.color },
+        // Derived from the DB's final state — true if the user's id is in it.
+        liked,
+      });
+    }
+
+    // Thread like.
     const updated = await db.transaction(async (tx) => {
       const locked = await tx
         .select()
-        .from(forumReplies)
-        .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
+        .from(forumThreads)
+        .where(eq(forumThreads.id, threadId))
         .for("update")
         .limit(1);
       if (locked.length === 0) return null;
@@ -86,55 +139,33 @@ export async function POST(
         ? currentLikedBy.filter((x) => x !== user.id)
         : [...currentLikedBy, user.id];
       const [row] = await tx
-        .update(forumReplies)
+        .update(forumThreads)
         .set({ likedBy: updatedLikedBy, likes: updatedLikedBy.length })
-        .where(eq(forumReplies.id, replyId))
+        .where(eq(forumThreads.id, threadId))
         .returning();
       return row;
     });
     if (!updated) {
-      return NextResponse.json({ error: "Reply not found" }, { status: 404 });
+      return NextResponse.json({ error: "Thread not found" }, { status: 404 });
     }
 
-    const avatars = await resolveAuthorAvatars([updated]);
-    const info = avatarInfoFor(avatars, updated);
+    const liked = (updated.likedBy ?? []).includes(user.id);
+    if (liked) {
+      await notify({
+        userId: updated.authorId,
+        actorId: user.id,
+        actorName: gate.account?.username ?? user.username,
+        type: "like",
+        threadId,
+        excerpt: updated.title,
+      });
+    }
     return NextResponse.json({
-      // `color` must be resolved like the thread-detail GET does — the raw
-      // column default would visibly repaint the author's avatar tile when
-      // the client swaps this object into its list.
-      reply: { ...publicRow(updated), avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? updated.color },
-      // Derived from the DB's final state — true if the user's id is in it.
-      liked: (updated.likedBy ?? []).includes(user.id),
+      thread: publicRow(updated),
+      liked,
     });
+  } catch (err) {
+    console.error("api/forum/[id]/like: transaction failed", err);
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
-
-  // Thread like.
-  const updated = await db.transaction(async (tx) => {
-    const locked = await tx
-      .select()
-      .from(forumThreads)
-      .where(eq(forumThreads.id, threadId))
-      .for("update")
-      .limit(1);
-    if (locked.length === 0) return null;
-    const currentLikedBy = (locked[0].likedBy ?? []) as string[];
-    const already = currentLikedBy.includes(user.id);
-    const updatedLikedBy = already
-      ? currentLikedBy.filter((x) => x !== user.id)
-      : [...currentLikedBy, user.id];
-    const [row] = await tx
-      .update(forumThreads)
-      .set({ likedBy: updatedLikedBy, likes: updatedLikedBy.length })
-      .where(eq(forumThreads.id, threadId))
-      .returning();
-    return row;
-  });
-  if (!updated) {
-    return NextResponse.json({ error: "Thread not found" }, { status: 404 });
-  }
-
-  return NextResponse.json({
-    thread: publicRow(updated),
-    liked: (updated.likedBy ?? []).includes(user.id),
-  });
 }

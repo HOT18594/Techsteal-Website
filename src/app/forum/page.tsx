@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { fallbackThreads } from "@/lib/fallback-data";
 import type { ForumThread } from "@/types";
 import { Avatar } from "@/components/Avatar";
+import { ActivityFeed } from "@/components/ActivityFeed";
 import { SubPage } from "@/components/SubPage";
 import { Modal } from "@/components/Modal";
 import { RichEditor } from "@/components/RichEditor";
@@ -250,7 +251,17 @@ export default function ForumPage() {
       <div className="w-full">
         {/* Header */}
         <div className="page-header rowed mb-8 gap-4">
-          <h1 className="page-title">Forum</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="page-title">Forum</h1>
+            <Link
+              href="/forum/rss.xml"
+              className="text-sm text-[var(--muted-2)] hover:text-[var(--accent)] transition"
+              title="Subscribe via RSS"
+              aria-label="Forum RSS feed"
+            >
+              <i className="fa-solid fa-rss" aria-hidden="true" />
+            </Link>
+          </div>
           <div className="flex items-center gap-3 flex-1 justify-end min-w-0">
             <div className="relative flex-1 max-w-xs min-w-[10rem]">
               <i className="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-[var(--muted-2)]" />
@@ -591,6 +602,8 @@ export default function ForumPage() {
                 </>
               )}
             </div>
+
+            <div className="mt-6"><ActivityFeed /></div>
           </div>
         </div>
       </div>

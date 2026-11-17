@@ -262,18 +262,16 @@ body {
 }
 
 /* ---------- Onboarding reminder banner ---------- */
-/* Persistent, fixed below the navbar for signed-in users who haven't finished
-   onboarding. Keeps nagging until they complete it (no dismiss). */
+/* Persistent, in normal flow below the navbar for signed-in users who haven't
+   finished onboarding. Keeps nagging until they complete it (no dismiss).
+   Flow placement (not fixed) is deliberate: a fixed banner overlapped page
+   headers on short viewports where its text wraps to 2–3 lines. */
 .onboarding-reminder {
-  position: fixed;
-  top: 84px; /* clears the fixed navbar (12px top + 60px tall) */
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 54; /* above scrim-ish content but below navbar/popovers */
+  margin: 84px auto 0; /* clears the fixed 76px navbar + 8px gap */
   display: flex;
   align-items: center;
   gap: 12px;
-  width: auto;
+  width: fit-content;
   max-width: calc(100% - 2rem);
   padding: 10px 16px;
   border-radius: 12px;
@@ -311,12 +309,25 @@ body {
 @keyframes onboardingReminderIn {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(-10px);
+    transform: translateY(-10px);
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateY(0);
   }
+}
+
+/* ---------- No-JavaScript banner ---------- */
+/* Rendered inside <noscript> in the root layout. Clears the fixed 76px
+   navbar so it reads as a strip directly beneath it. */
+.noscript-banner {
+  margin-top: 76px;
+  padding: 10px 24px;
+  text-align: center;
+  font-size: 0.8125rem;
+  color: var(--fg-2);
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
 }
 
 /* ---------- Page headers (consistent kicker + title) ---------- */
@@ -4236,6 +4247,39 @@ button:focus-visible {
 }
 @media (prefers-reduced-motion: reduce) {
   .admin-loading div { animation: none; }
+  .audit-loading div { animation: none; }
+}
+
+/* Admin panel section tabs (Member access / Audit log) */
+.admin-panel-tabs { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.25rem; margin-bottom: 1.25rem; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; }
+.admin-panel-tabs button { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 38px; padding: 0.4rem 0.95rem; color: var(--muted); background: transparent; border: 0; border-radius: 8px; font-size: 0.78rem; font-weight: 700; cursor: pointer; transition: color 0.16s, background 0.16s; }
+.admin-panel-tabs button:hover { color: var(--fg-2); }
+.admin-panel-tabs button.is-active { color: var(--fg); background: var(--card-2); }
+.admin-panel-tabs button i { font-size: 0.72rem; }
+
+/* Audit log */
+.audit-list { list-style: none; margin: 0; padding: 0.4rem 0.5rem; display: flex; flex-direction: column; }
+.audit-item { display: flex; align-items: flex-start; gap: 0.85rem; padding: 0.8rem 0.95rem; border-radius: 10px; transition: background 0.15s; }
+.audit-item:hover { background: rgba(198, 183, 157, 0.028); }
+.audit-item + .audit-item { border-top: 1px solid rgba(196, 203, 183, 0.07); }
+.audit-icon { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; flex-shrink: 0; border-radius: 9px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); color: var(--muted); font-size: 0.72rem; }
+.audit-icon.is-green { color: var(--emerald); background: rgba(34, 197, 94, 0.1); border-color: rgba(34, 197, 94, 0.32); }
+.audit-icon.is-red { color: var(--redstone); background: rgba(244, 63, 94, 0.1); border-color: rgba(244, 63, 94, 0.32); }
+.audit-icon.is-amber { color: #ffd166; background: rgba(255, 209, 102, 0.1); border-color: rgba(255, 209, 102, 0.32); }
+.audit-icon.is-accent { color: var(--accent-bright); background: var(--accent-dim); border-color: rgba(210, 210, 203, 0.3); }
+.audit-body { flex: 1; min-width: 0; }
+.audit-text { font-size: 0.82rem; color: var(--fg-2); line-height: 1.45; overflow-wrap: anywhere; }
+.audit-text strong { color: var(--fg); font-weight: 700; }
+.audit-target { color: var(--accent-bright); font-weight: 600; }
+.audit-detail { margin-top: 0.2rem; font-size: 0.72rem; color: var(--muted); overflow-wrap: anywhere; }
+.audit-time { flex-shrink: 0; padding-top: 0.15rem; font-size: 0.68rem; color: var(--muted-2); white-space: nowrap; }
+.audit-loading { padding: 0.35rem 1.45rem; }
+.audit-loading div { height: 52px; margin: 0.35rem 0; background: linear-gradient(90deg, rgba(196, 203, 183, 0.035) 25%, rgba(196, 203, 183, 0.09) 50%, rgba(196, 203, 183, 0.035) 75%); background-size: 200% 100%; border-radius: 9px; animation: admin-shimmer 1.5s infinite linear; }
+@media (max-width: 640px) {
+  .admin-panel-tabs { width: 100%; }
+  .admin-panel-tabs button { flex: 1; justify-content: center; }
+  .audit-item { gap: 0.65rem; padding: 0.75rem 0.6rem; }
+  .audit-time { font-size: 0.62rem; }
 }
 
 /* Shared quiet surfaces and readable controls. */
@@ -4267,3 +4311,76 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 @media (max-width: 640px) { .site-footer { width: calc(100% - 40px); } .footer-main { align-items: flex-start; flex-direction: column; } .footer-bottom span:last-child { display: none; } }
 
 .footer-wordmark { font-family: var(--font-brand), monospace; font-size: 16px; font-weight: 400; letter-spacing: 0; }
+
+/* ---------- Activity feed (home + forum sidebar) ---------- */
+.activity-feed { border: 1px solid var(--border); border-radius: 14px; background: var(--card); padding: 20px 22px; }
+.activity-feed-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.activity-feed-head h2 { font-size: 15px; font-weight: 600; letter-spacing: -.02em; }
+.activity-feed-head i { color: var(--accent); font-size: 12px; }
+.activity-list { display: flex; flex-direction: column; gap: 2px; list-style: none; margin: 0; padding: 0; }
+.activity-item { display: flex; align-items: center; gap: 12px; padding: 10px 8px; border-radius: 10px; transition: background .2s; }
+.activity-item:hover { background: #ffffff05; }
+.activity-body { flex: 1; min-width: 0; }
+.activity-text { font-size: 13px; color: var(--fg-2); line-height: 1.45; overflow-wrap: anywhere; }
+.activity-author { color: var(--fg); font-weight: 600; }
+a.activity-author:hover { color: var(--accent); }
+.activity-title { color: var(--fg); font-weight: 500; }
+.activity-title:hover { color: var(--accent); }
+.activity-time { display: block; margin-top: 3px; font-size: 11px; color: var(--muted-2); }
+.activity-thumb { flex-shrink: 0; width: 44px; height: 44px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+.activity-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.activity-empty { font-size: 13px; color: var(--muted); padding: 8px; }
+
+/* ---- Sitewide announcement bar ----------------------------------------- */
+.announce-bar {
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  --announce-tone: var(--accent);
+}
+.announce-bar.tone-warning { --announce-tone: #ffd166; }
+.announce-bar.tone-critical { --announce-tone: #e88373; }
+.announce-inner {
+  max-width: 1540px;
+  margin: 0 auto;
+  padding: 10px 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--fg-2);
+}
+.announce-inner > i {
+  color: var(--announce-tone);
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+.announce-inner strong {
+  color: var(--fg);
+  font-weight: 550;
+  flex: 0 0 auto;
+}
+.announce-text {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.announce-inner button {
+  margin-left: auto;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.announce-inner button:hover { background: var(--accent-dim); color: var(--fg); }
+@media (max-width: 640px) {
+  .announce-inner { padding: 9px 14px; gap: 9px; font-size: 12px; }
+  .announce-text { display: none; }
+}

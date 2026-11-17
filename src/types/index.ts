@@ -232,3 +232,113 @@ export interface ServerTelemetry {
   lines: ServerTelemetryLine[];
   sampledAt: string | null;
 }
+
+// ------------------------------------------------------------------
+// Notifications / activity / search / audit (community features)
+// ------------------------------------------------------------------
+
+/** What triggered a notification. */
+export type NotificationType =
+  | "reply"
+  | "like"
+  | "mention"
+  | "gallery_comment"
+  | "gallery_like";
+
+/** One inbox entry for the signed-in user (GET /api/notifications). */
+export interface Notification {
+  id: number;
+  type: NotificationType;
+  actorId: string;
+  actorName: string;
+  /** Resolved avatar of the actor (Discord PFP or MC head), or null. */
+  actorAvatar?: string | null;
+  actorColor?: string;
+  threadId?: number | null;
+  replyId?: number | null;
+  itemId?: number | null;
+  excerpt: string;
+  read: boolean;
+  createdAt: string;
+}
+
+/** GET /api/notifications payload. */
+export interface NotificationsResponse {
+  notifications: Notification[];
+  unread: number;
+}
+
+/** One merged recent-event row (GET /api/activity). */
+export interface ActivityEvent {
+  type: "thread" | "gallery" | "member";
+  /** Stable React key, e.g. "thread-12". */
+  key: string;
+  title: string;
+  author: string;
+  authorId?: string;
+  avatarUrl?: string | null;
+  color: string;
+  href: string;
+  createdAt: string;
+  /** Gallery thumbnail, when the event is a build. */
+  image?: string | null;
+}
+
+/** A grouped global-search hit (GET /api/search). */
+export interface SearchResults {
+  threads: ForumThread[];
+  gallery: GalleryItem[];
+  members: Member[];
+}
+
+/** One admin audit-trail row (GET /api/admin/audit). */
+export interface AuditEntry {
+  id: number;
+  actorId: string;
+  actorName: string;
+  action: string;
+  targetId: string;
+  targetName: string;
+  detail: string;
+  createdAt: string;
+}
+
+/** Aggregated home stats tile (GET /api/stats). */
+export interface SeasonStats {
+  season: string;
+  seasonStart: string;
+  daysLive: number;
+  members: number;
+  online: number;
+  builds: number;
+  discussions: number;
+  replies: number;
+}
+
+/** Public player profile (GET /api/members/[id] and /members/[id]). */
+export interface PublicProfile {
+  id: string;
+  name: string;
+  role: string;
+  avatarUrl: string | null;
+  color: string;
+  minecraftUsername: string | null;
+  /** Large skin-head URL for the profile header. */
+  skinUrl: string | null;
+  verified: boolean;
+  online: boolean;
+  joined: string;
+  gallery: GalleryItem[];
+  threads: ForumThread[];
+  stats: { builds: number; discussions: number; replies: number };
+}
+
+/** A sitewide announcement shown as a bar under the navbar. */
+export interface Announcement {
+  id: number;
+  title: string;
+  body: string;
+  tone: string;
+  authorName: string;
+  createdAt: string | null;
+}

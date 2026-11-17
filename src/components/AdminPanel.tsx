@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "@/components/Avatar";
+import { AuditLog } from "@/components/AuditLog";
+import { AnnouncementsPanel } from "@/components/AnnouncementsPanel";
+import { ServerPanel } from "@/components/ServerPanel";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
 import { SubPage } from "@/components/SubPage";
@@ -77,6 +80,7 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [panel, setPanel] = useState<"members" | "announcements" | "server" | "audit">("members");
   const [view, setView] = useState<DirectoryView>("members");
   const [filter, setFilter] = useState<MemberFilter>("all");
   const [query, setQuery] = useState("");
@@ -247,20 +251,45 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
         <header className="admin-header">
           <div>
             <div className="admin-eyebrow"><i className="fa-solid fa-shield-halved" /> Administration</div>
-            <h1 className="page-title">Member access</h1>
-            <p>Manage roles, capabilities, and account access from one place.</p>
+            <h1 className="page-title">{panel === "members" ? "Member access" : "Audit log"}</h1>
+            <p>{panel === "members" ? "Manage roles, capabilities, and account access from one place." : "A record of every privileged action taken on the server."}</p>
           </div>
           <div className="admin-header-actions">
             <div className="admin-signed-in">
               <Avatar name={currentUser.username} src={currentUser.avatarUrl ?? null} size="sm" />
               <div><span>Signed in as</span><strong>{currentUser.username}</strong></div>
             </div>
-            <button type="button" className="admin-refresh" onClick={() => void load()} disabled={refreshing || loading} title="Refresh member data">
-              <i className={`fa-solid fa-rotate ${refreshing ? "fa-spin" : ""}`} /><span>Refresh</span>
-            </button>
+            {panel === "members" ? (
+              <button type="button" className="admin-refresh" onClick={() => void load()} disabled={refreshing || loading} title="Refresh member data">
+                <i className={`fa-solid fa-rotate ${refreshing ? "fa-spin" : ""}`} /><span>Refresh</span>
+              </button>
+            ) : null}
           </div>
         </header>
 
+        <div className="admin-panel-tabs" role="tablist" aria-label="Admin sections">
+          <button type="button" role="tab" aria-selected={panel === "members"} className={panel === "members" ? "is-active" : ""} onClick={() => setPanel("members")}>
+            <i className="fa-solid fa-users" aria-hidden="true" /> Member access
+          </button>
+          <button type="button" role="tab" aria-selected={panel === "announcements"} className={panel === "announcements" ? "is-active" : ""} onClick={() => setPanel("announcements")}>
+            <i className="fa-solid fa-bullhorn" aria-hidden="true" /> Announcements
+          </button>
+          <button type="button" role="tab" aria-selected={panel === "server"} className={panel === "server" ? "is-active" : ""} onClick={() => setPanel("server")}>
+            <i className="fa-solid fa-server" aria-hidden="true" /> Server
+          </button>
+          <button type="button" role="tab" aria-selected={panel === "audit"} className={panel === "audit" ? "is-active" : ""} onClick={() => setPanel("audit")}>
+            <i className="fa-solid fa-clipboard-list" aria-hidden="true" /> Audit log
+          </button>
+        </div>
+
+        {panel === "audit" ? (
+          <AuditLog />
+        ) : panel === "announcements" ? (
+          <AnnouncementsPanel />
+        ) : panel === "server" ? (
+          <ServerPanel />
+        ) : (
+        <>
         <section className="admin-metrics" aria-label="Member overview">
           <div className="admin-metric"><span className="admin-metric-icon is-blue"><i className="fa-solid fa-users" /></span><div><span>Active members</span><strong>{loading ? "—" : accounts.length}</strong></div></div>
           <div className="admin-metric"><span className="admin-metric-icon is-purple"><i className="fa-solid fa-user-shield" /></span><div><span>Administrators</span><strong>{loading ? "—" : adminCount}</strong></div></div>
@@ -372,6 +401,8 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
             </footer>
           ) : null}
         </section>
+        </>
+        )}
       </div>
 
       {confirmRemove ? (

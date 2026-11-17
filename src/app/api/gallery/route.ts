@@ -6,7 +6,8 @@ import { fallbackGallery } from "@/lib/fallback-data";
 import { getSessionUser } from "@/lib/auth";
 import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, canPostToGallery } from "@/lib/accounts";
 import { isRateLimited } from "@/lib/rate-limit";
-import { GALLERY_CATEGORIES, storagePathFromUrl } from "@/lib/storage";
+import { GALLERY_CATEGORIES } from "@/lib/gallery-categories";
+import { storagePathFromUrl } from "@/lib/storage";
 import { publicRow } from "@/lib/public-row";
 
 export const dynamic = "force-dynamic";

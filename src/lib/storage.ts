@@ -3,6 +3,10 @@
 // dependency — authenticated with the service role key (server-only, never
 // exposed to the browser). Server-to-Supabase requests avoid browser CORS.
 
+import { createHash } from "node:crypto";
+import { getDb } from "@/lib/db";
+import { forumReplies, forumThreads, galleryComments, galleryItems } from "@/lib/schema";
+
 const BUCKET = "gallery";
 
 /** Image types accepted for gallery posts. */
@@ -10,9 +14,6 @@ export const ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp", "image/gif
 
 /** Max server-accepted upload size (8 MB). */
 export const MAX_BYTES = 8 * 1024 * 1024;
-
-/** Categories a user can choose when posting (matches the gallery page filter). */
-export const GALLERY_CATEGORIES = ["Builds", "Redstone", "Technical", "Ideas", "Showcase"] as const;
 
 const MIME_EXT: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -62,18 +63,32 @@ function serviceRoleKey(): string {
 }
 
 /**
+ * Opaque per-uploader path segment. The raw Discord id must not appear in
+ * public URLs; the hash lets garbage collection verify ownership without a
+ * database lookup.
+ */
+export function ownerToken(ownerId: string): string {
+  return createHash("sha256").update(ownerId).digest("hex").slice(0, 12);
+}
+
+/**
  * Upload raw image bytes to the public `gallery` bucket and return its stable
  * public URL. Throws a descriptive Error when storage isn't configured or the
  * upload fails so the API route can surface a clean message.
  *
  * `folder` separates gallery posts (`gallery/`) from forum embeds (`embeds/`)
- * inside the same bucket.
+ * inside the same bucket. `ownerId` is baked into the path as a hash so the
+ * delete paths can refuse to garbage-collect objects the deleter didn't
+ * upload — any member can reference any public bucket URL in their content,
+ * and without this check deleting their own post destroyed other people's
+ * images.
  */
 export async function uploadImage(
   buffer: Buffer,
   mime: string,
   originalName: string,
-  folder = "gallery"
+  folder = "gallery",
+  ownerId: string
 ): Promise<string> {
   if (!ALLOWED_MIME.includes(mime as (typeof ALLOWED_MIME)[number])) {
     throw new Error("Unsupported image type.");
@@ -93,7 +108,7 @@ export async function uploadImage(
       .replace(/\.{2,}/g, ".")
       .slice(0, 60) || "image";
   const ext = MIME_EXT[mime] ?? "jpg";
-  const path = `${folder}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${base}.${ext}`;
+  const path = `${folder}/${ownerToken(ownerId)}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${base}.${ext}`;
 
   const res = await fetch(`${url}/storage/v1/object/${BUCKET}/${path}`, {
     method: "POST",
@@ -154,23 +169,112 @@ export function extractStorageUrls(content: string): string[] {
 }
 
 /**
- * Delete gallery/embed objects by their public URLs. Best-effort: a failed
- * delete is logged, never thrown, because the DB rows are already gone and
- * failing the request would leave the user staring at an error for a post
- * that no longer exists. URLs outside our bucket are ignored.
- *
- * Returns the number of objects Supabase reported as deleted.
+ * Every bucket path still referenced by live content (forum posts/replies,
+ * gallery covers/images/descriptions, gallery comments). Returns null when
+ * the scan fails — callers must then NOT delete anything, because an
+ * incomplete reference list would destroy images other posts still use.
  */
-export async function deleteImagesByUrl(publicUrls: string[]): Promise<number> {
-  const paths = [
-    ...new Set(
-      publicUrls
-        .map((u) => (typeof u === "string" ? storagePathFromUrl(u) : null))
-        .filter((p): p is string => Boolean(p))
-    ),
-  ];
-  if (paths.length === 0) return 0;
+export async function referencedStoragePaths(): Promise<Set<string> | null> {
+  const db = getDb();
+  // No database configured → no rows exist that could reference an object.
+  if (!db) return new Set();
+  try {
+    const [threads, replies, items, comments] = await Promise.all([
+      db.select({ content: forumThreads.content }).from(forumThreads),
+      db.select({ content: forumReplies.content }).from(forumReplies),
+      db
+        .select({
+          image: galleryItems.image,
+          images: galleryItems.images,
+          description: galleryItems.description,
+        })
+        .from(galleryItems),
+      db.select({ content: galleryComments.content }).from(galleryComments),
+    ]);
+    const refs = new Set<string>();
+    const addUrl = (u: string) => {
+      const path = storagePathFromUrl(u);
+      if (path) refs.add(path);
+    };
+    for (const row of [...threads, ...replies, ...comments]) {
+      for (const u of extractStorageUrls(row.content)) addUrl(u);
+    }
+    for (const item of items) {
+      addUrl(item.image);
+      for (const u of item.images) addUrl(u);
+      for (const u of extractStorageUrls(item.description)) addUrl(u);
+    }
+    return refs;
+  } catch (err) {
+    console.error("storage: reference scan failed", err);
+    return null;
+  }
+}
 
+/**
+ * List every object path in the bucket (recursing into folders). Returns
+ * null when storage isn't configured or the listing fails. Used by the
+ * orphan-cleanup script; the Supabase list endpoint caps pages at 1000.
+ */
+export async function listStorageObjects(): Promise<string[] | null> {
+  let url: string;
+  let key: string;
+  try {
+    url = supabaseUrl();
+    key = serviceRoleKey();
+  } catch {
+    return null;
+  }
+  const out: string[] = [];
+  const walk = async (folder: string): Promise<void> => {
+    let offset = 0;
+    for (;;) {
+      const res = await fetch(`${url}/storage/v1/object/list/${BUCKET}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          prefix: folder,
+          limit: 1000,
+          offset,
+          sortBy: { column: "name", order: "asc" },
+        }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) {
+        await res.body?.cancel().catch(() => {});
+        throw new Error(`list failed (${res.status})`);
+      }
+      const entries = (await res.json()) as Array<{ name: string; id: string | null }>;
+      for (const entry of entries) {
+        const path = folder ? `${folder}/${entry.name}` : entry.name;
+        // Folders come back with a null id — recurse instead of listing them
+        // as objects.
+        if (entry.id === null) await walk(path);
+        else out.push(path);
+      }
+      if (entries.length < 1000) break;
+      offset += entries.length;
+    }
+  };
+  try {
+    await walk("");
+    return out;
+  } catch (err) {
+    console.error("storage: list request failed", err);
+    return null;
+  }
+}
+
+/**
+ * Raw delete by bucket path — no ownership or reference checks. Callers
+ * must gate first (deleteImagesByUrl does; the cleanup script is admin-run).
+ * Best-effort: failures are logged, never thrown.
+ */
+export async function deleteStorageObjects(paths: string[]): Promise<number> {
+  if (paths.length === 0) return 0;
   let url: string;
   let key: string;
   try {
@@ -179,7 +283,6 @@ export async function deleteImagesByUrl(publicUrls: string[]): Promise<number> {
   } catch {
     return 0; // storage not configured — nothing to clean up
   }
-
   try {
     const res = await fetch(`${url}/storage/v1/object/${BUCKET}`, {
       method: "DELETE",
@@ -201,4 +304,49 @@ export async function deleteImagesByUrl(publicUrls: string[]): Promise<number> {
     console.error("storage: delete request failed", err);
     return 0;
   }
+}
+
+/**
+ * Delete gallery/embed objects by their public URLs. Best-effort: a failed
+ * delete is logged, never thrown, because the DB rows are already gone and
+ * failing the request would leave the user staring at an error for a post
+ * that no longer exists. URLs outside our bucket are ignored.
+ *
+ * Ownership gate: content can reference ANY public bucket URL (gallery posts
+ * and forum embeds alike), so deleting rows must only destroy objects the
+ * actor uploaded — otherwise a member could embed a victim's image, delete
+ * their own post, and take the victim's file with it. New uploads carry an
+ * owner-token path segment; legacy objects (no token) are admin-only.
+ *
+ * Reference gate: the same object can be embedded in several posts, so an
+ * owned URL is only destroyed when no live row references it anymore. Must
+ * be called AFTER the row mutation, or the deleted row still "references"
+ * its own images and nothing is ever collected.
+ *
+ * Returns the number of objects Supabase reported as deleted.
+ */
+export async function deleteImagesByUrl(
+  publicUrls: string[],
+  actor: { id: string; isAdmin: boolean }
+): Promise<number> {
+  const token = ownerToken(actor.id);
+  const owned = [
+    ...new Set(
+      publicUrls
+        .map((u) => (typeof u === "string" ? storagePathFromUrl(u) : null))
+        .filter((p): p is string => Boolean(p))
+    ),
+  ].filter((p) => {
+    const segments = p.split("/");
+    // folder/<ownerToken>/<file> — owned upload; folder/<file> — legacy.
+    if (segments.length === 3) return actor.isAdmin || segments[1] === token;
+    return actor.isAdmin;
+  });
+  if (owned.length === 0) return 0;
+
+  const refs = await referencedStoragePaths();
+  // Scan failed → we can't prove an object is unused, so keep everything.
+  if (refs === null) return 0;
+  const orphans = owned.filter((p) => !refs.has(p));
+  return deleteStorageObjects(orphans);
 }
