@@ -276,39 +276,52 @@
   .assistant-chat-delete { opacity: 1; }
 }
 
-/* ---- Rail scroll region (History + Explore) ---------------------------- */
-/* One scrollbar for the whole middle of the rail, so a long history can't
-   shove the resource links out of reach and there is never a nested pair of
-   scrollbars fighting each other. */
+/* ---- Rail sections ----------------------------------------------------- */
+/* The rail itself never scrolls: the brand, New chat, the site links and the
+   account block stay where they are. Only the History list scrolls, so a long
+   list can't push anything out of reach. */
 .assistant-redesign .assistant-rail-scroll {
-  flex: 1 1 auto;
-  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 26px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  /* Keep the scrollbar off the section text but inside the rail padding. */
-  margin: 0 -8px 0 0;
-  padding: 2px 12px 6px 0;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
-  scrollbar-gutter: stable;
+  min-height: 0;
 }
-.assistant-redesign .assistant-rail-scroll::-webkit-scrollbar { width: 8px; }
-.assistant-redesign .assistant-rail-scroll::-webkit-scrollbar-track { background: transparent; }
-.assistant-redesign .assistant-rail-scroll::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border: 2px solid var(--bg-2);
-  border-radius: 999px;
-}
-.assistant-redesign .assistant-rail-scroll::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
-/* Clear separation between the conversation list and the site links. */
 .assistant-redesign .assistant-rail-scroll > .assistant-rail-section + .assistant-rail-section {
-  padding-top: 24px;
+  padding-top: 22px;
   border-top: 1px solid var(--chat-line);
 }
-.assistant-chat-list { display: flex; flex-direction: column; gap: 1px; }
+
+.assistant-chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 232px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Gutter so the 4px bar never sits on top of a title. */
+  padding-right: 8px;
+}
+/* Chromium: a 4px bar that only appears when the list actually overflows.
+   NOTE: do not add `scrollbar-width` here — Chrome treats the standard
+   property as taking precedence and then ignores these pseudo-elements,
+   which is exactly why the bar rendered as nothing on Windows. */
+.assistant-chat-list::-webkit-scrollbar { width: 4px; }
+.assistant-chat-list::-webkit-scrollbar-track { background: transparent; }
+.assistant-chat-list::-webkit-scrollbar-thumb {
+  /* --border-strong (#ffffff32) was too close to the rail surface to see at
+     4px; a slightly stronger white reads as a scrollbar without shouting. */
+  background: #ffffff45;
+  border-radius: 999px;
+}
+.assistant-chat-list::-webkit-scrollbar-thumb:hover { background: #ffffff70; }
+/* Firefox gets the standard properties instead. */
+@supports (-moz-appearance: none) {
+  .assistant-chat-list {
+    padding-right: 6px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+}
 
 /* ---- Pasted image attachment ------------------------------------------ */
 .assistant-attachment {
