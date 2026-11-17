@@ -276,19 +276,39 @@
   .assistant-chat-delete { opacity: 1; }
 }
 
-/* ---- History list scrolls once it gets long ---------------------------- */
-.assistant-chat-list {
-  max-height: min(38vh, 260px);
+/* ---- Rail scroll region (History + Explore) ---------------------------- */
+/* One scrollbar for the whole middle of the rail, so a long history can't
+   shove the resource links out of reach and there is never a nested pair of
+   scrollbars fighting each other. */
+.assistant-redesign .assistant-rail-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-right: 2px;
+  /* Keep the scrollbar off the section text but inside the rail padding. */
+  margin: 0 -8px 0 0;
+  padding: 2px 12px 6px 0;
   scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+  scrollbar-color: var(--border-strong) transparent;
+  scrollbar-gutter: stable;
 }
-.assistant-chat-list::-webkit-scrollbar { width: 6px; }
-.assistant-chat-list::-webkit-scrollbar-track { background: transparent; }
-.assistant-chat-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
-.assistant-chat-list::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+.assistant-redesign .assistant-rail-scroll::-webkit-scrollbar { width: 8px; }
+.assistant-redesign .assistant-rail-scroll::-webkit-scrollbar-track { background: transparent; }
+.assistant-redesign .assistant-rail-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 2px solid var(--bg-2);
+  border-radius: 999px;
+}
+.assistant-redesign .assistant-rail-scroll::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+/* Clear separation between the conversation list and the site links. */
+.assistant-redesign .assistant-rail-scroll > .assistant-rail-section + .assistant-rail-section {
+  padding-top: 24px;
+  border-top: 1px solid var(--chat-line);
+}
+.assistant-chat-list { display: flex; flex-direction: column; gap: 1px; }
 
 /* ---- Pasted image attachment ------------------------------------------ */
 .assistant-attachment {

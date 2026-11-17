@@ -1219,6 +1219,10 @@ export function Chatty() {
           <i className="fa-solid fa-plus" /> New chat
         </button>
 
+        {/* History + Explore share one scroll region: a long history used to
+            push the resource links off the rail with no way to reach them.
+            The account block below stays pinned. */}
+        <div className="assistant-rail-scroll">
         {chats.length > 0 ? (
           <div className="assistant-rail-section">
             <div className="assistant-rail-heading">
@@ -1264,6 +1268,8 @@ export function Chatty() {
             <Link href="/gallery"><i className="fa-regular fa-image" /> Build gallery <i className="fa-solid fa-arrow-up-right-from-square" /></Link>
             <Link href="/forum"><i className="fa-regular fa-comments" /> Community forum <i className="fa-solid fa-arrow-up-right-from-square" /></Link>
           </nav>
+        </div>
+
         </div>
 
         <div className="assistant-rail-bottom">
