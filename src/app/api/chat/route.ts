@@ -95,6 +95,9 @@ export async function POST(request: NextRequest) {
     : [];
   const preferences = {
     model: isChatModelId(body.model) ? body.model : undefined,
+    // Pasted screenshots/attachments. Validated + capped in the AI layer
+    // (data: URLs only, 2 max) so this stays a dumb pass-through.
+    images: body.images,
     // Default-on keeps the existing behavior for older clients. A non-boolean
     // value must not silently re-enable search the user turned off —
     // `!== false` alone let the STRING "false" count as enabled.

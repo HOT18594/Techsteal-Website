@@ -55,6 +55,8 @@ interface ChatMessage {
   error?: boolean;
   /** The question to re-send when Retry is clicked on an error bubble. */
   retry?: string;
+  /** Data-URL attachment the member pasted with this message. */
+  image?: string;
   /** Tools the assistant used while producing this reply. */
   tools?: ToolTrace[];
 }
@@ -321,6 +323,12 @@ const ChatMessageRow = memo(function ChatMessageRow({
           <span>{message.time}</span>
           <strong>You</strong>
         </div>
+        {message.image ? (
+          /* Pasted screenshot — a data URL, so <img> is the only option
+             next/image can't optimize inline data. */
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img className="assistant-user-image" src={message.image} alt="Attached image" />
+        ) : null}
         <div className="assistant-user-bubble">{message.text}</div>
         <div className="assistant-message-actions is-user-actions">
           <button onClick={() => onCopy(message.text)}>
@@ -375,6 +383,8 @@ export function Chatty() {
   const [hydrated, setHydrated] = useState(false);
   const [selectedModel, setSelectedModel] = useState<ChatModelId>(DEFAULT_CHAT_MODEL);
   const [modelOpen, setModelOpen] = useState(false);
+  // Pending pasted/attached image (data URL). Cleared after send.
+  const [attachment, setAttachment] = useState<string | null>(null);
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -625,6 +635,8 @@ export function Chatty() {
 
   const send = async (raw?: string, baseMessages?: ChatMessage[]) => {
     const text = (raw ?? input).trim();
+    // Attachments only ride along with a typed message, and only once.
+    const image = attachment;
     // The controller is installed synchronously; React's typing state may
     // still be stale when two clicks/Enter presses arrive in the same tick.
     if (!text || typing || !hasAccess || (controllerRef.current && !controllerRef.current.signal.aborted)) return;
@@ -636,9 +648,10 @@ export function Chatty() {
     stickToBottom.current = true; // sending means "show me the newest"
     setMessages((m) => [
       ...m,
-      { id: nextId.current++, role: "user", text, time: nowTime() },
+      { id: nextId.current++, role: "user", text, time: nowTime(), image: image ?? undefined },
     ]);
     setInput("");
+    setAttachment(null);
     if (inputRef.current) {
       inputRef.current.style.height = "auto";
     }
@@ -730,6 +743,7 @@ export function Chatty() {
           history: priorTurns,
           model: selectedModel,
           webSearchEnabled,
+          ...(image ? { images: [image] } : {}),
         }),
         signal: controller.signal,
       });
@@ -1111,6 +1125,19 @@ export function Chatty() {
 
       <div className="assistant-composer-area">
         <div className="assistant-composer">
+          {attachment ? (
+            <div className="assistant-attachment">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={attachment} alt="Attachment preview" />
+              <button
+                type="button"
+                onClick={() => setAttachment(null)}
+                aria-label="Remove attachment"
+              >
+                <i className="fa-solid fa-xmark" aria-hidden="true" />
+              </button>
+            </div>
+          ) : null}
           <textarea
             ref={inputRef}
             rows={1}
@@ -1120,6 +1147,23 @@ export function Chatty() {
               setInput(event.target.value);
               event.target.style.height = "auto";
               event.target.style.height = `${Math.min(event.target.scrollHeight, 180)}px`;
+            }}
+            onPaste={(event) => {
+              const item = Array.from(event.clipboardData?.items ?? []).find((entry) =>
+                entry.type.startsWith("image/")
+              );
+              const file = item?.getAsFile();
+              if (!file) return; // plain text paste — let the browser handle it
+              event.preventDefault();
+              if (file.size > 2_000_000) {
+                show("Image too large", "Keep it under 2 MB.", "error");
+                return;
+              }
+              const reader = new FileReader();
+              reader.onload = () => {
+                if (typeof reader.result === "string") setAttachment(reader.result);
+              };
+              reader.readAsDataURL(file);
             }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {

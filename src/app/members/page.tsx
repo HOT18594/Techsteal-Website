@@ -99,7 +99,7 @@ export default function MembersPage() {
 
         {error && members.length === 0 ? (
           <ErrorState onRetry={() => void refetch()} what="member list" />
-        ) : loading ? (
+        ) : loading && members.length === 0 ? (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5" aria-hidden="true">
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="member-card flex items-start gap-4 animate-pulse">

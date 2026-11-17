@@ -24,6 +24,37 @@ export function RevealObserver() {
       if (io) io.observe(element);
       else element.classList.add("visible");
     };
+    // Safety net. Several lists (member directory, gallery, forum) mount their
+    // `.stagger` container *after* the data fetch resolves, and an element that
+    // is inserted and scrolled past in the same frame can miss its
+    // IntersectionObserver callback — leaving the whole list at opacity 0 with
+    // nothing on screen. Anything already inside the viewport is revealed
+    // directly, which makes the animation a nicety rather than a hard gate on
+    // the content ever being visible.
+    const sweep = () => {
+      document.querySelectorAll(REVEAL_SELECTOR).forEach((element) => {
+        const rect = element.getBoundingClientRect();
+        const inView = rect.top < window.innerHeight && rect.bottom > 0;
+        if (inView) element.classList.add("visible");
+      });
+    };
+    let sweepFrame = 0;
+    const queueSweep = () => {
+      if (sweepFrame !== 0) return;
+      sweepFrame = requestAnimationFrame(() => {
+        sweepFrame = 0;
+        sweep();
+      });
+    };
+    sweep();
+    // A delayed pass covers content that mounts after the fetch settles.
+    const settleTimer = window.setTimeout(() => {
+      sweep();
+      sweepFrame = 0;
+    }, 1200);
+    window.addEventListener("scroll", queueSweep, { passive: true });
+    window.addEventListener("resize", queueSweep);
+    window.addEventListener("load", queueSweep);
     const observeTree = (root: ParentNode) => {
       if (root instanceof Element && root.matches(REVEAL_SELECTOR)) observeElement(root);
       root.querySelectorAll(REVEAL_SELECTOR).forEach(observeElement);
@@ -54,6 +85,9 @@ export function RevealObserver() {
           if (!covered) observeTree(root);
         }
         addedRoots.clear();
+        // New nodes may already be in view; reveal them without waiting for
+        // an intersection callback that may never arrive.
+        sweep();
       });
     });
     mo?.observe(document.body, { childList: true, subtree: true });
@@ -69,7 +103,12 @@ export function RevealObserver() {
       io?.disconnect();
       mo?.disconnect();
       window.removeEventListener("beforeprint", revealAll);
+      window.removeEventListener("scroll", queueSweep);
+      window.removeEventListener("resize", queueSweep);
+      window.removeEventListener("load", queueSweep);
+      window.clearTimeout(settleTimer);
       if (scheduled !== 0) cancelAnimationFrame(scheduled);
+      if (sweepFrame !== 0) cancelAnimationFrame(sweepFrame);
       addedRoots.clear();
     };
   }, []);

@@ -15,15 +15,25 @@
 .t-nav-links a { position: relative; padding: 29px 0; color: var(--muted); font-size: 13px; font-weight: 550; text-decoration: none; transition: color 150ms; }
 .t-nav-links a:hover, .t-nav-links a.active { color: var(--fg); }
 .t-nav-links a.active::after { content: ""; position: absolute; bottom: 18px; left: 0; right: 0; height: 2px; background: var(--accent); }
-.t-nav-actions { display: flex; align-items: center; gap: 18px; flex-shrink: 0; }
-.t-nav .t-nav-status { color: var(--muted); display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; font-size: 11px; text-decoration: none; }
+.t-nav-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+/* One icon group so search + bell share a tight rhythm instead of being
+   spread across the action row by the parent gap. */
+.t-nav-icons { display: flex; align-items: center; gap: 6px; }
+.t-nav-actions > .t-nav-join { margin-left: 4px; }
+.t-nav .t-nav-status { color: var(--muted); display: inline-flex; align-items: center; gap: 7px; height: 38px; margin-right: 4px; white-space: nowrap; font-size: 11px; text-decoration: none; }
 .t-nav-status > span { width: 6px; height: 6px; border-radius: 50%; background: var(--muted-2); }
 .t-nav-status.is-online > span { background: #a6c88c; }
-.t-nav .t-nav-join { display: inline-flex; justify-content: center; align-items: center; gap: 16px; min-height: 38px; padding: 0 15px; border-radius: 5px; background: var(--accent); color: var(--bg); font-size: 12px; font-weight: 700; text-decoration: none; transition: background 150ms; }
+.t-nav .t-nav-join { display: inline-flex; justify-content: center; align-items: center; gap: 10px; height: 38px; padding: 0 15px; border-radius: 5px; background: var(--accent); color: var(--bg); font-size: 12px; font-weight: 700; text-decoration: none; transition: background 150ms; }
 .t-nav .t-nav-join:hover { background: var(--accent-bright); }
 .t-nav .t-nav-login { color: var(--fg-2); font-size: 12px; font-weight: 550; text-decoration: none; }
+.t-nav-login { display: inline-flex; align-items: center; height: 38px; padding: 0 4px; }
 .t-nav-login:hover { color: var(--accent); }
-.t-nav-profile { padding: 0; border: 0; background: none; cursor: pointer; }
+.t-nav-profile {
+  width: 38px; height: 38px; padding: 0; border: 0; background: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 5px; cursor: pointer;
+}
+.t-nav-profile:hover .avatar { border-color: var(--accent); }
 .t-nav-profile .avatar { width: 32px; height: 32px; border-radius: 5px; box-shadow: none; }
 .t-nav-toggle { display: none; }
 .t-nav :is(a, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; }

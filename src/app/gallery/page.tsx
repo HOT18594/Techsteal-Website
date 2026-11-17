@@ -617,7 +617,7 @@ export default function GalleryPage() {
 
         {listError ? (
           <ErrorState onRetry={() => void refetch()} what="gallery" />
-        ) : loading ? (
+        ) : loading && items.length === 0 ? (
           <div className="gallery-grid">
             {Array.from({ length: 6 }).map((_, i) => (
               <div

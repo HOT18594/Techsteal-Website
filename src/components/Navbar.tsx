@@ -134,16 +134,18 @@ export function Navbar() {
         </nav>
 
         <div className={`t-nav-actions ${user ? "has-account" : ""}`}>
-          <Link href="/search" className={`t-nav-search ${isActive("/search") ? "is-active" : ""}`}
-            aria-label="Search" aria-current={isActive("/search") ? "page" : undefined}>
-            <i className="fa-solid fa-magnifying-glass" aria-hidden="true" />
-          </Link>
           <Link href="/status" className={`t-nav-status ${online ? "is-online" : ""}`}
             aria-label={`${statusText}${online ? `, ${players} of ${max} players` : ""}. View server status`}>
             <span aria-hidden="true" />{statusText}
           </Link>
+          <div className="t-nav-icons">
+            <Link href="/search" className={`t-nav-search ${isActive("/search") ? "is-active" : ""}`}
+              aria-label="Search" aria-current={isActive("/search") ? "page" : undefined}>
+              <i className="fa-solid fa-magnifying-glass" aria-hidden="true" />
+            </Link>
+            {user ? <NotificationBell /> : null}
+          </div>
           <Link href="/join" className="t-nav-join">Join server <span aria-hidden="true">↗</span></Link>
-          {user ? <NotificationBell /> : null}
           {user ? (
             <button ref={profileBtnRef} className="t-nav-profile" type="button"
               onClick={() => { setMobileOpen(false); setProfileOpen(!profileOpen); }}

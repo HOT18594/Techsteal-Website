@@ -354,7 +354,12 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
         label,
         content: cap(
           `Gallery builds (${rows.length}${q ? ` matching "${q}"` : ", newest first"}):\n` +
-            rows.map((g) => `- ${g.title} — ${g.category} — by ${g.builder} — ${g.likes} likes`).join("\n")
+            rows
+              .map((g) => {
+                const img = (g as { image?: string | null }).image;
+                return `- ${g.title} — ${g.category} — by ${g.builder} — ${g.likes} likes${img ? ` — image: ${img}` : ""}`;
+              })
+              .join("\n")
         ),
       };
     }
