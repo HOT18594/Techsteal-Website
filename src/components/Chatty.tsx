@@ -78,16 +78,94 @@ const TOOL_ICONS: Record<string, string> = {
   search_forum: "fa-comments",
   read_forum_thread: "fa-comment-dots",
   get_site_stats: "fa-chart-simple",
+  get_announcements: "fa-bullhorn",
   search_mods: "fa-puzzle-piece",
   search_site: "fa-magnifying-glass",
   web_search: "fa-globe",
 };
 
 const STORAGE_KEY = "techsteal-nova-chat-v1";
+const CHATS_KEY = "techsteal-assistant-chats-v2";
 const PREFERENCES_KEY = "techsteal-chatty-preferences-v1";
 // A question asked from another page (?ask=…) while the user couldn't chat
 // yet (signed out / unverified) is parked here and consumed once they can.
 const PREFILL_KEY = "techsteal-chatty-pending-ask";
+
+/** One saved conversation. `title` is derived from the first user message. */
+interface SavedChat {
+  id: string;
+  title: string;
+  updatedAt: number;
+  messages: ChatMessage[];
+}
+
+interface ChatStore {
+  activeId: string;
+  chats: SavedChat[];
+}
+
+const MAX_CHATS = 20;
+
+function newChatId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function titleFor(messages: ChatMessage[]): string {
+  const first = messages.find((message) => message.role === "user");
+  if (!first) return "New chat";
+  const text = first.text.replace(/\s+/g, " ").trim();
+  return text.length > 44 ? `${text.slice(0, 44)}…` : text;
+}
+
+/** Validate every stored message; a corrupt row must not break the chat. */
+function validMessages(input: unknown): ChatMessage[] {
+  if (!Array.isArray(input)) return [];
+  return input.filter((m): m is ChatMessage => {
+    if (!m || typeof m !== "object") return false;
+    const msg = m as Partial<ChatMessage>;
+    return (
+      typeof msg.id === "number" &&
+      Number.isFinite(msg.id) &&
+      (msg.role === "user" || msg.role === "assistant") &&
+      typeof msg.text === "string"
+    );
+  });
+}
+
+function loadStore(): ChatStore | null {
+  try {
+    const raw = localStorage.getItem(CHATS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<ChatStore>;
+    if (!Array.isArray(parsed.chats)) return null;
+    const chats = parsed.chats
+      .filter((chat): chat is SavedChat =>
+        !!chat && typeof chat === "object" && typeof chat.id === "string"
+      )
+      .map((chat) => ({
+        id: chat.id,
+        title: typeof chat.title === "string" && chat.title ? chat.title : "New chat",
+        updatedAt: typeof chat.updatedAt === "number" ? chat.updatedAt : 0,
+        messages: validMessages(chat.messages),
+      }))
+      .filter((chat) => chat.messages.length > 0);
+    if (chats.length === 0) return null;
+    const activeId = chats.some((chat) => chat.id === parsed.activeId)
+      ? (parsed.activeId as string)
+      : chats[0].id;
+    return { activeId, chats };
+  } catch {
+    return null;
+  }
+}
+
+function saveStore(store: ChatStore): void {
+  try {
+    localStorage.setItem(CHATS_KEY, JSON.stringify(store));
+  } catch {
+    // Quota or private mode — the conversation just isn't persisted.
+  }
+}
 
 function nowTime(): string {
   const d = new Date();
@@ -122,13 +200,16 @@ function loadHistory(): ChatMessage[] | null {
 // Brand mark: a geometric spark. Drawn inline so it stays crisp at every size,
 // inherits the active palette's accent through currentColor, and costs zero
 // bytes — the previous 706 KB PNG was downloaded to render a 30 px avatar.
-function ChattyLogo({ size = 24, className = "" }: { size?: number; className?: string }) {
+//
+// It fills its container and relies on CSS padding to inset the glyph, so a
+// fixed-size tile can never clip it (the old version was sized 36 px inside a
+// 30 px box, which cropped the mark and pushed it off-centre).
+function ChattyLogo({ className = "" }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 24 24"
-      width={size}
-      height={size}
       className={`chatty-mark ${className}`}
+      fill="none"
       aria-hidden="true"
       focusable="false"
     >
@@ -173,7 +254,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
     return (
       <article className="assistant-message is-assistant">
         <div className="assistant-message-avatar" aria-hidden="true">
-          <ChattyLogo size={36} />
+          <ChattyLogo />
         </div>
         <div className="assistant-message-main">
           <div className="assistant-message-meta">
@@ -283,6 +364,10 @@ export function Chatty() {
     },
   ]);
   const [input, setInput] = useState("");
+  // Saved conversations. `messages` is the live copy of the active one; these
+  // exist so the rail can list and restore earlier conversations.
+  const [chats, setChats] = useState<SavedChat[]>([]);
+  const [activeId, setActiveId] = useState("");
   const [typing, setTyping] = useState(false);
   const [dots, setDots] = useState(false); // 3-dot indicator while waiting for the first event
   const [streamStarted, setStreamStarted] = useState(false);
@@ -303,6 +388,7 @@ export function Chatty() {
   // Autoscroll only while the reader is already at (or near) the bottom —
   // streaming tokens must not yank the view away from earlier messages.
   const stickToBottom = useRef(true);
+  const activeIdRef = useRef("");
   // Panel-scoped keyboard shortcut: "/" focuses the input (ignore while
   // typing). Only bound when the chat UI itself is shown — signed-out /
   // unverified visitors keep "/" for their browser (e.g. quick find).
@@ -345,14 +431,42 @@ export function Chatty() {
   // NOT read localStorage, or SSR and client render different first frames
   // (hydration mismatch).
   useEffect(() => {
-    const history = loadHistory();
-    if (history && history.length > 0) {
-      setMessages(history);
-      nextId.current = history.reduce((max, m) => Math.max(max, m.id), 0) + 1;
+    // Preferred: the multi-conversation store.
+    const store = loadStore();
+    if (store) {
+      const active = store.chats.find((chat) => chat.id === store.activeId) ?? store.chats[0];
+      setChats(store.chats);
+      setActiveId(active.id);
+      activeIdRef.current = active.id;
+      setMessages(active.messages);
+      nextId.current = active.messages.reduce((max, m) => Math.max(max, m.id), 0) + 1;
     } else {
-      // No saved chat — stamp the welcome message with the browser's time
-      // (client-only, so it can never mismatch the server-rendered frame).
-      setMessages((m) => m.map((msg) => (msg.id === 0 ? { ...msg, time: nowTime() } : msg)));
+      // Migrate a single saved chat from the old key, if there is one.
+      const legacy = loadHistory();
+      const id = newChatId();
+      if (legacy && legacy.length > 0) {
+        const migrated: SavedChat = {
+          id,
+          title: titleFor(legacy),
+          updatedAt: Date.now(),
+          messages: legacy,
+        };
+        setChats([migrated]);
+        setActiveId(id);
+        activeIdRef.current = id;
+        setMessages(legacy);
+        nextId.current = legacy.reduce((max, m) => Math.max(max, m.id), 0) + 1;
+        saveStore({ activeId: id, chats: [migrated] });
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+        } catch {}
+      } else {
+        // Nothing saved — stamp the welcome message with the browser's time
+        // (client-only, so it can never mismatch the server-rendered frame).
+        setActiveId(id);
+        activeIdRef.current = id;
+        setMessages((m) => m.map((msg) => (msg.id === 0 ? { ...msg, time: nowTime() } : msg)));
+      }
     }
     try {
       const rawPreferences = localStorage.getItem(PREFERENCES_KEY);
@@ -397,9 +511,26 @@ export function Chatty() {
       saveTimer.current = null;
     }
     if (!hydratedRef.current) return; // never clobber saved chats pre-hydration
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messagesRef.current.slice(-50)));
-    } catch {}
+    const id = activeIdRef.current;
+    const current = messagesRef.current;
+    // A chat that only holds the greeting isn't worth listing yet.
+    const worthSaving = current.some((message) => message.role === "user");
+    setChats((prev) => {
+      const without = prev.filter((chat) => chat.id !== id);
+      const next: SavedChat[] = worthSaving
+        ? [
+            {
+              id,
+              title: titleFor(current),
+              updatedAt: Date.now(),
+              messages: current.slice(-50),
+            },
+            ...without,
+          ].slice(0, MAX_CHATS)
+        : without;
+      saveStore({ activeId: id, chats: next });
+      return next;
+    });
   }, []);
   useEffect(() => {
     if (!hydrated) return;
@@ -758,7 +889,7 @@ export function Chatty() {
     setActiveTools([]);
   };
 
-  const clear = () => {
+  const stopStreaming = () => {
     streamUpdateRef.current?.cancel();
     genRef.current++;
     controllerRef.current?.abort();
@@ -766,17 +897,58 @@ export function Chatty() {
     setDots(false);
     setStreamStarted(false);
     setActiveTools([]);
+  };
+
+  /** Start a fresh conversation, keeping the previous one in the rail. */
+  const clear = () => {
+    stopStreaming();
+    flushSave(); // persist whatever the current chat has before leaving it
+    const id = newChatId();
+    activeIdRef.current = id;
+    setActiveId(id);
     setMessages([
       {
         id: nextId.current++,
         role: "assistant",
-        text: `Chat cleared. Ask me anything about ${siteConfig.name}.`,
+        text: `Ask me anything about ${siteConfig.name}.`,
         time: nowTime(),
       },
     ]);
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {}
+  };
+
+  /** Restore a saved conversation into the transcript. */
+  const switchTo = (id: string) => {
+    if (id === activeIdRef.current || typing) return;
+    flushSave();
+    const chat = chats.find((entry) => entry.id === id);
+    if (!chat) return;
+    activeIdRef.current = id;
+    setActiveId(id);
+    setMessages(chat.messages);
+    nextId.current = chat.messages.reduce((max, m) => Math.max(max, m.id), 0) + 1;
+    saveStore({ activeId: id, chats });
+  };
+
+  const deleteChat = (id: string) => {
+    const remaining = chats.filter((entry) => entry.id !== id);
+    setChats(remaining);
+    saveStore({ activeId: activeIdRef.current, chats: remaining });
+    if (id === activeIdRef.current) {
+      if (remaining.length > 0) {
+        const next = remaining[0];
+        activeIdRef.current = next.id;
+        setActiveId(next.id);
+        setMessages(next.messages);
+        nextId.current = next.messages.reduce((max, m) => Math.max(max, m.id), 0) + 1;
+      } else {
+        const fresh = newChatId();
+        activeIdRef.current = fresh;
+        setActiveId(fresh);
+        setMessages([
+          { id: nextId.current++, role: "assistant", text: `Ask me anything about ${siteConfig.name}.`, time: nowTime() },
+        ]);
+      }
+    }
   };
 
   const copyMessage = async (text: string) => {
@@ -826,7 +998,7 @@ export function Chatty() {
     </div>
   ) : !user ? (
     <div className={gateClass}>
-      <div className="assistant-gate-character" aria-hidden="true"><ChattyLogo size={88} /></div>
+      <div className="assistant-gate-icon" aria-hidden="true"><ChattyLogo /></div>
       <h2>Hey, I&apos;m {ai.name}</h2>
       <p>Sign in to start a conversation.</p>
       <Link href="/login" className="btn-primary justify-center">
@@ -898,7 +1070,7 @@ export function Chatty() {
           {typing && !streamStarted ? (
             <article className="assistant-message is-assistant">
               <div className="assistant-message-avatar" aria-hidden="true">
-                <ChattyLogo size={36} />
+                <ChattyLogo />
               </div>
               <div className="assistant-message-main">
                 <div className="assistant-message-meta"><strong>{ai.name}</strong><span>Working now</span></div>
@@ -992,7 +1164,7 @@ export function Chatty() {
       <aside className="assistant-rail">
         <div className="assistant-rail-brand">
           <div className="assistant-brand-mark" aria-hidden="true">
-            <ChattyLogo size={44} />
+            <ChattyLogo />
           </div>
           <div>
             <h1>{ai.name}</h1>
@@ -1000,8 +1172,43 @@ export function Chatty() {
         </div>
 
         <button className="assistant-new-chat assistant-rail-new" onClick={clear} aria-label="Start a new chat">
-          <i className="fa-solid fa-plus" /> New conversation
+          <i className="fa-solid fa-plus" /> New chat
         </button>
+
+        {chats.length > 0 ? (
+          <div className="assistant-rail-section">
+            <div className="assistant-rail-heading">
+              <span>History</span>
+            </div>
+            <nav className="assistant-chat-list" aria-label="Past conversations">
+              {chats.map((chat) => (
+                <div
+                  key={chat.id}
+                  className={`assistant-chat-item ${chat.id === activeId ? "is-active" : ""}`}
+                >
+                  <button
+                    type="button"
+                    className="assistant-chat-open"
+                    onClick={() => switchTo(chat.id)}
+                    disabled={typing}
+                    title={chat.title}
+                    aria-current={chat.id === activeId ? "true" : undefined}
+                  >
+                    {chat.title}
+                  </button>
+                  <button
+                    type="button"
+                    className="assistant-chat-delete"
+                    onClick={() => deleteChat(chat.id)}
+                    aria-label={`Delete conversation ${chat.title}`}
+                  >
+                    <i className="fa-solid fa-xmark" aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </nav>
+          </div>
+        ) : null}
 
         <div className="assistant-rail-section">
           <div className="assistant-rail-heading">

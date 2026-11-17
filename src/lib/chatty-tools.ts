@@ -8,7 +8,7 @@
 
 import { and, asc, count, desc, eq, ilike, or } from "drizzle-orm";
 import { getDb } from "./db";
-import { forumReplies, forumThreads, galleryItems, profiles, ruleSections, timelineEvents } from "./schema";
+import { announcements, forumReplies, forumThreads, galleryItems, profiles, ruleSections, timelineEvents } from "./schema";
 import { getLiveStatus } from "./live-status";
 import { formatSearchResults, webSearch } from "./web-search";
 import { formatModrinthResults, searchModrinth } from "./modrinth";
@@ -124,6 +124,15 @@ export const CHATTY_TOOLS: ChattyToolDef[] = [
   {
     type: "function",
     function: {
+      name: "get_announcements",
+      description:
+        "Read the announcements admins have posted on the site right now (newest first). Use this whenever the user asks about news, updates, events, maintenance, or 'what's going on'.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "search_site",
       description:
         "Search across Techsteal members, gallery builds, forum posts, history, and published rules in one call. Use for broad requests like 'find anything about spawn' when the user did not name one specific section.",
@@ -178,6 +187,7 @@ export const TOOL_LABELS: Record<string, string> = {
   search_forum: "Searching the forum",
   read_forum_thread: "Reading a thread",
   get_site_stats: "Counting site stats",
+  get_announcements: "Reading announcements",
   search_site: "Searching Techsteal",
   search_mods: "Searching mods",
   web_search: "Searching the web",
@@ -193,6 +203,7 @@ const TOOL_DONE_LABELS: Record<string, string> = {
   search_forum: "Forum searched",
   read_forum_thread: "Thread read",
   get_site_stats: "Site stats checked",
+  get_announcements: "Announcements checked",
   search_site: "Techsteal searched",
   search_mods: "Modrinth checked",
   web_search: "Web sources checked",
@@ -406,6 +417,27 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
             (replies.length ? `\n\nRecent replies:\n${replies.map((r) => `- ${r.author}: ${r.content.slice(0, 200)} (${r.likes} likes)`).join("\n")}` : "")
         ),
       };
+    }
+
+    case "get_announcements": {
+      const db = getDb();
+      if (!db) return { ok: true, label, content: NO_DB };
+      const rows = await db
+        .select()
+        .from(announcements)
+        .where(eq(announcements.active, true))
+        .orderBy(desc(announcements.createdAt))
+        .limit(5);
+      if (rows.length === 0) {
+        return { ok: true, label, content: "There are no active announcements right now." };
+      }
+      const text = rows
+        .map((row) => {
+          const when = row.createdAt ? new Date(row.createdAt).toISOString().slice(0, 10) : "";
+          return `- ${row.title}${when ? ` (${when})` : ""}${row.body ? `: ${row.body}` : ""}`;
+        })
+        .join("\n");
+      return { ok: true, label, content: cap(`Current announcements://n${text}`, 1600) };
     }
 
     case "get_site_stats": {

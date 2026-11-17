@@ -1,9 +1,18 @@
-// Models offered in the assistant's picker, ordered fast → smart.
-// The picker shows the name plus a one-word tier; it never advertises
-// pricing or provider tier. `DEFAULT_CHAT_MODEL` is the balanced choice.
+// Models offered in the assistant's picker, ordered by how much reasoning they
+// do (fast → deep). Chosen from measured OpenRouter telemetry, not vibes: the
+// assistant is tool-driven, so a low tool-call and structured-output error rate
+// matters more than a leaderboard score.
 //
-// `lib/ai.ts` builds its fallback cascade from this list, so adding a model
-// here also makes it a last-resort fallback for every conversation.
+//   model                     tok/s   e2e P50   tool err   struct err
+//   nemotron-3.5-super-vl       278     2.9 s      0.07%       2.2%
+//   flint-v1.0                   78     6.6 s      0.57%         n/a
+//   ernie-5.5-flash-preview      93     6.9 s      0.76%      20.9%
+//
+// Deliberately excluded: inclusionai/ling-3.2-flash (18 tok/s, 28 s median,
+// 45.6% structured-output failures) and particle-1 (no longer free).
+//
+// `lib/ai.ts` builds its fallback cascade from this list, so the order here is
+// also the order of last-resort fallbacks.
 
 export const CHAT_MODELS = [
   {
@@ -12,20 +21,20 @@ export const CHAT_MODELS = [
     tier: "Fast",
   },
   {
-    id: "inclusionai/ling-3.2-flash:free",
-    label: "Ling 3.2",
+    id: "recursive/flint-v1.0:free",
+    label: "Flint",
     tier: "Balanced",
   },
   {
-    id: "particle-ai/particle-1:free",
-    label: "Particle-1",
+    id: "baidu/ernie-5.5-flash-preview:free",
+    label: "ERNIE 5.5",
     tier: "Deep",
   },
 ] as const;
 
 export type ChatModelId = (typeof CHAT_MODELS)[number]["id"];
 
-export const DEFAULT_CHAT_MODEL: ChatModelId = "inclusionai/ling-3.2-flash:free";
+export const DEFAULT_CHAT_MODEL: ChatModelId = "nvidia/nemotron-3.5-super-vl:free";
 
 export function isChatModelId(value: unknown): value is ChatModelId {
   return typeof value === "string" && CHAT_MODELS.some((model) => model.id === value);

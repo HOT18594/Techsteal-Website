@@ -102,6 +102,9 @@ function planLiveContext(message: string): PlannedToolCall[] {
   if (/\b(gallery|builds?)\b/i.test(message)) {
     planned.push({ name: "search_gallery", args: "{}" });
   }
+  if (/\b(announcements?|news|update|updated|maintenance|event|what'?s going on|anything new)\b/i.test(message)) {
+    planned.push({ name: "get_announcements", args: "{}" });
+  }
   return planned.slice(0, 2).map((call, index) => ({ ...call, id: `live_${index}_${call.name}` }));
 }
 
@@ -201,6 +204,7 @@ function buildSystemPrompt(opts: {
     `- search_gallery — find builds by title/builder/category`,
     `- search_forum + read_forum_thread — find and read discussions`,
     `- get_site_stats — member/thread/build/event counts`,
+    `- get_announcements — what admins have posted right now (news, events, maintenance)`,
     `- search_site — search members, builds, forum posts, history, and rules together when the question spans the site or the right section is unclear`,
     `- search_mods — Modrinth, the mod repository: LIVE data on specific mods/modpacks/shaders (author, description, downloads, versions, link). For ANY question about a specific mod or modpack, call search_mods FIRST.`,
     ...(opts.webSearchEnabled

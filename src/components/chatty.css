@@ -191,8 +191,12 @@
 }
 
 /* ---- Brand mark (inline SVG, inherits the palette accent) ---------------- */
-.chatty-mark { display: block; color: var(--chat-accent); }
-.assistant-message-avatar .chatty-mark { margin: auto; }
+.chatty-mark { display: block; width: 100%; height: 100%; box-sizing: border-box; color: var(--chat-accent); }
+/* The mark fills its tile and controls its own inset, so no container can
+   crop it and it stays optically centred at every size. */
+.assistant-message-avatar .chatty-mark { padding: 7px; }
+.assistant-redesign .assistant-brand-mark .chatty-mark { padding: 11px; }
+.assistant-redesign .assistant-gate-icon .chatty-mark { padding: 13px; }
 
 /* ---- Model dropdown ---------------------------------------------------- */
 .assistant-redesign .assistant-console-actions { margin-left: auto; }
@@ -238,4 +242,36 @@
 .model-menu-check { margin-left: auto; font-size: 10px; color: var(--accent); }
 @media (max-width: 640px) {
   .model-menu-list { right: auto; left: 0; width: min(240px, calc(100vw - 60px)); }
+}
+
+/* ---- Conversation history --------------------------------------------- */
+.assistant-chat-list { display: flex; flex-direction: column; gap: 1px; }
+.assistant-chat-item {
+  display: flex; align-items: center; gap: 2px;
+  border-radius: 7px; padding-right: 2px;
+}
+.assistant-chat-item:hover { background: var(--accent-dim); }
+.assistant-chat-item.is-active { background: var(--accent-dim); }
+.assistant-chat-open {
+  flex: 1 1 auto; min-width: 0;
+  border: 0; background: transparent; cursor: pointer;
+  padding: 9px 10px; text-align: left;
+  font-family: inherit; font-size: 12px; line-height: 1.3;
+  color: var(--fg-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.assistant-chat-item.is-active .assistant-chat-open { color: var(--fg); }
+.assistant-chat-open:disabled { opacity: .6; cursor: not-allowed; }
+.assistant-chat-delete {
+  flex: 0 0 auto; width: 24px; height: 24px;
+  display: grid; place-items: center;
+  border: 0; border-radius: 6px; background: transparent;
+  color: var(--muted-2); font-size: 10px; cursor: pointer;
+  opacity: 0; transition: opacity .12s, color .12s;
+}
+.assistant-chat-item:hover .assistant-chat-delete,
+.assistant-chat-item:focus-within .assistant-chat-delete { opacity: 1; }
+.assistant-chat-delete:hover { color: #e88373; background: var(--bg); }
+@media (max-width: 850px) {
+  .assistant-chat-delete { opacity: 1; }
 }
