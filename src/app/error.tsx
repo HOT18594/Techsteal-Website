@@ -1,13 +1,20 @@
 "use client";
 
+import { useEffect } from "react";
+
 // Route-level error boundary: without it, any render throw unmounts the whole
 // React tree to a blank white page with no way back except a manual reload.
 export default function Error({
+  error,
   reset,
 }: {
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  useEffect(() => {
+    console.error(error);
+  }, [error]);
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center px-6 py-24 text-center">
       <div className="card p-8 max-w-md w-full">
@@ -17,11 +24,11 @@ export default function Error({
           This page hit an unexpected error. Trying again usually fixes it.
         </p>
         <div className="flex items-center justify-center gap-3 flex-wrap">
-          <button className="btn-primary" onClick={reset}>
+          <button type="button" className="btn-primary" onClick={reset}>
             <i className="fa-solid fa-rotate-right" aria-hidden="true" />
             Try again
           </button>
-          <button className="btn-secondary" onClick={() => window.location.reload()}>
+          <button type="button" className="btn-secondary" onClick={() => window.location.reload()}>
             Reload page
           </button>
         </div>

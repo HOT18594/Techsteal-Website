@@ -26,7 +26,8 @@ const eslintConfig = [
     },
   },
   globalIgnores([
-    ".next/**",
+    ".next*/**",
+    ".zwork/**",
     "out/**",
     "build/**",
     "node_modules/**",

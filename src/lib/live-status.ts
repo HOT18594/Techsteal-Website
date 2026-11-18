@@ -19,6 +19,11 @@ import { siteConfig } from "./site";
 const CACHE_MS = 15_000;
 let cache: { at: number; promise: Promise<ServerStatus> } | null = null;
 
+/** Bust the cached status immediately after a server start/stop/restart action. */
+export function invalidateLiveStatus(): void {
+  cache = null;
+}
+
 export function getLiveStatus(): Promise<ServerStatus> {
   const now = Date.now();
   if (cache && now - cache.at < CACHE_MS) return cache.promise;

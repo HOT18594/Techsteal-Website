@@ -7,9 +7,13 @@ import { SubPage } from "@/components/SubPage";
 import { useApi } from "@/lib/use-api";
 
 export function HistoryClient({ initialEvents }: { initialEvents: TimelineEvent[] }) {
-  // The page server-renders the real timeline; useApi only refreshes it in
-  // the background, so first paint already has content (no skeleton flash).
-  const { data: events, loading, error, refetch } = useApi<TimelineEvent[]>("/api/timeline", initialEvents);
+  // SSR already passed fresh events — only fetch client-side if initialEvents
+  // arrived empty (or when the user manually retries).
+  const { data: events, loading, error, refetch } = useApi<TimelineEvent[]>(
+    "/api/timeline",
+    initialEvents,
+    initialEvents.length === 0
+  );
   const [eraFilter, setEraFilter] = useState<string>("All");
 
   const eras = useMemo(
@@ -34,10 +38,11 @@ export function HistoryClient({ initialEvents }: { initialEvents: TimelineEvent[
         </div>
 
         {error && events.length > 0 ? (
-          <div className="mb-6 flex items-center gap-2 flex-wrap text-xs text-[var(--muted)] border border-[var(--border)] rounded-lg px-4 py-3 bg-[var(--bg-2)]/50">
+          <div className="mb-6 flex items-center gap-2 flex-wrap text-xs text-[var(--muted)] border border-[var(--border)] rounded-[10px] px-4 py-3 bg-[var(--bg-2)]/50">
             <i className="fa-solid fa-circle-info text-[var(--muted-2)]" aria-hidden="true" />
             <span>Couldn&apos;t refresh the timeline — showing the last loaded version.</span>
             <button
+              type="button"
               className="text-[var(--accent)] hover:text-[var(--accent-bright)] transition"
               onClick={() => void refetch()}
             >
@@ -59,21 +64,29 @@ export function HistoryClient({ initialEvents }: { initialEvents: TimelineEvent[
             ))}
           </div>
         ) : events.length === 0 ? (
-          <EmptyState icon="fa-clock-rotate-left" title="No events recorded yet" hint="History will fill in as seasons pass." />
+          <EmptyState
+            icon="fa-clock-rotate-left"
+            title="No events recorded yet"
+            hint="History will fill in as seasons pass."
+          />
         ) : (
           <div className="grid lg:grid-cols-12 gap-8">
             {/* Era filter — sidebar on desktop, chips everywhere else */}
             <div className="lg:col-span-3">
               <div className="lg:sticky lg:top-24 flex lg:flex-col gap-2 flex-wrap">
                 {["All", ...eras].map((era) => {
-                  const count = era === "All" ? events.length : events.filter((e) => e.era === era).length;
+                  const count =
+                    era === "All"
+                      ? events.length
+                      : events.filter((e) => e.era === era).length;
                   const active = eraFilter === era;
                   return (
                     <button
                       key={era}
+                      type="button"
                       onClick={() => setEraFilter(era)}
                       aria-pressed={active}
-                      className={`lg:w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-sm transition border text-left ${
+                      className={`lg:w-full flex items-center justify-between gap-3 px-3 py-2 rounded-[10px] text-sm transition border text-left ${
                         active
                           ? "bg-[var(--accent-dim)] border-[var(--accent)]/50 text-[var(--accent)] font-semibold"
                           : "border-[var(--border)] text-[var(--muted)] hover:text-[var(--fg)] hover:border-[var(--border-strong)]"
@@ -89,26 +102,32 @@ export function HistoryClient({ initialEvents }: { initialEvents: TimelineEvent[
 
             {/* Timeline */}
             <div className="lg:col-span-9">
-              <div className="timeline stagger">
-                {visible.length === 0 ? (
-                  <EmptyState icon="fa-clock-rotate-left" title={`No events in ${eraFilter}`} action={
-                    <button className="btn-secondary btn-sm" onClick={() => setEraFilter("All")}>
+              {visible.length === 0 ? (
+                <EmptyState
+                  icon="fa-clock-rotate-left"
+                  title={`No events in ${eraFilter}`}
+                  action={
+                    <button
+                      type="button"
+                      className="btn-secondary btn-sm"
+                      onClick={() => setEraFilter("All")}
+                    >
                       Show all eras
                     </button>
-                  } />
-                ) : (
-                  visible.map((e, i) => (
-                    <div
+                  }
+                />
+              ) : (
+                <ol className="timeline stagger list-none m-0 p-0">
+                  {visible.map((e, i) => (
+                    <li
                       key={e.id ?? `${e.date}-${e.title}-${i}`}
                       className={`timeline-item ${e.major ? "major" : ""}`}
                     >
-                      <div className="timeline-dot" />
+                      <div className="timeline-dot" aria-hidden="true" />
                       <div className="flex flex-col md:flex-row md:items-baseline gap-2 mb-2">
                         <span className="font-display text-sm text-[var(--accent)]">{e.date}</span>
                         <span className="text-xs text-[var(--muted-2)] uppercase tracking-wider">{e.era}</span>
                       </div>
-                      {/* Major events get the card treatment (pinned-thread
-                          language) so they read as bigger deals */}
                       {e.major ? (
                         <div className="card p-5 border-l-[3px] border-l-[var(--accent)]">
                           <h3 className="font-display text-2xl font-bold mb-2 text-[var(--accent)]">
@@ -124,10 +143,10 @@ export function HistoryClient({ initialEvents }: { initialEvents: TimelineEvent[
                           {e.description && <p className="text-[var(--muted)] max-w-2xl">{e.description}</p>}
                         </div>
                       )}
-                    </div>
-                  ))
-                )}
-              </div>
+                    </li>
+                  ))}
+                </ol>
+              )}
             </div>
           </div>
         )}

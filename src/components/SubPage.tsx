@@ -23,7 +23,7 @@ export function SubPage({ children, className = "" }: SubPageProps) {
   const hasMaxWidth = /\bmax-w-/.test(className);
   return (
     <section className="flex-1 min-h-0 flex flex-col">
-      <div aria-hidden="true" className="h-28 lg:h-32 flex-shrink-0" />
+      <div aria-hidden="true" className="subpage-spacer h-28 lg:h-32 flex-shrink-0" />
       <div
         className={`flex-1 min-h-0 flex flex-col w-full mx-auto px-6 lg:px-10 pb-16 ${
           hasMaxWidth ? "" : "max-w-7xl"

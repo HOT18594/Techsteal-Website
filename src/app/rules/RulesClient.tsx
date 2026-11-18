@@ -7,13 +7,7 @@ import { EmptyState, ErrorState } from "@/components/EmptyState";
 import type { RuleSection } from "@/types";
 import { useApi } from "@/lib/use-api";
 
-/** Party burst: launches a shower of 🎉🎊🔥✨💥 from a point on screen.
- *  Returns a cancel function that clears the removal timer and detaches the
- *  wrapper immediately — navigating away mid-burst used to leave the pieces
- *  animating over the next page until the 1800 ms timer fired on its own. */
 function emojiBurst(x: number, y: number, count: number): () => void {
-  // Respect reduced motion — the CSS neutralizes the animation, but don't
-  // even build the DOM nodes.
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return () => {};
   const EMOJIS = ["🎉", "🎊", "🔥", "✨", "💥"];
   const wrap = document.createElement("div");
@@ -45,17 +39,15 @@ function emojiBurst(x: number, y: number, count: number): () => void {
 
 export function RulesClient({ initialSections }: { initialSections: RuleSection[] }) {
   const { show } = useToast();
-  // The page server-renders real rules; useApi only refreshes them in the
-  // background, so first paint already has content (no skeleton flash).
-  const { data: sections, loading, error, refetch } = useApi<RuleSection[]>("/api/rules", initialSections);
-  // `null` = localStorage not read yet. The button renders disabled until the
-  // stored value is known: seeding `false` made an already-acknowledged
-  // visitor see a live "🔥 Acknowledge" button for one frame before it
-  // flipped to "Acknowledged", which looked like the click had been lost.
+  // SSR already passed fresh rules — only fetch client-side if initialSections
+  // arrived empty (or when the user manually retries).
+  const { data: sections, loading, error, refetch } = useApi<RuleSection[]>(
+    "/api/rules",
+    initialSections,
+    initialSections.length === 0
+  );
   const [acknowledged, setAcknowledged] = useState<boolean | null>(null);
   const ackRef = useRef<HTMLButtonElement>(null);
-  // Cancel functions for confetti bursts still on screen — a burst outliving
-  // the page kept animating over whatever the user navigated to.
   const burstsRef = useRef<Array<() => void>>([]);
   const burstTimersRef = useRef<number[]>([]);
   useEffect(
@@ -70,9 +62,6 @@ export function RulesClient({ initialSections }: { initialSections: RuleSection[
 
   const totalRules = sections.reduce((n, s) => n + (s.rules?.length ?? 0), 0);
 
-  // Persist the acknowledgment (per browser) so the button doesn't reset
-  // and re-fire the confetti on every visit. Read after mount to avoid a
-  // hydration mismatch.
   useEffect(() => {
     try {
       setAcknowledged(localStorage.getItem("techsteal-rules-ack") === "1");
@@ -114,10 +103,11 @@ export function RulesClient({ initialSections }: { initialSections: RuleSection[
         </div>
 
         {error && sections.length > 0 ? (
-          <div className="mb-6 flex items-center gap-2 flex-wrap text-xs text-[var(--muted)] border border-[var(--border)] rounded-lg px-4 py-3 bg-[var(--bg-2)]/50">
+          <div className="mb-6 flex items-center gap-2 flex-wrap text-xs text-[var(--muted)] border border-[var(--border)] rounded-[10px] px-4 py-3 bg-[var(--bg-2)]/50">
             <i className="fa-solid fa-circle-info text-[var(--muted-2)]" aria-hidden="true" />
             <span>Couldn&apos;t refresh the rules — showing the last loaded version.</span>
             <button
+              type="button"
               className="text-[var(--accent)] hover:text-[var(--accent-bright)] transition"
               onClick={() => void refetch()}
             >
@@ -144,9 +134,8 @@ export function RulesClient({ initialSections }: { initialSections: RuleSection[
           <div className="space-y-6 stagger">
             {sections.map((section, si) => (
               <section key={section.id ?? si} className="card overflow-hidden">
-                {/* Section header — the API's structure is the page's structure */}
                 <div className="flex items-center gap-3 px-5 sm:px-6 py-4 border-b border-[var(--border)] bg-[var(--bg-2)]/50">
-                  <span className="w-9 h-9 rounded-xl bg-[var(--accent-dim)] border border-[var(--border-strong)] flex items-center justify-center text-[var(--accent)]">
+                  <span className="w-9 h-9 rounded-[10px] bg-[var(--accent-dim)] border border-[var(--border-strong)] flex items-center justify-center text-[var(--accent)]">
                     <i className={`fa-solid ${section.icon || "fa-gavel"} text-sm`} aria-hidden="true" />
                   </span>
                   <div>
@@ -156,28 +145,30 @@ export function RulesClient({ initialSections }: { initialSections: RuleSection[
                     </p>
                   </div>
                 </div>
-                {/* Rules as divider-separated rows (forum-reply language) */}
-                <div>
+                <ol className="list-none m-0 p-0">
                   {(section.rules ?? []).map((rule, i) => (
-                    <div
+                    <li
                       key={i}
                       className={`flex items-start gap-5 px-5 sm:px-6 py-4 ${
                         i < (section.rules?.length ?? 0) - 1 ? "border-b border-[var(--border)]" : ""
                       }`}
                     >
-                      <span className="font-display text-sm text-[var(--accent)] flex-shrink-0 w-8 text-right">
+                      <span
+                        className="font-display text-sm text-[var(--accent)] flex-shrink-0 w-8 text-right"
+                        aria-hidden="true"
+                      >
                         {String(i + 1).padStart(2, "0")}
                       </span>
                       <p className="text-[var(--fg)] font-medium leading-relaxed">{rule}</p>
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ol>
               </section>
             ))}
           </div>
         )}
 
-        {/* Acknowledge — the finish line */}
+        {/* Acknowledge */}
         <div className="mt-10 card p-6 flex flex-col sm:flex-row items-center justify-between gap-5">
           <div className="text-center sm:text-left">
             <p className="font-display text-lg font-bold">Read everything above?</p>
@@ -187,15 +178,14 @@ export function RulesClient({ initialSections }: { initialSections: RuleSection[
           </div>
           <button
             ref={ackRef}
+            type="button"
             className={`btn-primary ${acknowledged ? "opacity-90" : ""}`}
             onClick={acknowledge}
-            // `null` (stored value still unknown) disables too — see the state
-            // comment above.
             disabled={acknowledged !== false}
           >
             {acknowledged ? (
               <>
-                <i className="fa-solid fa-check" />
+                <i className="fa-solid fa-check" aria-hidden="true" />
                 Acknowledged
               </>
             ) : (

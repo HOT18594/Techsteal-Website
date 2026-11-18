@@ -16,6 +16,14 @@ export function isPaletteId(value: unknown): value is PaletteId {
   return PALETTES.some((palette) => palette.id === value);
 }
 
+export function getPaletteThemeColor(id: PaletteId): string {
+  return PALETTES.find((palette) => palette.id === id)?.colors[0] ?? PALETTES[0].colors[0];
+}
+
+const PALETTE_THEME_COLORS = Object.fromEntries(
+  PALETTES.map((p) => [p.id, p.colors[0]])
+);
+
 // Apply the allow-listed preference before first paint, including when storage
 // is blocked. No account data or user-provided CSS is accepted.
-export const paletteBootstrap = `try{var p=localStorage.getItem(${JSON.stringify(PALETTE_STORAGE_KEY)});if(${JSON.stringify(PALETTES.map((p) => p.id))}.includes(p))document.documentElement.dataset.palette=p}catch{}`;
+export const paletteBootstrap = `try{var m=${JSON.stringify(PALETTE_THEME_COLORS)},p=localStorage.getItem(${JSON.stringify(PALETTE_STORAGE_KEY)});if(p&&Object.prototype.hasOwnProperty.call(m,p)){document.documentElement.dataset.palette=p;var t=document.querySelector('meta[name="theme-color"]');if(t)t.setAttribute("content",m[p])}}catch{}`;

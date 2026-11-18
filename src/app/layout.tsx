@@ -12,7 +12,7 @@ import { RevealObserver } from "@/components/RevealObserver";
 import { ToastProvider } from "@/components/Toast";
 import { PaletteProvider } from "@/components/PaletteProvider";
 import { paletteBootstrap } from "@/lib/palettes";
-import { siteConfig } from "@/lib/site";
+import { getSiteUrl, siteConfig } from "@/lib/site";
 // Self-hosted Font Awesome: the old cdnjs <link> was render-blocking, so on
 // networks that block or blackhole the CDN every page stayed blank until the
 // request timed out. Bundled CSS + webfonts remove the third-party dependency.
@@ -34,7 +34,7 @@ const grotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.techsteal.space"),
+  metadataBase: new URL(getSiteUrl()),
   title: {
     default: "Techsteal",
     template: "%s · Techsteal",
@@ -42,12 +42,16 @@ export const metadata: Metadata = {
   description: `Official website for the ${siteConfig.name} private Minecraft server — ${siteConfig.season} is ${siteConfig.seasonLive ? "live" : "coming soon"}. Status, forum, members, gallery, and rules.`,
   openGraph: {
     title: "Techsteal",
+    siteName: siteConfig.name,
     description: `Status, forum, members, gallery, and rules for the ${siteConfig.name} Minecraft server.`,
     type: "website",
     images: ["/techsteal-hero.jpeg"],
   },
   twitter: {
     card: "summary_large_image",
+    title: "Techsteal",
+    description: `Status, forum, members, gallery, and rules for the ${siteConfig.name} Minecraft server.`,
+    images: ["/techsteal-hero.jpeg"],
   },
   alternates: {
     types: {
@@ -74,12 +78,18 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           </div>
         </noscript>
         <PaletteProvider><ToastProvider>
+          <a
+            href="#main-content"
+            className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2.5 focus:rounded-[10px] focus:bg-[var(--accent)] focus:text-[var(--bg)] focus:text-xs focus:font-bold"
+          >
+            Skip to main content
+          </a>
           <RevealObserver />
           <Navbar />
           <AnnouncementBar />
           <OnboardingReminder />
           <PollAnnouncement />
-          <main className="flex-1 flex flex-col">
+          <main id="main-content" tabIndex={-1} className="flex-1 flex flex-col outline-none">
             <PageEnter>{children}</PageEnter>
           </main>
           <Footer />

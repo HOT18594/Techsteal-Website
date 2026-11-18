@@ -163,7 +163,22 @@ function loadStore(): ChatStore | null {
 
 function saveStore(store: ChatStore): void {
   try {
-    localStorage.setItem(CHATS_KEY, JSON.stringify(store));
+    // Strip base64 `image` data URLs before persisting — a couple of 2 MB
+    // pasted screenshots would otherwise blow the 5 MB localStorage quota
+    // and break conversation saving.
+    const stripped: ChatStore = {
+      ...store,
+      chats: store.chats.map((chat) => ({
+        ...chat,
+        messages: chat.messages.map((msg) => {
+          if (!msg.image) return msg;
+          const copy = { ...msg };
+          delete copy.image;
+          return copy;
+        }),
+      })),
+    };
+    localStorage.setItem(CHATS_KEY, JSON.stringify(stripped));
   } catch {
     // Quota or private mode — the conversation just isn't persisted.
   }
@@ -294,21 +309,22 @@ const ChatMessageRow = memo(function ChatMessageRow({
             <div className="chat-md">{renderText(message.text)}</div>
             {message.error && message.retry ? (
               <button
+                type="button"
                 className="assistant-retry"
                 onClick={isLast ? onRegenerate : () => onRetry(message.retry!)}
               >
-                <i className="fa-solid fa-rotate-right" /> Retry
+                <i className="fa-solid fa-rotate-right" aria-hidden="true" /> Retry
               </button>
             ) : null}
           </div>
           <div className="assistant-message-actions">
             {message.stats ? <span>{message.stats}</span> : <span />}
-            <button onClick={() => onCopy(message.text)}>
-              <i className="fa-regular fa-copy" /> Copy
+            <button type="button" onClick={() => onCopy(message.text)}>
+              <i className="fa-regular fa-copy" aria-hidden="true" /> Copy
             </button>
             {canRegenerate && isLast ? (
-              <button onClick={onRegenerate}>
-                <i className="fa-solid fa-rotate-right" /> Regenerate
+              <button type="button" onClick={onRegenerate}>
+                <i className="fa-solid fa-rotate-right" aria-hidden="true" /> Regenerate
               </button>
             ) : null}
           </div>
@@ -331,8 +347,8 @@ const ChatMessageRow = memo(function ChatMessageRow({
         ) : null}
         <div className="assistant-user-bubble">{message.text}</div>
         <div className="assistant-message-actions is-user-actions">
-          <button onClick={() => onCopy(message.text)}>
-            <i className="fa-regular fa-copy" /> Copy
+          <button type="button" onClick={() => onCopy(message.text)}>
+            <i className="fa-regular fa-copy" aria-hidden="true" /> Copy
           </button>
         </div>
       </div>
@@ -427,7 +443,7 @@ export function Chatty() {
       if (!modelRef.current?.contains(event.target as Node)) setModelOpen(false);
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setModelOpen(false);
+      if (event.key === "Escape" && !hasOpenOverlays()) setModelOpen(false);
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -634,9 +650,12 @@ export function Chatty() {
   }, [hydrated, messages.length, hasAccess]);
 
   const send = async (raw?: string, baseMessages?: ChatMessage[]) => {
-    const text = (raw ?? input).trim();
-    // Attachments only ride along with a typed message, and only once.
-    const image = attachment;
+    const fromComposer = raw === undefined;
+    // Attachments only ride along with a composer submission — suggestions,
+    // Retry, and Regenerate must not steal an unsent image from the composer.
+    const image = fromComposer ? attachment : null;
+    const typed = (raw ?? input).trim();
+    const text = typed || (image ? "Describe this image." : "");
     // The controller is installed synchronously; React's typing state may
     // still be stale when two clicks/Enter presses arrive in the same tick.
     if (!text || typing || !hasAccess || (controllerRef.current && !controllerRef.current.signal.aborted)) return;
@@ -650,10 +669,12 @@ export function Chatty() {
       ...m,
       { id: nextId.current++, role: "user", text, time: nowTime(), image: image ?? undefined },
     ]);
-    setInput("");
-    setAttachment(null);
-    if (inputRef.current) {
-      inputRef.current.style.height = "auto";
+    if (fromComposer) {
+      setInput("");
+      setAttachment(null);
+      if (inputRef.current) {
+        inputRef.current.style.height = "auto";
+      }
     }
     setTyping(true);
     setDots(true);
@@ -945,9 +966,11 @@ export function Chatty() {
 
   const deleteChat = (id: string) => {
     const remaining = chats.filter((entry) => entry.id !== id);
-    setChats(remaining);
-    saveStore({ activeId: activeIdRef.current, chats: remaining });
     if (id === activeIdRef.current) {
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
       if (remaining.length > 0) {
         const next = remaining[0];
         activeIdRef.current = next.id;
@@ -963,6 +986,8 @@ export function Chatty() {
         ]);
       }
     }
+    setChats(remaining);
+    saveStore({ activeId: activeIdRef.current, chats: remaining });
   };
 
   const copyMessage = async (text: string) => {
@@ -1015,8 +1040,8 @@ export function Chatty() {
       <div className="assistant-gate-icon" aria-hidden="true"><ChattyLogo /></div>
       <h2>Hey, I&apos;m {ai.name}</h2>
       <p>Sign in to start a conversation.</p>
-      <Link href="/login" className="btn-primary justify-center">
-        <i className="fa-brands fa-discord" />
+      <Link href="/login?next=/assistant" className="btn-primary justify-center">
+        <i className="fa-brands fa-discord" aria-hidden="true" />
         Log in with Discord
       </Link>
     </div>
@@ -1149,6 +1174,7 @@ export function Chatty() {
               event.target.style.height = `${Math.min(event.target.scrollHeight, 180)}px`;
             }}
             onPaste={(event) => {
+              if (event.clipboardData?.getData("text/plain").trim()) return;
               const item = Array.from(event.clipboardData?.items ?? []).find((entry) =>
                 entry.type.startsWith("image/")
               );
@@ -1190,11 +1216,11 @@ export function Chatty() {
               <button
                 type="button"
                 onClick={() => void send()}
-                disabled={!input.trim()}
+                disabled={!input.trim() && !attachment}
                 className="assistant-send"
                 aria-label="Send message"
               >
-                <i className="fa-solid fa-arrow-up" />
+                <i className="fa-solid fa-arrow-up" aria-hidden="true" />
               </button>
             )}
           </div>
@@ -1215,8 +1241,8 @@ export function Chatty() {
           </div>
         </div>
 
-        <button className="assistant-new-chat assistant-rail-new" onClick={clear} aria-label="Start a new chat">
-          <i className="fa-solid fa-plus" /> New chat
+        <button type="button" className="assistant-new-chat assistant-rail-new" onClick={clear} aria-label="Start a new chat">
+          <i className="fa-solid fa-plus" aria-hidden="true" /> New chat
         </button>
 
         {/* History + Explore share one scroll region: a long history used to
@@ -1273,7 +1299,7 @@ export function Chatty() {
         </div>
 
         <div className="assistant-rail-bottom">
-          {user ? <div className="assistant-account"><Avatar name={user.username} src={user.avatarUrl} size="sm" /><div><strong>{user.username}</strong><span>{hasAccess ? "Member access" : "Verification needed"}</span></div><Link href="/settings" aria-label="Account settings"><i className="fa-solid fa-gear" /></Link></div> : <Link href="/login" className="assistant-rail-signin"><i className="fa-brands fa-discord" /> Sign in</Link>}
+          {user ? <div className="assistant-account"><Avatar name={user.username} src={user.avatarUrl} size="sm" /><div><strong>{user.username}</strong><span>{hasAccess ? "Member access" : "Verification needed"}</span></div><Link href="/settings" aria-label="Account settings"><i className="fa-solid fa-gear" aria-hidden="true" /></Link></div> : <Link href="/login?next=/assistant" className="assistant-rail-signin"><i className="fa-brands fa-discord" aria-hidden="true" /> Log in with Discord</Link>}
         </div>
       </aside>
 
@@ -1331,8 +1357,8 @@ export function Chatty() {
               <span>Search</span>
               <span className="assistant-toggle-track" aria-hidden="true"><span /></span>
             </button>
-            <button className="assistant-new-chat assistant-mobile-new" onClick={clear} aria-label="Start a new chat">
-              <i className="fa-solid fa-plus" />
+            <button type="button" className="assistant-new-chat assistant-mobile-new" onClick={clear} aria-label="Start a new chat">
+              <i className="fa-solid fa-plus" aria-hidden="true" />
               <span>New chat</span>
             </button>
           </div>
@@ -1367,7 +1393,7 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
     <div className="chat-codeblock my-2">
       <div className="chat-codeblock-header">
         <span>{lang || "code"}</span>
-        <button onClick={() => void copy()} aria-label="Copy code">
+        <button type="button" onClick={() => void copy()} aria-label="Copy code">
           <i className="fa-regular fa-copy" aria-hidden="true" /> Copy
         </button>
       </div>

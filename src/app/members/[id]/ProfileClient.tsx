@@ -1,11 +1,9 @@
-"use client";
-
 import Image from "next/image";
 import Link from "next/link";
 import { Avatar } from "@/components/Avatar";
 import { EmptyState } from "@/components/EmptyState";
+import { RelativeTime } from "@/components/RelativeTime";
 import { SubPage } from "@/components/SubPage";
-import { timeAgo } from "@/lib/time";
 import type { PublicProfile } from "@/types";
 
 export function ProfileClient({ profile }: { profile: PublicProfile }) {
@@ -56,6 +54,7 @@ export function ProfileClient({ profile }: { profile: PublicProfile }) {
               }`}
             >
               <span
+                aria-hidden="true"
                 className={`w-2 h-2 rounded-full ${
                   profile.online ? "bg-[var(--emerald)]" : "bg-[var(--muted-2)]"
                 }`}
@@ -104,7 +103,9 @@ export function ProfileClient({ profile }: { profile: PublicProfile }) {
                   </div>
                   <div className="p-4">
                     <h3 className="font-semibold truncate">{g.title}</h3>
-                    <span className="text-xs text-[var(--muted)]">{g.category} · {g.likes} likes</span>
+                    <span className="text-xs text-[var(--muted)]">
+                      {g.category} · {g.likes} {g.likes === 1 ? "like" : "likes"}
+                    </span>
                   </div>
                 </Link>
               ))}
@@ -133,7 +134,8 @@ export function ProfileClient({ profile }: { profile: PublicProfile }) {
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold truncate">{t.title}</h3>
                     <span className="text-xs text-[var(--muted)]">
-                      {t.category} · {t.replies} replies · {timeAgo(t.last)}
+                      {t.category} · {t.replies} {t.replies === 1 ? "reply" : "replies"} ·{" "}
+                      <RelativeTime iso={t.last} />
                     </span>
                   </div>
                   <i className="fa-solid fa-arrow-right text-[var(--muted)] text-xs" aria-hidden="true" />

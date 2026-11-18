@@ -41,8 +41,17 @@ export function Navbar() {
   );
 
   useEffect(() => {
-    const timer = setInterval(() => void refetchStatus(), 60_000);
-    return () => clearInterval(timer);
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "hidden") void refetchStatus();
+    }, 60_000);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refetchStatus();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [refetchStatus]);
 
   useEffect(() => {
@@ -109,11 +118,24 @@ export function Navbar() {
     }
   };
 
+  const isAdmin = user?.role === "admin";
   const statusLive = status.source === "live";
-  const online = statusLive && status.online;
-  const players = statusLive ? (status.players ?? 0) : 0;
+  const rawOnline = statusLive && status.online;
+  const online = siteConfig.seasonLive ? rawOnline : isAdmin && rawOnline;
+  const players = online ? (status.players ?? 0) : 0;
   const max = status.max ?? siteConfig.maxPlayers;
-  const statusText = statusLoading ? "Checking" : online ? "Online" : "Offline";
+  const statusText = !siteConfig.seasonLive
+    ? isAdmin && rawOnline
+      ? "Prep"
+      : "Soon"
+    : statusLoading
+      ? "Checking"
+      : online
+        ? "Online"
+        : "Offline";
+  const statusAria = !siteConfig.seasonLive
+    ? `${siteConfig.season} ${isAdmin && rawOnline ? "in prep" : "coming soon"}. View server status`
+    : `${statusText}${online ? `, ${players} of ${max} players` : ""}. View server status`;
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
   return (
@@ -135,7 +157,7 @@ export function Navbar() {
 
         <div className={`t-nav-actions ${user ? "has-account" : ""}`}>
           <Link href="/status" className={`t-nav-status ${online ? "is-online" : ""}`}
-            aria-label={`${statusText}${online ? `, ${players} of ${max} players` : ""}. View server status`}>
+            aria-label={statusAria}>
             <span aria-hidden="true" />{statusText}
           </Link>
           <div className="t-nav-icons">

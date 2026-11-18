@@ -74,7 +74,10 @@ export async function searchModrinth(query: string, limit = 4): Promise<Modrinth
           signal: AbortSignal.timeout(5_000),
         }
       );
-      if (!res.ok) return [];
+      if (!res.ok) {
+        await res.body?.cancel().catch(() => {});
+        return [];
+      }
       const data = (await res.json()) as ModrinthSearchResponse;
       const hits = Array.isArray(data.hits) ? data.hits : [];
       return hits

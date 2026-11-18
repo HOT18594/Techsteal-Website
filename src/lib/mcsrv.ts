@@ -24,8 +24,9 @@ export async function getServerStatus(): Promise<ServerStatus> {
   const host = process.env.MINECRAFT_SERVER ?? siteConfig.address;
   const port = process.env.MINECRAFT_PORT;
   // mcsrvstat.us only honors the port inside the path (host:port) — a
-  // ?port= query param is silently ignored and always pings 25565.
-  const url = `https://api.mcsrvstat.us/3/${host}${port ? `:${port}` : ""}`;
+  // ?port= query param is silently ignored and always pings 25565. Guard
+  // against doubling `:port` when `host` already includes one.
+  const url = `https://api.mcsrvstat.us/3/${host}${port && !host.includes(":") ? `:${port}` : ""}`;
 
   try {
     // Must time out: live-status single-flights the promise it returns, so
@@ -35,7 +36,10 @@ export async function getServerStatus(): Promise<ServerStatus> {
       cache: "no-store",
       signal: AbortSignal.timeout(8_000),
     });
-    if (!res.ok) throw new Error(`mcsrvstat.us returned ${res.status}`);
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => {});
+      throw new Error(`mcsrvstat.us returned ${res.status}`);
+    }
     const data = (await res.json()) as McsrResponse;
 
     if (!data.online) {

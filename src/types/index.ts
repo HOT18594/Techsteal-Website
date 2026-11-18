@@ -165,7 +165,7 @@ export interface Account {
   permissions: Permission[];
   createdAt?: string;
   /** Minecraft username set during onboarding / profile settings. */
-  minecraftUsername?: string;
+  minecraftUsername?: string | null;
   /** True once the user verified membership in the Discord server. */
   discordVerified?: boolean;
   /** True once the user finished onboarding. */
@@ -338,7 +338,11 @@ export interface Announcement {
   id: number;
   title: string;
   body: string;
-  tone: string;
+  tone: "info" | "warning" | "critical" | (string & {});
+  active?: boolean;
   authorName: string;
   createdAt: string | null;
 }
+
+/** Exaroton player list identifiers manageable from the admin panel. */
+export type ServerPlayerListName = "whitelist" | "ops" | "banned-players";

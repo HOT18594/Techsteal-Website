@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -56,16 +57,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const contextValue = useMemo(() => ({ show }), [show]);
   const isError = toast?.variant === "error";
   return (
-    <ToastContext.Provider value={{ show }}>
+    <ToastContext.Provider value={contextValue}>
       {children}
       <div
         className={`toast ${toast ? "show" : ""} ${isError ? "error" : ""}`}
         role={isError ? "alert" : "status"}
-        aria-live="polite"
+        aria-live={isError ? "assertive" : "polite"}
       >
         <i
+          aria-hidden="true"
           className={`fa-solid ${isError ? "fa-circle-exclamation text-[var(--redstone)]" : "fa-check-circle text-[var(--accent)]"}`}
         />
         <div className="min-w-0">
@@ -75,8 +78,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           ) : null}
         </div>
         {toast ? (
-          <button className="toast-dismiss" onClick={dismiss} aria-label="Dismiss notification">
-            <i className="fa-solid fa-xmark" />
+          <button type="button" className="toast-dismiss" onClick={dismiss} aria-label="Dismiss notification">
+            <i className="fa-solid fa-xmark" aria-hidden="true" />
           </button>
         ) : null}
       </div>

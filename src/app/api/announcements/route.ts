@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { announcements } from "@/lib/schema";
-import { checkAdmin, ACCOUNT_DB_ERROR_MESSAGE } from "@/lib/accounts";
-import { getSessionUser } from "@/lib/auth";
+import { ACCOUNT_DB_ERROR_MESSAGE, requireAdminAccount } from "@/lib/accounts";
 import { logAudit } from "@/lib/audit";
 import { isRateLimited } from "@/lib/rate-limit";
 
@@ -45,15 +44,16 @@ export async function GET(): Promise<NextResponse> {
 
 // Admin: publish an announcement.
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const verdict = await checkAdmin();
-  if (verdict === "db_error") {
+  const gate = await requireAdminAccount();
+  if (gate.status === "db_error") {
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
-  if (verdict === "no") return NextResponse.json({ error: "Admins only." }, { status: 403 });
+  if (gate.status === "no") {
+    return NextResponse.json({ error: "Admins only." }, { status: 403 });
+  }
+  const admin = gate.account;
 
-  const user = await getSessionUser();
-  if (!user) return NextResponse.json({ error: "Admins only." }, { status: 403 });
-  if (isRateLimited(`announce:${user.id}`, 12, 60_000)) {
+  if (isRateLimited(`announce:${admin.id}`, 12, 60_000)) {
     return NextResponse.json({ error: "Slow down a little." }, { status: 429 });
   }
 
@@ -63,13 +63,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const raw = body as Record<string, unknown>;
-  const title = typeof raw.title === "string" ? raw.title.trim().slice(0, 120) : "";
-  const text = typeof raw.body === "string" ? raw.body.trim().slice(0, 400) : "";
-  const tone = typeof raw.tone === "string" && TONES.has(raw.tone) ? raw.tone : "info";
-
-  if (title.length < 3) {
-    return NextResponse.json({ error: "Give it a title of at least 3 characters." }, { status: 400 });
+  const rawTitle = typeof raw.title === "string" ? raw.title.trim() : "";
+  if (rawTitle.length < 3 || rawTitle.length > 120) {
+    return NextResponse.json(
+      { error: "Give it a title between 3 and 120 characters." },
+      { status: 400 }
+    );
   }
+  const rawBody = typeof raw.body === "string" ? raw.body.trim() : "";
+  if (rawBody.length > 400) {
+    return NextResponse.json(
+      { error: "Announcement body must be 400 characters or fewer." },
+      { status: 400 }
+    );
+  }
+  const tone = typeof raw.tone === "string" && TONES.has(raw.tone) ? raw.tone : "info";
 
   const db = getDb();
   if (!db) {
@@ -80,24 +88,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const [created] = await db
       .insert(announcements)
       .values({
-        title,
-        body: text,
+        title: rawTitle,
+        body: rawBody,
         tone,
         active: true,
-        authorId: user.id,
-        authorName: user.username,
+        authorId: admin.id,
+        authorName: admin.username,
       })
       .returning();
 
     await logAudit({
-      actorId: user.id,
-      actorName: user.username,
+      actorId: admin.id,
+      actorName: admin.username,
       action: "announcement_create",
-      targetName: title,
+      targetId: String(created.id),
+      targetName: rawTitle,
       detail: tone,
     });
 
-    return NextResponse.json({ announcement: publicAnnouncement(created) });
+    return NextResponse.json({
+      announcement: { ...publicAnnouncement(created), active: created.active },
+    });
   } catch (err) {
     console.error("api/announcements POST: insert failed", err);
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });

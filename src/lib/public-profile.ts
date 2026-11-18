@@ -16,53 +16,88 @@ export const getPublicProfile = cache(async (id: string): Promise<PublicProfile 
   const db = getDb();
   if (!db) return null;
 
-  const [account] = await db
-    .select({
-      id: profiles.id,
-      username: profiles.username,
-      role: profiles.role,
-      avatarUrl: profiles.avatarUrl,
-      minecraftUsername: profiles.minecraftUsername,
-      discordVerified: profiles.discordVerified,
-      createdAt: profiles.createdAt,
-    })
-    .from(profiles)
-    .where(
-      and(
-        eq(profiles.id, id),
-        eq(profiles.banned, false),
-        isNotNull(profiles.minecraftUsername),
-        ne(profiles.minecraftUsername, "")
-      )
-    )
-    .limit(1);
-  if (!account) return null;
-
-  const mcName = account.minecraftUsername!.trim();
-  if (!mcName) return null;
-
-  const color = colorFor(account.id);
-  // Discord PFP preferred (matches forum avatars); MC head as fallback.
-  const avatarUrl = account.avatarUrl ?? minotarUrl(mcName);
-  const skinUrl = minotarUrl(mcName, 160);
-
-  let online = false;
   try {
-    const status = await getLiveStatus();
-    if (status.source === "live" && status.online) {
-      online = (status.playerList ?? []).some((n) => n.toLowerCase() === mcName.toLowerCase());
-    }
-  } catch {
-    // status unavailable — show offline, which is safe/honest.
-  }
+    const [account] = await db
+      .select({
+        id: profiles.id,
+        username: profiles.username,
+        role: profiles.role,
+        avatarUrl: profiles.avatarUrl,
+        minecraftUsername: profiles.minecraftUsername,
+        discordVerified: profiles.discordVerified,
+        createdAt: profiles.createdAt,
+      })
+      .from(profiles)
+      .where(
+        and(
+          eq(profiles.id, id),
+          eq(profiles.banned, false),
+          isNotNull(profiles.minecraftUsername),
+          ne(profiles.minecraftUsername, "")
+        )
+      )
+      .limit(1);
+    if (!account) return null;
 
-  const [threadRows, galleryRows, buildsN, discussionsN, repliesN] = await Promise.all([
-    db.select().from(forumThreads).where(eq(forumThreads.authorId, id)).orderBy(desc(forumThreads.createdAt)).limit(20),
-    db.select().from(galleryItems).where(eq(galleryItems.authorId, id)).orderBy(desc(galleryItems.createdAt)).limit(24),
-    db.select({ value: count() }).from(galleryItems).where(eq(galleryItems.authorId, id)),
-    db.select({ value: count() }).from(forumThreads).where(eq(forumThreads.authorId, id)),
-    db.select({ value: count() }).from(forumReplies).where(eq(forumReplies.authorId, id)),
-  ]);
+    const mcName = account.minecraftUsername!.trim();
+    if (!mcName) return null;
+
+    const color = colorFor(account.id);
+    // Discord PFP preferred (matches forum avatars); MC head as fallback.
+    const avatarUrl = account.avatarUrl ?? minotarUrl(mcName);
+    const skinUrl = minotarUrl(mcName, 160);
+
+    const [status, threadRows, galleryRows, buildsN, discussionsN, repliesN] = await Promise.all([
+      getLiveStatus().catch(() => null),
+      db
+        .select({
+          id: forumThreads.id,
+          title: forumThreads.title,
+          author: forumThreads.author,
+          authorId: forumThreads.authorId,
+          avatar: forumThreads.avatar,
+          category: forumThreads.category,
+          tagClass: forumThreads.tagClass,
+          replies: forumThreads.replies,
+          last: forumThreads.last,
+          pinned: forumThreads.pinned,
+          views: forumThreads.views,
+          locked: forumThreads.locked,
+          likes: forumThreads.likes,
+          createdAt: forumThreads.createdAt,
+        })
+        .from(forumThreads)
+        .where(eq(forumThreads.authorId, id))
+        .orderBy(desc(forumThreads.createdAt))
+        .limit(20),
+      db
+        .select({
+          id: galleryItems.id,
+          title: galleryItems.title,
+          builder: galleryItems.builder,
+          category: galleryItems.category,
+          likes: galleryItems.likes,
+          image: galleryItems.image,
+          height: galleryItems.height,
+          authorId: galleryItems.authorId,
+          images: galleryItems.images,
+          featured: galleryItems.featured,
+          views: galleryItems.views,
+          createdAt: galleryItems.createdAt,
+        })
+        .from(galleryItems)
+        .where(eq(galleryItems.authorId, id))
+        .orderBy(desc(galleryItems.createdAt))
+        .limit(24),
+      db.select({ value: count() }).from(galleryItems).where(eq(galleryItems.authorId, id)),
+      db.select({ value: count() }).from(forumThreads).where(eq(forumThreads.authorId, id)),
+      db.select({ value: count() }).from(forumReplies).where(eq(forumReplies.authorId, id)),
+    ]);
+
+    const online =
+      status?.source === "live" && status.online
+        ? (status.playerList ?? []).some((n) => n.toLowerCase() === mcName.toLowerCase())
+        : false;
 
   const threads: ForumThread[] = threadRows.map((row) => ({
     id: row.id,
@@ -114,18 +149,27 @@ export const getPublicProfile = cache(async (id: string): Promise<PublicProfile 
     joined: formatJoined(account.createdAt),
     gallery,
     threads,
-    stats: {
-      builds: buildsN[0]?.value ?? 0,
-      discussions: discussionsN[0]?.value ?? 0,
-      replies: repliesN[0]?.value ?? 0,
-    },
-  };
+      stats: {
+        builds: buildsN[0]?.value ?? 0,
+        discussions: discussionsN[0]?.value ?? 0,
+        replies: repliesN[0]?.value ?? 0,
+      },
+    };
+  } catch (err) {
+    console.error("getPublicProfile: query failed", err);
+    return null;
+  }
 });
 
-/** "Aug 20, 2026" from an ISO timestamp; "" when absent/unparseable. */
+/** "Aug 20, 2026" from an ISO timestamp (pinned to UTC to stay hydration-safe); "" when absent/unparseable. */
 function formatJoined(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }

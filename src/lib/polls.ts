@@ -53,20 +53,35 @@ export function pollOptionRows(options: string[]): Array<{ id: string; text: str
 export async function serializePoll(
   db: Db,
   threadId: number,
-  userId?: string | null
+  userId?: string | null,
+  preloadedPoll?: typeof forumPolls.$inferSelect | null
 ): Promise<ForumPoll | null> {
-  const [poll] = await db
-    .select()
-    .from(forumPolls)
-    .where(eq(forumPolls.threadId, threadId))
-    .limit(1);
+  const poll =
+    preloadedPoll !== undefined
+      ? preloadedPoll
+      : (
+          await db
+            .select()
+            .from(forumPolls)
+            .where(eq(forumPolls.threadId, threadId))
+            .limit(1)
+        )[0] ?? null;
   if (!poll) return null;
 
-  const votes = await db
-    .select({ optionId: forumPollVotes.optionId, n: count() })
-    .from(forumPollVotes)
-    .where(eq(forumPollVotes.pollId, poll.id))
-    .groupBy(forumPollVotes.optionId);
+  const [votes, mineRows] = await Promise.all([
+    db
+      .select({ optionId: forumPollVotes.optionId, n: count() })
+      .from(forumPollVotes)
+      .where(eq(forumPollVotes.pollId, poll.id))
+      .groupBy(forumPollVotes.optionId),
+    userId
+      ? db
+          .select({ optionId: forumPollVotes.optionId })
+          .from(forumPollVotes)
+          .where(and(eq(forumPollVotes.pollId, poll.id), eq(forumPollVotes.userId, userId)))
+          .limit(1)
+      : Promise.resolve([]),
+  ]);
 
   const counts: Record<string, number> = {};
   let totalVotes = 0;
@@ -75,15 +90,7 @@ export async function serializePoll(
     totalVotes += v.n;
   }
 
-  let myVote: string | null = null;
-  if (userId) {
-    const [mine] = await db
-      .select({ optionId: forumPollVotes.optionId })
-      .from(forumPollVotes)
-      .where(and(eq(forumPollVotes.pollId, poll.id), eq(forumPollVotes.userId, userId)))
-      .limit(1);
-    myVote = mine?.optionId ?? null;
-  }
+  const myVote: string | null = mineRows[0]?.optionId ?? null;
 
   const ended = new Date(poll.endsAt).getTime() <= Date.now();
   // Per-option tallies ship ONLY when results are visible (the viewer has

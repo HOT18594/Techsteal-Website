@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { applyDiscordVerification, findAccount } from "@/lib/accounts";
+import { checkDiscordGuildMembership } from "@/lib/discord";
 import { isRateLimited } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -10,8 +11,8 @@ export const dynamic = "force-dynamic";
 // it reports `configured: false` and the client can offer to skip.
 //
 // Side effect: when Discord gives a DEFINITIVE answer (200 = member,
-// 404 = not a member) the result is persisted to the account so the
-// `discordVerified` badge is only ever set by the server. Transient
+// 404 code 10007 = not a member) the result is persisted to the account so
+// the `discordVerified` badge is only ever set by the server. Transient
 // failures (429 rate limit, 401/403 revoked bot token, 5xx, network
 // errors) never touch stored state — otherwise one hiccup could mass-wipe
 // every verified member's perks.
@@ -29,56 +30,17 @@ export async function POST() {
     );
   }
 
-  const botToken = process.env.DISCORD_BOT_TOKEN;
-  const guildId = process.env.DISCORD_GUILD_ID;
-  if (!botToken || !guildId) {
+  const membership = await checkDiscordGuildMembership(user.id);
+  if (membership.status === "unconfigured") {
     return NextResponse.json({ configured: false, verified: false });
   }
-
-  const discordId = user.id.replace(/^discord:/, "");
-  let verified = false;
-  let definitive = false; // true only when Discord definitively answered
-  try {
-    const res = await fetch(
-      `https://discord.com/api/guilds/${encodeURIComponent(guildId)}/members/${encodeURIComponent(discordId)}`,
-      {
-        headers: { Authorization: `Bot ${botToken}` },
-        signal: AbortSignal.timeout(10_000),
-      }
-    );
-    if (res.status === 200) {
-      verified = true;
-      definitive = true;
-      // Cancel the unread body so the connection returns to the pool —
-      // every other branch does this, and an unconsumed keep-alive body
-      // holds the socket until GC.
-      await res.body?.cancel().catch(() => {});
-    } else if (res.status === 404) {
-      // A 404 only means "not a member" when Discord names the MEMBER as
-      // unknown (code 10007). The same status also covers an unknown GUILD
-      // (code 10004 — bot kicked or the guild id changed), which must not
-      // wipe stored state; treat that like any other hiccup.
-      try {
-        const payload = (await res.json()) as { code?: number } | null;
-        definitive = payload?.code === 10007;
-      } catch {
-        definitive = false;
-      }
-    } else {
-      // 401/403/429/5xx → leave stored state untouched (report below);
-      // cancel the unread body so the connection returns to the pool.
-      await res.body?.cancel().catch(() => {});
-    }
-  } catch {
-    definitive = false; // Discord outage / timeout — don't wipe anything
-  }
-
-  if (!definitive) {
+  if (membership.status === "transient_error") {
     return NextResponse.json(
       { error: "Discord didn't answer — try again in a moment." },
       { status: 503 }
     );
   }
+  const { verified } = membership;
 
   // Verified membership is the live permission source: verified members
   // earn AI, Gallery posting, and Server Control; anyone no longer in the
@@ -106,7 +68,13 @@ export async function POST() {
   try {
     // Idempotent for verify; for a "left the server" answer it revokes
     // exactly the perks earned from verification.
-    await applyDiscordVerification(user.id, verified);
+    const updated = await applyDiscordVerification(user.id, verified);
+    if (!updated) {
+      return NextResponse.json(
+        { error: "Couldn't save the verification result — try again in a moment." },
+        { status: 503 }
+      );
+    }
   } catch (err) {
     console.error("discord verify: persistence failed", err);
     return NextResponse.json(

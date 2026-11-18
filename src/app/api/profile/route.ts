@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { and, ne, sql } from "drizzle-orm";
 import { addPermissions, findAccount, updateAccount } from "@/lib/accounts";
-import { getSessionUser, setSession } from "@/lib/auth";
+import { clearSession, getSessionUser, setSession } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { getAdminCode } from "@/lib/admin-code";
@@ -47,6 +47,13 @@ export async function GET() {
       });
     }
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (account.banned) {
+    await clearSession().catch(() => {});
+    return NextResponse.json(
+      { error: "Your account no longer exists on this server." },
+      { status: 403 }
+    );
   }
   return NextResponse.json({ profile: account });
 }
@@ -110,16 +117,25 @@ export async function PATCH(request: NextRequest) {
   if (patch.minecraftUsername) {
     const db = getDb();
     if (db) {
-      const [taken] = await db
-        .select({ id: profiles.id })
-        .from(profiles)
-        .where(
-          and(
-            sql`lower(${profiles.minecraftUsername}) = ${patch.minecraftUsername.toLowerCase()}`,
-            ne(profiles.id, account.id)
+      let taken: { id: string } | undefined;
+      try {
+        [taken] = await db
+          .select({ id: profiles.id })
+          .from(profiles)
+          .where(
+            and(
+              sql`lower(${profiles.minecraftUsername}) = ${patch.minecraftUsername.toLowerCase()}`,
+              ne(profiles.id, account.id)
+            )
           )
-        )
-        .limit(1);
+          .limit(1);
+      } catch (err) {
+        console.error("profile PATCH: mc uniqueness lookup failed", err);
+        return NextResponse.json(
+          { error: "The member database is unreachable right now — try again in a moment." },
+          { status: 503 }
+        );
+      }
       if (taken) {
         return NextResponse.json(
           { error: "That Minecraft username is already linked to another member." },
@@ -202,13 +218,15 @@ export async function PATCH(request: NextRequest) {
   }
   if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Role/permissions changed → re-sign the session so it's immediately true.
+  // Role/permissions/onboarding changed → re-sign the session so it's immediately true.
   await setSession({
     id: updated.id,
     username: updated.username,
     role: updated.role,
     permissions: updated.permissions,
     avatarUrl: updated.avatarUrl,
+    onboarded: updated.onboarded,
+    discordVerified: updated.discordVerified,
   });
 
   // A successful admin-code promotion is a privileged event — record it.

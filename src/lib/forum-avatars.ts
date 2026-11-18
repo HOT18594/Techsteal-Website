@@ -5,7 +5,7 @@
 // accounts without one fall back to their Minecraft skin head (via
 // minotar — no key needed), then to a letter tile.
 
-import { inArray, or } from "drizzle-orm";
+import { inArray, or, sql } from "drizzle-orm";
 import { getDb } from "./db";
 import { minotarUrl } from "./minotar";
 import { profiles } from "./schema";
@@ -69,7 +69,14 @@ export async function resolveAuthorAvatars(
 
   const conditions = [];
   if (ids.length > 0) conditions.push(inArray(profiles.id, ids));
-  if (names.length > 0) conditions.push(inArray(profiles.username, names));
+  if (names.length > 0) {
+    conditions.push(
+      inArray(
+        sql`lower(${profiles.username})`,
+        names.map((n) => n.toLowerCase())
+      )
+    );
+  }
 
   const found = await db
     .select({

@@ -8,6 +8,7 @@
 // longer than the sweeper's own idea of "stale" (a fixed 60-minute cutoff
 // silently reset e.g. 24h windows after an hour of idleness).
 const HITS = new Map<string, { ts: number[]; windowMs: number }>();
+const MAX_KEYS = 10_000;
 let lastSweep = 0;
 
 /** True when `key` has gone over `limit` requests within `windowMs`. */
@@ -19,20 +20,27 @@ export function isRateLimited(
   const now = Date.now();
   // Occasionally drop keys whose entries are all stale — without a sweep,
   // abandoned keys linger in the map forever (slow memory leak).
-  if (now - lastSweep > 5 * 60_000) {
+  if (now - lastSweep > 5 * 60_000 || HITS.size >= MAX_KEYS) {
     lastSweep = now;
     for (const [k, entry] of HITS) {
       const newest = entry.ts[entry.ts.length - 1];
-      if (newest !== undefined && now - newest > entry.windowMs) HITS.delete(k);
+      if (newest === undefined || now - newest > entry.windowMs) HITS.delete(k);
+    }
+    while (HITS.size >= MAX_KEYS) {
+      const oldestKey = HITS.keys().next().value;
+      if (oldestKey === undefined) break;
+      HITS.delete(oldestKey);
     }
   }
-  const recent = (HITS.get(key)?.ts ?? []).filter((t) => now - t < windowMs);
+  const existing = HITS.get(key);
+  const trackedWindow = Math.max(existing?.windowMs ?? 0, windowMs);
+  const recent = (existing?.ts ?? []).filter((t) => now - t < windowMs);
   if (recent.length >= limit) {
-    HITS.set(key, { ts: recent, windowMs });
+    HITS.set(key, { ts: recent, windowMs: trackedWindow });
     return true;
   }
   recent.push(now);
-  HITS.set(key, { ts: recent, windowMs });
+  HITS.set(key, { ts: recent, windowMs: trackedWindow });
   return false;
 }
 

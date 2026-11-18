@@ -7,7 +7,7 @@ import { ACCOUNT_DB_ERROR_MESSAGE, accountGate } from "@/lib/accounts";
 import { isRateLimited } from "@/lib/rate-limit";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { publicRow } from "@/lib/public-row";
-import { parseRouteId } from "@/lib/route-ids";
+import { parseBodyId, parseRouteId } from "@/lib/route-ids";
 import { markdownExcerpt } from "@/lib/excerpt";
 import { notify } from "@/lib/notifications";
 
@@ -36,12 +36,7 @@ export async function POST(
   // reject it so a client bug can't toggle the wrong thing.
   let replyId: number | null = null;
   if (body?.replyId !== undefined && body?.replyId !== null) {
-    const parsed =
-      typeof body.replyId === "number"
-        ? Number.isSafeInteger(body.replyId) && body.replyId > 0
-          ? body.replyId
-          : null
-        : parseRouteId(typeof body.replyId === "string" ? body.replyId : null);
+    const parsed = parseBodyId(body.replyId);
     if (parsed === null) {
       return NextResponse.json({ error: "Invalid replyId" }, { status: 400 });
     }
@@ -65,8 +60,10 @@ export async function POST(
   }
 
   // Likes take FOR UPDATE row locks — a scripted hammer serializes on the
-  // row and churns pooler connections, so like writes get a generous cap.
-  if (isRateLimited(`like:${user.id}`, 60, 60_000)) {
+  // row and churns pooler connections, so member like writes get a generous
+  // cap while admins remain exempt.
+  const isAdmin = gate.status === "ok" && gate.account.role === "admin";
+  if (!isAdmin && isRateLimited(`like:${user.id}`, 60, 60_000)) {
     return NextResponse.json({ error: "Slow down a little." }, { status: 429 });
   }
 
@@ -100,7 +97,9 @@ export async function POST(
         return NextResponse.json({ error: "Reply not found" }, { status: 404 });
       }
 
-      const avatars = await resolveAuthorAvatars([updated]);
+      const avatars = await resolveAuthorAvatars([updated]).catch(
+        () => new Map<string, { avatarUrl: string | null; color: string }>()
+      );
       const info = avatarInfoFor(avatars, updated);
       const liked = (updated.likedBy ?? []).includes(user.id);
       if (liked) {

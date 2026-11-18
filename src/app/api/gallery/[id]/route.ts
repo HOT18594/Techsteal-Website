@@ -3,25 +3,19 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { galleryComments, galleryItems } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
-import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, checkAdmin } from "@/lib/accounts";
+import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, requireAdminAccount } from "@/lib/accounts";
+import { logAudit } from "@/lib/audit";
 import { isRateLimited, rateLimitIp } from "@/lib/rate-limit";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { publicRow } from "@/lib/public-row";
-import { parseRouteId } from "@/lib/route-ids";
+import { parseBodyId, parseRouteId } from "@/lib/route-ids";
 import { shouldCountView } from "@/lib/view-counter";
-import { deleteImagesByUrl } from "@/lib/storage";
+import { deleteImagesByUrl, extractStorageUrls } from "@/lib/storage";
 import { markdownExcerpt } from "@/lib/excerpt";
 import { mentionRecipients, notify, notifyMany } from "@/lib/notifications";
+import type { Account } from "@/types";
 
 export const dynamic = "force-dynamic";
-
-/** Parse an id from a JSON body, rejecting null/""/0/negatives. */
-function parseId(value: unknown): number | null {
-  if (typeof value === "number") {
-    return Number.isSafeInteger(value) && value > 0 ? value : null;
-  }
-  return parseRouteId(typeof value === "string" ? value : null);
-}
 
 // Gallery item detail: the post + its comments. Bumps the view counter
 // (deduped per viewer).
@@ -42,34 +36,43 @@ export async function GET(
   // A pooler blip must answer 503 JSON like the list routes, not escape as
   // Next's generic HTML 500.
   try {
-    const items = await db.select().from(galleryItems).where(eq(galleryItems.id, itemId)).limit(1);
-    if (items.length === 0) {
+    const [items, comments, user] = await Promise.all([
+      db.select().from(galleryItems).where(eq(galleryItems.id, itemId)).limit(1),
+      db
+        .select()
+        .from(galleryComments)
+        .where(eq(galleryComments.itemId, itemId))
+        .orderBy(asc(galleryComments.createdAt)),
+      getSessionUser(),
+    ]);
+    if (!items[0]) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     let item = items[0];
+    const builderRef = { authorId: item.authorId, author: item.builder };
 
-    const user = await getSessionUser();
     // rateLimitIp takes the LAST x-forwarded-for entry (our own edge's) —
     // deduping on the client-controlled first entry let anyone inflate views.
     const viewer = user?.id ?? rateLimitIp(request);
-    if (shouldCountView("gallery", itemId, viewer)) {
-      const [bumped] = await db
-        .update(galleryItems)
-        .set({ views: sql`${galleryItems.views} + 1` })
-        .where(eq(galleryItems.id, itemId))
-        .returning({ views: galleryItems.views });
-      if (bumped) item = { ...item, views: bumped.views };
-    }
+    const countView = shouldCountView("gallery", itemId, viewer);
 
-    const comments = await db
-      .select()
-      .from(galleryComments)
-      .where(eq(galleryComments.itemId, itemId))
-      .orderBy(asc(galleryComments.createdAt));
+    // One avatar lookup covers the poster and every commenter in parallel with
+    // the view-count bump.
+    const [bumpedRows, avatars] = await Promise.all([
+      countView
+        ? db
+            .update(galleryItems)
+            .set({ views: sql`${galleryItems.views} + 1` })
+            .where(eq(galleryItems.id, itemId))
+            .returning({ views: galleryItems.views })
+        : Promise.resolve(null),
+      resolveAuthorAvatars([builderRef, ...comments]).catch(
+        () => new Map<string, { avatarUrl: string | null; color: string }>()
+      ),
+    ]);
+    if (bumpedRows?.[0]) item = { ...item, views: bumpedRows[0].views };
 
-    // One avatar lookup covers the poster and every commenter.
-    const avatars = await resolveAuthorAvatars([item, ...comments]);
-    const builderInfo = avatarInfoFor(avatars, item);
+    const builderInfo = avatarInfoFor(avatars, builderRef);
     const itemOut = {
       ...publicRow(item),
       liked: user ? ((item.likedBy ?? []) as string[]).includes(user.id) : false,
@@ -103,6 +106,12 @@ export async function POST(
     return NextResponse.json({ error: "You must be signed in to comment." }, { status: 401 });
   }
 
+  const { id } = await params;
+  const itemId = parseRouteId(id);
+  if (itemId === null) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
+
   // Live-account gate: removed account → 403, DB outage → 503.
   const gate = await accountGate(user.id);
   if (gate.status === "missing" || gate.status === "banned") {
@@ -115,32 +124,6 @@ export async function POST(
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
   const account = gate.account;
-  // Spam guard for members — admins are exempt from rate limits.
-  if (account.role !== "admin" && isRateLimited(`gcomment:${user.id}`, 10, 60_000)) {
-    return NextResponse.json({ error: "You're commenting too fast — wait a moment." }, { status: 429 });
-  }
-
-  const { id } = await params;
-  const itemId = parseRouteId(id);
-  if (itemId === null) {
-    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
-  }
-
-  // `gate.status === "ok"` above already proved the database is configured,
-  // but keep the narrowing explicit instead of a non-null assertion.
-  const db = getDb();
-  if (!db) {
-    return NextResponse.json({ error: "Database not configured" }, { status: 503 });
-  }
-
-  const [item] = await db
-    .select({ id: galleryItems.id, authorId: galleryItems.authorId })
-    .from(galleryItems)
-    .where(eq(galleryItems.id, itemId))
-    .limit(1);
-  if (!item) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
 
   const body = await request.json().catch(() => ({}));
   const content = typeof body.content === "string" ? body.content.trim() : "";
@@ -151,17 +134,50 @@ export async function POST(
     return NextResponse.json({ error: "Comments can be at most 2,000 characters." }, { status: 400 });
   }
 
+  // Spam guard for members — admins are exempt from rate limits. Checked after
+  // validation so accidental empty submits don't consume the user's quota.
+  if (account.role !== "admin" && isRateLimited(`gcomment:${user.id}`, 10, 60_000)) {
+    return NextResponse.json({ error: "You're commenting too fast — wait a moment." }, { status: 429 });
+  }
+
+  // `gate.status === "ok"` above already proved the database is configured,
+  // but keep the narrowing explicit instead of a non-null assertion.
+  const db = getDb();
+  if (!db) {
+    return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+  }
+
   const username = account.username;
-  const [created] = await db
-    .insert(galleryComments)
-    .values({ itemId, content, author: username, authorId: user.id })
-    .returning();
+  let outcome: { created: typeof galleryComments.$inferSelect; itemAuthorId: string } | null;
+  try {
+    outcome = await db.transaction(async (tx) => {
+      const [item] = await tx
+        .select({ id: galleryItems.id, authorId: galleryItems.authorId })
+        .from(galleryItems)
+        .where(eq(galleryItems.id, itemId))
+        .for("share")
+        .limit(1);
+      if (!item) return null;
+      const [inserted] = await tx
+        .insert(galleryComments)
+        .values({ itemId, content, author: username, authorId: user.id })
+        .returning();
+      return { created: inserted, itemAuthorId: item.authorId };
+    });
+  } catch (err) {
+    console.error("api/gallery/[id] POST: comment failed", err);
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
+  if (!outcome) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  const { created, itemAuthorId } = outcome;
 
   // Notify the build's owner and any @mentions (best-effort; the owner is
   // excluded from mentions so they don't get two pings).
   const excerpt = markdownExcerpt(content, 140);
   await notify({
-    userId: item.authorId,
+    userId: itemAuthorId,
     actorId: user.id,
     actorName: username,
     type: "gallery_comment",
@@ -172,7 +188,7 @@ export async function POST(
   const mentioned = await mentionRecipients(content, user.id);
   await notifyMany(
     mentioned
-      .filter((id) => id !== item.authorId)
+      .filter((id) => id !== itemAuthorId)
       .map((id) => ({
         userId: id,
         actorId: user.id,
@@ -184,7 +200,9 @@ export async function POST(
       }))
   );
 
-  const avatars = await resolveAuthorAvatars([created]);
+  const avatars = await resolveAuthorAvatars([created]).catch(
+    () => new Map<string, { avatarUrl: string | null; color: string }>()
+  );
   const info = avatarInfoFor(avatars, created);
   // `color` resolved like GET returns (gallery_comments stores none of its
   // own), so the freshly-appended comment matches after a reload.
@@ -212,15 +230,12 @@ export async function DELETE(
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
   const body = await request.json().catch(() => ({}));
-  // A PRESENT-but-invalid commentId (null/""/0/"12x") must not fall through
+  // A PRESENT-but-invalid commentId (""/0/"12x") must not fall through
   // to whole-post deletion — that would destroy every comment and the post's
-  // stored images on a malformed request (same bug class the forum like
-  // route fixed). Only an ABSENT commentId means "delete the post".
-  const commentId =
-    body?.commentId !== undefined && body.commentId !== null
-      ? parseId(body.commentId)
-      : null;
+  // stored images on a malformed request. Only an ABSENT commentId means
+  // "delete the post".
   const commentDelete = body?.commentId !== undefined && body.commentId !== null;
+  const commentId = commentDelete ? parseBodyId(body.commentId) : null;
   if (commentDelete && commentId === null) {
     return NextResponse.json({ error: "Invalid commentId" }, { status: 400 });
   }
@@ -231,8 +246,7 @@ export async function DELETE(
   }
 
   // Live-account gate for the OWNER paths: a removed member's unexpired
-  // cookie must not keep deleting their posts/comments. (Admins pass the
-  // checkAdmin re-read below, which also rejects banned accounts.)
+  // cookie must not keep deleting their posts/comments.
   const gate = await accountGate(user.id);
   if (gate.status === "missing" || gate.status === "banned") {
     return NextResponse.json({ error: "Your account no longer exists on this server." }, { status: 403 });
@@ -241,64 +255,126 @@ export async function DELETE(
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
 
-  if (commentDelete && commentId !== null) {
-    const [comment] = await db
-      .select({ authorId: galleryComments.authorId })
-      .from(galleryComments)
-      .where(and(eq(galleryComments.id, commentId), eq(galleryComments.itemId, itemId)))
-      .limit(1);
-    if (!comment) {
-      return NextResponse.json({ error: "Comment not found" }, { status: 404 });
+  try {
+    if (commentDelete && commentId !== null) {
+      const [comment] = await db
+        .select({
+          authorId: galleryComments.authorId,
+          author: galleryComments.author,
+          content: galleryComments.content,
+        })
+        .from(galleryComments)
+        .where(and(eq(galleryComments.id, commentId), eq(galleryComments.itemId, itemId)))
+        .limit(1);
+      if (!comment) {
+        return NextResponse.json({ error: "Comment not found" }, { status: 404 });
+      }
+      const isOwner = comment.authorId === user.id && comment.authorId !== "";
+      let adminAccount: Account | null = null;
+      if (!isOwner) {
+        const adminGate = await requireAdminAccount();
+        if (adminGate.status === "db_error") {
+          return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+        }
+        if (adminGate.status === "no") {
+          return NextResponse.json({ error: "Admins only." }, { status: 403 });
+        }
+        adminAccount = adminGate.account;
+      }
+      const deletedRows = await db
+        .delete(galleryComments)
+        .where(and(eq(galleryComments.id, commentId), eq(galleryComments.itemId, itemId)))
+        .returning({ id: galleryComments.id, content: galleryComments.content });
+      if (deletedRows.length === 0) {
+        return NextResponse.json({ error: "Comment not found" }, { status: 404 });
+      }
+      const embedUrls = extractStorageUrls(deletedRows[0].content ?? "");
+      if (embedUrls.length > 0) {
+        await deleteImagesByUrl(embedUrls, { id: user.id, isAdmin: !isOwner });
+      }
+      if (adminAccount) {
+        await logAudit({
+          actorId: adminAccount.id,
+          actorName: adminAccount.username,
+          action: "gallery_comment_delete",
+          targetId: String(commentId),
+          targetName: comment.author,
+          detail: `Deleted comment on gallery item #${itemId}`,
+        });
+      }
+      return NextResponse.json({ ok: true });
     }
-    const isOwner = comment.authorId === user.id && comment.authorId !== "";
+
+    const [item] = await db
+      .select({
+        authorId: galleryItems.authorId,
+        builder: galleryItems.builder,
+        title: galleryItems.title,
+        description: galleryItems.description,
+        image: galleryItems.image,
+        images: galleryItems.images,
+      })
+      .from(galleryItems)
+      .where(eq(galleryItems.id, itemId))
+      .limit(1);
+    if (!item) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    const isOwner = item.authorId === user.id && item.authorId !== "";
+    let adminAccount: Account | null = null;
     if (!isOwner) {
-      const adminVerdict = await checkAdmin();
-      if (adminVerdict === "db_error") {
+      const adminGate = await requireAdminAccount();
+      if (adminGate.status === "db_error") {
         return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
       }
-      if (adminVerdict === "no") {
+      if (adminGate.status === "no") {
         return NextResponse.json({ error: "Admins only." }, { status: 403 });
       }
+      adminAccount = adminGate.account;
     }
-    await db
-      .delete(galleryComments)
-      .where(and(eq(galleryComments.id, commentId), eq(galleryComments.itemId, itemId)));
-    return NextResponse.json({ ok: true });
-  }
+    // Atomic cascade: lock + delete the post first so racing deletes answer 404
+    // on the loser and concurrent comment inserts (FOR SHARE) serialize cleanly.
+    const deleted = await db.transaction(async (tx) => {
+      const removedItems = await tx
+        .delete(galleryItems)
+        .where(eq(galleryItems.id, itemId))
+        .returning({ id: galleryItems.id });
+      if (removedItems.length === 0) return null;
+      const commentRows = await tx
+        .delete(galleryComments)
+        .where(eq(galleryComments.itemId, itemId))
+        .returning({ content: galleryComments.content });
+      return { commentRows };
+    });
+    if (!deleted) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
-  const [item] = await db
-    .select({
-      authorId: galleryItems.authorId,
-      image: galleryItems.image,
-      images: galleryItems.images,
-    })
-    .from(galleryItems)
-    .where(eq(galleryItems.id, itemId))
-    .limit(1);
-  if (!item) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-  const isOwner = item.authorId === user.id && item.authorId !== "";
-  if (!isOwner) {
-    const adminVerdict = await checkAdmin();
-    if (adminVerdict === "db_error") {
-      return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+    // Only once the rows are really gone: drop stored gallery images plus any
+    // storage embeds in the description or comments. Best-effort by design.
+    const urlsToDelete = [
+      item.image,
+      ...(item.images ?? []),
+      ...extractStorageUrls(item.description ?? ""),
+      ...deleted.commentRows.flatMap((c) => extractStorageUrls(c.content ?? "")),
+    ];
+    await deleteImagesByUrl(urlsToDelete, { id: user.id, isAdmin: !isOwner });
+
+    if (adminAccount) {
+      await logAudit({
+        actorId: adminAccount.id,
+        actorName: adminAccount.username,
+        action: "gallery_delete",
+        targetId: String(itemId),
+        targetName: item.title,
+        detail: `Deleted gallery post by ${item.builder}`,
+      });
     }
-    if (adminVerdict === "no") {
-      return NextResponse.json({ error: "Admins only." }, { status: 403 });
-    }
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("api/gallery/[id] DELETE: delete failed", err);
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
-  // Atomic cascade: a mid-failure must not orphan comments on a deleted post.
-  await db.transaction(async (tx) => {
-    await tx.delete(galleryComments).where(eq(galleryComments.itemId, itemId));
-    await tx.delete(galleryItems).where(eq(galleryItems.id, itemId));
-  });
-  // Only once the rows are really gone: drop the stored images too, otherwise
-  // every deleted post left its files in the bucket forever. Best-effort by
-  // design — deleteImagesByUrl logs and returns instead of throwing, so a
-  // storage hiccup can't fail a delete that already succeeded.
-  await deleteImagesByUrl([item.image, ...(item.images ?? [])], { id: user.id, isAdmin: !isOwner });
-  return NextResponse.json({ ok: true });
 }
 
 // Admin moderation: feature/unfeature (pin) a gallery post.
@@ -307,11 +383,11 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const adminVerdict = await checkAdmin();
-  if (adminVerdict === "db_error") {
+  const adminGate = await requireAdminAccount();
+  if (adminGate.status === "db_error") {
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
-  if (adminVerdict === "no") {
+  if (adminGate.status === "no") {
     return NextResponse.json({ error: "Admins only." }, { status: 403 });
   }
   const { id } = await params;
@@ -329,13 +405,26 @@ export async function PATCH(
   if (!db) {
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
-  const rows = await db
-    .update(galleryItems)
-    .set({ featured: body.featured })
-    .where(eq(galleryItems.id, itemId))
-    .returning();
-  if (rows.length === 0) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  try {
+    const rows = await db
+      .update(galleryItems)
+      .set({ featured: body.featured })
+      .where(eq(galleryItems.id, itemId))
+      .returning();
+    if (rows.length === 0) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    await logAudit({
+      actorId: adminGate.account.id,
+      actorName: adminGate.account.username,
+      action: "gallery_feature",
+      targetId: String(itemId),
+      targetName: rows[0].title,
+      detail: body.featured ? "featured" : "unfeatured",
+    });
+    return NextResponse.json(publicRow(rows[0]));
+  } catch (err) {
+    console.error("api/gallery/[id] PATCH: update failed", err);
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
-  return NextResponse.json(publicRow(rows[0]));
 }

@@ -1,7 +1,13 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { DEFAULT_PALETTE, isPaletteId, PALETTE_STORAGE_KEY, type PaletteId } from "@/lib/palettes";
+import {
+  DEFAULT_PALETTE,
+  getPaletteThemeColor,
+  isPaletteId,
+  PALETTE_STORAGE_KEY,
+  type PaletteId,
+} from "@/lib/palettes";
 
 interface PaletteState {
   palette: PaletteId;
@@ -10,17 +16,28 @@ interface PaletteState {
 }
 const PaletteContext = createContext<PaletteState | null>(null);
 
+function syncThemeColorMeta(id: PaletteId) {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", getPaletteThemeColor(id));
+}
+
 export function PaletteProvider({ children }: { children: ReactNode }) {
   const [palette, updatePalette] = useState<PaletteId>(DEFAULT_PALETTE);
   const [saved, setSaved] = useState(true);
   const apply = useCallback((next: PaletteId) => {
     document.documentElement.dataset.palette = next;
+    syncThemeColorMeta(next);
     updatePalette(next);
   }, []);
 
   useEffect(() => {
     const current = document.documentElement.dataset.palette;
-    if (isPaletteId(current)) updatePalette(current);
+    if (isPaletteId(current)) {
+      updatePalette(current);
+      syncThemeColorMeta(current);
+    } else {
+      syncThemeColorMeta(DEFAULT_PALETTE);
+    }
     const onStorage = (event: StorageEvent) => {
       if (event.key === PALETTE_STORAGE_KEY || event.key === null) {
         apply(isPaletteId(event.newValue) ? event.newValue : DEFAULT_PALETTE);

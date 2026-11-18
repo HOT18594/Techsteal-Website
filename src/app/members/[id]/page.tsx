@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getPublicProfile } from "@/lib/public-profile";
+import { siteConfig } from "@/lib/site";
 import { ProfileClient } from "./ProfileClient";
 
 // Server-render the profile so first paint (and crawlers/no-JS visitors) get
@@ -18,18 +19,35 @@ function decodeId(raw: string): string {
   }
 }
 
-export async function generateMetadata(
-  { params }: { params: Promise<{ id: string }> }
-): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
   const { id: raw } = await params;
   const id = decodeId(raw);
   const profile = id.startsWith("discord:") ? await getPublicProfile(id) : null;
-  return { title: profile ? profile.name : "Member not found" };
+  if (!profile) {
+    return { title: "Member not found", robots: { index: false, follow: false } };
+  }
+  const description = `${profile.name} (${profile.minecraftUsername ?? profile.role}) on ${siteConfig.name} — ${profile.stats.builds} ${profile.stats.builds === 1 ? "build" : "builds"}, ${profile.stats.discussions} ${profile.stats.discussions === 1 ? "discussion" : "discussions"}.`;
+  return {
+    title: profile.name,
+    description,
+    openGraph: {
+      title: profile.name,
+      description,
+      type: "profile",
+      ...(profile.skinUrl ? { images: [profile.skinUrl] } : {}),
+    },
+  };
 }
 
-export default async function MemberProfilePage(
-  { params }: { params: Promise<{ id: string }> }
-) {
+export default async function MemberProfilePage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id: raw } = await params;
   const id = decodeId(raw);
   const profile = id.startsWith("discord:") ? await getPublicProfile(id) : null;

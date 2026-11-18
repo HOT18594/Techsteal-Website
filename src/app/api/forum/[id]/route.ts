@@ -3,7 +3,8 @@ import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { forumReplies, forumThreads } from "@/lib/schema";
 import { getSessionUser } from "@/lib/auth";
-import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, checkAdmin } from "@/lib/accounts";
+import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, requireAdminAccount } from "@/lib/accounts";
+import { logAudit } from "@/lib/audit";
 import { isRateLimited, rateLimitIp } from "@/lib/rate-limit";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { serializePoll } from "@/lib/polls";
@@ -13,6 +14,7 @@ import { deleteImagesByUrl, extractStorageUrls } from "@/lib/storage";
 import { shouldCountView } from "@/lib/view-counter";
 import { markdownExcerpt } from "@/lib/excerpt";
 import { mentionRecipients, notify, notifyMany } from "@/lib/notifications";
+import type { Account } from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -36,12 +38,16 @@ export async function GET(
   // A pooler blip must answer 503 JSON like the list routes, not escape as
   // Next's generic HTML 500 (clients read that as "the server rejected you").
   try {
-    const threads = await db
-      .select()
-      .from(forumThreads)
-      .where(eq(forumThreads.id, threadId))
-      .limit(1);
-    if (threads.length === 0) {
+    const [threads, replies, user] = await Promise.all([
+      db.select().from(forumThreads).where(eq(forumThreads.id, threadId)).limit(1),
+      db
+        .select()
+        .from(forumReplies)
+        .where(eq(forumReplies.threadId, threadId))
+        .orderBy(desc(forumReplies.pinned), asc(forumReplies.createdAt)),
+      getSessionUser(),
+    ]);
+    if (!threads[0]) {
       return NextResponse.json({ error: "Thread not found" }, { status: 404 });
     }
 
@@ -49,31 +55,29 @@ export async function GET(
     // rateLimitIp takes the LAST x-forwarded-for entry — the one our own edge
     // appended. The first entry is client-controlled, so deduping on it let
     // anyone inflate views by rotating a fake header value per request.
-    const user = await getSessionUser();
     const viewer = user?.id ?? rateLimitIp(request);
     let thread = threads[0];
-    if (shouldCountView("forum", threadId, viewer)) {
-      const [bumped] = await db
-        .update(forumThreads)
-        .set({ views: sql`${forumThreads.views} + 1` })
-        .where(eq(forumThreads.id, threadId))
-        .returning({ views: forumThreads.views });
-      if (bumped) thread = { ...thread, views: bumped.views };
-    }
+    const countView = shouldCountView("forum", threadId, viewer);
 
-    const replies = await db
-      .select()
-      .from(forumReplies)
-      .where(eq(forumReplies.threadId, threadId))
-      .orderBy(desc(forumReplies.pinned), asc(forumReplies.createdAt));
+    const [bumpedRows, avatars, poll] = await Promise.all([
+      countView
+        ? db
+            .update(forumThreads)
+            .set({ views: sql`${forumThreads.views} + 1` })
+            .where(eq(forumThreads.id, threadId))
+            .returning({ views: forumThreads.views })
+        : Promise.resolve(null),
+      resolveAuthorAvatars([thread, ...replies]).catch(
+        () => new Map<string, { avatarUrl: string | null; color: string }>()
+      ),
+      serializePoll(db, threadId, user?.id ?? null).catch(() => null),
+    ]);
+    if (bumpedRows?.[0]) thread = { ...thread, views: bumpedRows[0].views };
 
-    const avatars = await resolveAuthorAvatars([thread, ...replies]);
     const enrich = (row: { authorId?: string | null; author?: string | null; color: string }) => {
       const info = avatarInfoFor(avatars, row);
       return { avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? row.color };
     };
-
-    const poll = await serializePoll(db, threadId, user?.id ?? null).catch(() => null);
 
     // `liked` is derived per viewer; raw liker ids stay server-side.
     const likedOf = (row: { likedBy?: unknown }) =>
@@ -146,59 +150,50 @@ export async function POST(
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
 
-  const threads = await db
-    .select({ id: forumThreads.id, locked: forumThreads.locked })
-    .from(forumThreads)
-    .where(eq(forumThreads.id, threadId))
-    .limit(1);
-  if (threads.length === 0) {
-    return NextResponse.json({ error: "Thread not found" }, { status: 404 });
-  }
-  if (threads[0].locked) {
-    return NextResponse.json(
-      { error: "This thread is locked — replies are closed." },
-      { status: 423 }
-    );
-  }
-
   const username = account?.username ?? user.username;
   // Reply insert + thread counter bump must commit together — otherwise a
   // failure between them permanently drifts the replies count. The
-  // existence/locked re-check runs INSIDE the transaction under a row lock:
-  // a thread deleted (or locked) between the pre-check and the insert used
-  // to gain an orphaned reply on a dead thread (no FK constraints exist).
-  const outcome = await db.transaction(async (tx) => {
-    const [parent] = await tx
-      .select({ id: forumThreads.id, locked: forumThreads.locked, authorId: forumThreads.authorId })
-      .from(forumThreads)
-      .where(eq(forumThreads.id, threadId))
-      .limit(1)
-      .for("update");
-    if (!parent) return { error: "not_found" as const };
-    if (parent.locked) return { error: "locked" as const };
+  // existence/locked check runs INSIDE the transaction under a row lock so a
+  // concurrent delete or lock can't leave an orphaned reply.
+  let outcome:
+    | { error: "not_found" | "locked" }
+    | { reply: typeof forumReplies.$inferSelect; threadAuthorId: string };
+  try {
+    outcome = await db.transaction(async (tx) => {
+      const [parent] = await tx
+        .select({ id: forumThreads.id, locked: forumThreads.locked, authorId: forumThreads.authorId })
+        .from(forumThreads)
+        .where(eq(forumThreads.id, threadId))
+        .limit(1)
+        .for("update");
+      if (!parent) return { error: "not_found" as const };
+      if (parent.locked) return { error: "locked" as const };
 
-    const [inserted] = await tx
-      .insert(forumReplies)
-      .values({
-        threadId,
-        content,
-        author: username,
-        authorId: user.id,
-        avatar: username.slice(0, 1).toUpperCase(),
-        color: "avatar-2",
-      })
-      .returning();
+      const [inserted] = await tx
+        .insert(forumReplies)
+        .values({
+          threadId,
+          content,
+          author: username,
+          authorId: user.id,
+          avatar: username.slice(0, 1).toUpperCase(),
+          color: "avatar-2",
+        })
+        .returning();
 
-    // Atomic increment — a plain `replies + 1` read from `threads[0]` would
-    // lose a count when two replies land at once (both read 5, both write 6).
-    // `last` mirrors the same moment as the new reply's timestamp.
-    await tx
-      .update(forumThreads)
-      .set({ replies: sql`${forumThreads.replies} + 1`, last: new Date().toISOString() })
-      .where(eq(forumThreads.id, threadId));
+      // Atomic increment — a plain `replies + 1` read would lose a count when
+      // two replies land at once (both read 5, both write 6).
+      await tx
+        .update(forumThreads)
+        .set({ replies: sql`${forumThreads.replies} + 1`, last: new Date().toISOString() })
+        .where(eq(forumThreads.id, threadId));
 
-    return { reply: inserted, threadAuthorId: parent.authorId };
-  });
+      return { reply: inserted, threadAuthorId: parent.authorId };
+    });
+  } catch (err) {
+    console.error("api/forum/[id] POST: reply failed", err);
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
   if ("error" in outcome) {
     return outcome.error === "locked"
       ? NextResponse.json(
@@ -207,7 +202,7 @@ export async function POST(
         )
       : NextResponse.json({ error: "Thread not found" }, { status: 404 });
   }
-  const reply = outcome.reply;
+  const created = outcome.reply;
 
   // Notify the thread author and any @mentions. Best-effort: these never block
   // or roll back the reply itself (the helpers swallow their own errors). The
@@ -219,7 +214,7 @@ export async function POST(
     actorName: username,
     type: "reply",
     threadId,
-    replyId: reply.id,
+    replyId: created.id,
     excerpt,
   });
   const mentioned = await mentionRecipients(content, user.id);
@@ -232,17 +227,19 @@ export async function POST(
         actorName: username,
         type: "mention" as const,
         threadId,
-        replyId: reply.id,
+        replyId: created.id,
         excerpt,
       }))
   );
 
-  const avatars = await resolveAuthorAvatars([reply]);
-  const info = avatarInfoFor(avatars, reply);
+  const avatars = await resolveAuthorAvatars([created]).catch(
+    () => new Map<string, { avatarUrl: string | null; color: string }>()
+  );
+  const info = avatarInfoFor(avatars, created);
   // `color` resolved like GET returns, so the optimistic client append
   // renders the same tile a reload would. A fresh reply starts unliked.
   return NextResponse.json(
-    { ...publicRow(reply), avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? reply.color, liked: false },
+    { ...publicRow(created), avatarUrl: info?.avatarUrl ?? null, color: info?.color ?? created.color, liked: false },
     { status: 201 }
   );
 }
@@ -253,14 +250,11 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  // Read the session once: checkAdmin() answers the authorization question,
-  // but the response body also needs the viewer's id to derive `liked`.
-  const viewer = await getSessionUser();
-  const adminVerdict = await checkAdmin();
-  if (adminVerdict === "db_error") {
+  const adminGate = await requireAdminAccount();
+  if (adminGate.status === "db_error") {
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
-  if (adminVerdict === "no") {
+  if (adminGate.status === "no") {
     return NextResponse.json({ error: "Admins only." }, { status: 403 });
   }
 
@@ -287,26 +281,43 @@ export async function PATCH(
   if (typeof body.pinned !== "boolean") {
     return NextResponse.json({ error: "pinned must be a boolean" }, { status: 400 });
   }
-  const rows = await db
-    .update(forumReplies)
-    .set({ pinned: body.pinned })
-    .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
-    .returning();
-  if (rows.length === 0) {
-    return NextResponse.json({ error: "Reply not found" }, { status: 404 });
-  }
 
-  const avatars = await resolveAuthorAvatars([rows[0]]);
-  const info = avatarInfoFor(avatars, rows[0]);
-  const liked = viewer ? ((rows[0].likedBy ?? []) as string[]).includes(viewer.id) : false;
-  // `color` resolved like GET returns — the client replaces the whole reply
-  // object with this, and the raw column default would repaint its tile.
-  return NextResponse.json({
-    ...publicRow(rows[0]),
-    avatarUrl: info?.avatarUrl ?? null,
-    color: info?.color ?? rows[0].color,
-    liked,
-  });
+  try {
+    const rows = await db
+      .update(forumReplies)
+      .set({ pinned: body.pinned })
+      .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
+      .returning();
+    if (rows.length === 0) {
+      return NextResponse.json({ error: "Reply not found" }, { status: 404 });
+    }
+
+    await logAudit({
+      actorId: adminGate.account.id,
+      actorName: adminGate.account.username,
+      action: "reply_pin",
+      targetId: String(replyId),
+      targetName: rows[0].author,
+      detail: `${body.pinned ? "pinned" : "unpinned"} reply in thread #${threadId}`,
+    });
+
+    const avatars = await resolveAuthorAvatars([rows[0]]).catch(
+      () => new Map<string, { avatarUrl: string | null; color: string }>()
+    );
+    const info = avatarInfoFor(avatars, rows[0]);
+    const liked = ((rows[0].likedBy ?? []) as string[]).includes(adminGate.account.id);
+    // `color` resolved like GET returns — the client replaces the whole reply
+    // object with this, and the raw column default would repaint its tile.
+    return NextResponse.json({
+      ...publicRow(rows[0]),
+      avatarUrl: info?.avatarUrl ?? null,
+      color: info?.color ?? rows[0].color,
+      liked,
+    });
+  } catch (err) {
+    console.error("api/forum/[id] PATCH: update failed", err);
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
 }
 
 // Edit a reply. The author can edit their own; admins can edit any.
@@ -345,8 +356,7 @@ export async function PUT(
   }
 
   // Live-account gate for the OWNER path: a removed member's unexpired
-  // cookie must not keep editing content. (The admin path below calls
-  // checkAdmin(), which re-reads the DB and rejects banned accounts.)
+  // cookie must not keep editing content.
   const gate = await accountGate(user.id);
   if (gate.status === "missing" || gate.status === "banned") {
     return NextResponse.json(
@@ -358,50 +368,69 @@ export async function PUT(
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
 
-  const [reply] = await db
-    .select({ authorId: forumReplies.authorId, content: forumReplies.content })
-    .from(forumReplies)
-    .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
-    .limit(1);
-  if (!reply) {
-    return NextResponse.json({ error: "Reply not found" }, { status: 404 });
-  }
-  const isOwner = reply.authorId === user.id && reply.authorId !== "";
-  if (!isOwner) {
-    const adminVerdict = await checkAdmin();
-    if (adminVerdict === "db_error") {
-      return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  try {
+    const [reply] = await db
+      .select({ authorId: forumReplies.authorId, content: forumReplies.content })
+      .from(forumReplies)
+      .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
+      .limit(1);
+    if (!reply) {
+      return NextResponse.json({ error: "Reply not found" }, { status: 404 });
     }
-    if (adminVerdict === "no") {
-      return NextResponse.json({ error: "You can only edit your own replies." }, { status: 403 });
+    const isOwner = reply.authorId === user.id && reply.authorId !== "";
+    let adminAccount: Account | null = null;
+    if (!isOwner) {
+      const adminGate = await requireAdminAccount();
+      if (adminGate.status === "db_error") {
+        return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+      }
+      if (adminGate.status === "no") {
+        return NextResponse.json({ error: "You can only edit your own replies." }, { status: 403 });
+      }
+      adminAccount = adminGate.account;
     }
-  }
 
-  // Same embed GC as the thread edit: removed images are collected and
-  // deleted after a successful update (best-effort, never breaks the edit).
-  const newEmbeds = new Set(extractStorageUrls(content));
-  const removedEmbeds = extractStorageUrls(reply.content).filter((url) => !newEmbeds.has(url));
+    // Same embed GC as the thread edit: removed images are collected and
+    // deleted after a successful update (best-effort, never breaks the edit).
+    const newEmbeds = new Set(extractStorageUrls(content));
+    const removedEmbeds = extractStorageUrls(reply.content).filter((url) => !newEmbeds.has(url));
 
-  const rows = await db
-    .update(forumReplies)
-    .set({ content, editedAt: new Date() })
-    .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
-    .returning();
-  if (rows.length === 0) {
-    return NextResponse.json({ error: "Reply not found" }, { status: 404 });
+    const rows = await db
+      .update(forumReplies)
+      .set({ content, editedAt: new Date() })
+      .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
+      .returning();
+    if (rows.length === 0) {
+      return NextResponse.json({ error: "Reply not found" }, { status: 404 });
+    }
+    if (removedEmbeds.length > 0) {
+      await deleteImagesByUrl(removedEmbeds, { id: user.id, isAdmin: !isOwner });
+    }
+    if (adminAccount) {
+      await logAudit({
+        actorId: adminAccount.id,
+        actorName: adminAccount.username,
+        action: "reply_edit",
+        targetId: String(replyId),
+        targetName: rows[0].author,
+        detail: `Edited reply in thread #${threadId}`,
+      });
+    }
+    const avatars = await resolveAuthorAvatars([rows[0]]).catch(
+      () => new Map<string, { avatarUrl: string | null; color: string }>()
+    );
+    const info = avatarInfoFor(avatars, rows[0]);
+    const liked = ((rows[0].likedBy ?? []) as string[]).includes(user.id);
+    return NextResponse.json({
+      ...publicRow(rows[0]),
+      avatarUrl: info?.avatarUrl ?? null,
+      color: info?.color ?? rows[0].color,
+      liked,
+    });
+  } catch (err) {
+    console.error("api/forum/[id] PUT: update failed", err);
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
-  if (removedEmbeds.length > 0) {
-    await deleteImagesByUrl(removedEmbeds, { id: user.id, isAdmin: !isOwner });
-  }
-  const avatars = await resolveAuthorAvatars([rows[0]]);
-  const info = avatarInfoFor(avatars, rows[0]);
-  const liked = ((rows[0].likedBy ?? []) as string[]).includes(user.id);
-  return NextResponse.json({
-    ...publicRow(rows[0]),
-    avatarUrl: info?.avatarUrl ?? null,
-    color: info?.color ?? rows[0].color,
-    liked,
-  });
 }
 
 // Delete a reply. Admins can delete any reply in this thread; members can
@@ -444,55 +473,76 @@ export async function DELETE(
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
 
-  // Ownership check, scoped to this thread's URL. Content comes along so the
-  // delete path can garbage-collect the reply's embedded images.
-  const [reply] = await db
-    .select({ authorId: forumReplies.authorId, content: forumReplies.content })
-    .from(forumReplies)
-    .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
-    .limit(1);
-  if (!reply) {
-    return NextResponse.json({ error: "Reply not found" }, { status: 404 });
-  }
-  const isOwner = reply.authorId === user.id && reply.authorId !== "";
-  if (!isOwner) {
-    const adminVerdict = await checkAdmin();
-    if (adminVerdict === "db_error") {
-      return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
-    }
-    if (adminVerdict === "no") {
-      return NextResponse.json({ error: "Admins only." }, { status: 403 });
-    }
-  }
-
-  // Delete + counter decrement must commit together — the same rule the
-  // reply INSERT path follows. A failure between them permanently drifted
-  // the replies count (GREATEST floors at zero; it doesn't reconcile).
-  const deleted = await db.transaction(async (tx) => {
-    const rows = await tx
-      .delete(forumReplies)
+  try {
+    // Ownership check, scoped to this thread's URL. Content comes along so the
+    // delete path can garbage-collect the reply's embedded images.
+    const [reply] = await db
+      .select({
+        authorId: forumReplies.authorId,
+        author: forumReplies.author,
+        content: forumReplies.content,
+      })
+      .from(forumReplies)
       .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
-      .returning();
-    if (rows.length === 0) return false;
+      .limit(1);
+    if (!reply) {
+      return NextResponse.json({ error: "Reply not found" }, { status: 404 });
+    }
+    const isOwner = reply.authorId === user.id && reply.authorId !== "";
+    let adminAccount: Account | null = null;
+    if (!isOwner) {
+      const adminGate = await requireAdminAccount();
+      if (adminGate.status === "db_error") {
+        return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+      }
+      if (adminGate.status === "no") {
+        return NextResponse.json({ error: "Admins only." }, { status: 403 });
+      }
+      adminAccount = adminGate.account;
+    }
 
-    // Atomic decrement with a 0 floor — the read-then-write form could lose
-    // updates when two deletes race (both read 5, both write 4).
-    await tx
-      .update(forumThreads)
-      .set({ replies: sql`GREATEST(${forumThreads.replies} - 1, 0)` })
-      .where(eq(forumThreads.id, threadId));
-    return true;
-  });
-  if (!deleted) {
-    return NextResponse.json({ error: "Reply not found" }, { status: 404 });
+    // Delete + counter decrement must commit together — the same rule the
+    // reply INSERT path follows. A failure between them permanently drifted
+    // the replies count (GREATEST floors at zero; it doesn't reconcile).
+    const deleted = await db.transaction(async (tx) => {
+      const rows = await tx
+        .delete(forumReplies)
+        .where(and(eq(forumReplies.id, replyId), eq(forumReplies.threadId, threadId)))
+        .returning();
+      if (rows.length === 0) return false;
+
+      // Atomic decrement with a 0 floor — the read-then-write form could lose
+      // updates when two deletes race (both read 5, both write 4).
+      await tx
+        .update(forumThreads)
+        .set({ replies: sql`GREATEST(${forumThreads.replies} - 1, 0)` })
+        .where(eq(forumThreads.id, threadId));
+      return true;
+    });
+    if (!deleted) {
+      return NextResponse.json({ error: "Reply not found" }, { status: 404 });
+    }
+
+    // Same best-effort embed GC as the thread-delete path — without it every
+    // deleted reply orphaned its uploaded images in the bucket forever.
+    const embedUrls = extractStorageUrls(reply.content);
+    if (embedUrls.length > 0) {
+      await deleteImagesByUrl(embedUrls, { id: user.id, isAdmin: !isOwner });
+    }
+    if (adminAccount) {
+      await logAudit({
+        actorId: adminAccount.id,
+        actorName: adminAccount.username,
+        action: "reply_delete",
+        targetId: String(replyId),
+        targetName: reply.author,
+        detail: `Deleted reply in thread #${threadId}`,
+      });
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("api/forum/[id] DELETE: delete failed", err);
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
-
-  // Same best-effort embed GC as the thread-delete path — without it every
-  // deleted reply orphaned its uploaded images in the bucket forever.
-  const embedUrls = extractStorageUrls(reply.content);
-  if (embedUrls.length > 0) {
-    await deleteImagesByUrl(embedUrls, { id: user.id, isAdmin: !isOwner });
-  }
-
-  return NextResponse.json({ ok: true });
 }

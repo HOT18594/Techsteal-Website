@@ -28,7 +28,10 @@ async function fetchJson(url: string): Promise<unknown | null> {
       headers: { "User-Agent": "TechstealAssistant/1.0 (site assistant)" },
       cache: "no-store",
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => {});
+      return null;
+    }
     return await res.json();
   } catch {
     return null;

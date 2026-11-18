@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { PollViewer } from "@/components/Poll";
 import { Modal } from "@/components/Modal";
 import { useSession } from "@/lib/use-session";
@@ -44,6 +45,7 @@ function rememberDismissed(pollId: number) {
 export function PollAnnouncement() {
   const { user, loading } = useSession();
   const { show } = useToast();
+  const pathname = usePathname();
   const [poll, setPoll] = useState<ActivePoll | null>(null);
   // Starts false and is set once the session is known and the fetch settles.
   // It used to be seeded from `loading`, which meant "ready" was true on the
@@ -110,8 +112,14 @@ export function PollAnnouncement() {
   // `poll` is non-null past the `!!poll` test, so the two later clauses don't
   // re-test it: the redundant `poll !== null &&` guards read as if the value
   // could change mid-expression.
+  const suppressedRoute =
+    pathname === "/login" ||
+    pathname === "/onboarding" ||
+    (poll !== null && pathname === `/forum/${poll.threadId}`);
+
   const visible =
     ready && !loading && !!user && !!poll &&
+    !suppressedRoute &&
     // Already voted in this poll BEFORE this page load → not an
     // announcement for them anymore. (Votes cast inside this popup keep it
     // open via `engaged` so the user sees the results.)
@@ -155,7 +163,7 @@ export function PollAnnouncement() {
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
             <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[var(--diamond)]">
-              <i className="fa-solid fa-bullhorn" />
+              <i className="fa-solid fa-bullhorn" aria-hidden="true" />
               Poll announcement
             </p>
             <p className="text-sm text-[var(--muted)] mt-1 flex items-center gap-2 flex-wrap">
@@ -164,29 +172,37 @@ export function PollAnnouncement() {
               >
                 {poll.threadCategory}
               </span>
-              in <Link href={`/forum/${poll.threadId}`} className="text-[var(--accent-bright)] hover:underline">{poll.threadTitle}</Link>
+              in{" "}
+              <Link
+                href={`/forum/${poll.threadId}`}
+                onClick={close}
+                className="text-[var(--accent-bright)] hover:underline"
+              >
+                {poll.threadTitle}
+              </Link>
             </p>
           </div>
           <button
-            className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition"
+            type="button"
+            className="w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-[10px] border border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition"
             onClick={close}
             aria-label="Dismiss announcement"
           >
-            <i className="fa-solid fa-xmark" />
+            <i className="fa-solid fa-xmark" aria-hidden="true" />
           </button>
         </div>
 
         {/* Vote right here — no page hop needed. */}
         <div className="poll-announce-body">
-          <PollViewer poll={poll} canVote signedIn onVote={castVote} />
+          <PollViewer bare poll={poll} canVote signedIn onVote={castVote} />
         </div>
 
         <div className="flex items-center justify-between gap-3 mt-4 flex-wrap">
           <Link href={`/forum/${poll.threadId}`} className="btn-secondary btn-sm" onClick={close}>
-            <i className="fa-regular fa-comments" />
+            <i className="fa-regular fa-comments" aria-hidden="true" />
             Open discussion
           </Link>
-          <button className="btn-ghost btn-sm" onClick={close}>
+          <button type="button" className="btn-ghost btn-sm" onClick={close}>
             Maybe later
           </button>
         </div>

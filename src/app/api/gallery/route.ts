@@ -9,6 +9,8 @@ import { isRateLimited } from "@/lib/rate-limit";
 import { GALLERY_CATEGORIES } from "@/lib/gallery-categories";
 import { storagePathFromUrl } from "@/lib/storage";
 import { publicRow } from "@/lib/public-row";
+import { markdownExcerpt } from "@/lib/excerpt";
+import { mentionRecipients, notifyMany } from "@/lib/notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -84,13 +86,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
   const account = gate.account;
-  // Spam guard for members — admins are exempt from rate limits.
-  if (account.role !== "admin" && isRateLimited(`gallerypost:${user.id}`, 5, 60_000)) {
-    return NextResponse.json(
-      { error: "You're posting too fast — wait a moment." },
-      { status: 429 }
-    );
-  }
   if (!canPostToGallery(account)) {
     return NextResponse.json(
       { error: "Only verified Discord members can post to the gallery." },
@@ -125,6 +120,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Posts can have at most ${MAX_IMAGES} images.` }, { status: 400 });
   }
 
+  // Spam guard for members — admins are exempt from rate limits. Checked after
+  // permission and body validation so invalid drafts don't consume the quota.
+  if (account.role !== "admin" && isRateLimited(`gallerypost:${user.id}`, 5, 60_000)) {
+    return NextResponse.json(
+      { error: "You're posting too fast — wait a moment." },
+      { status: 429 }
+    );
+  }
+
   // `gate.status === "ok"` above already proved the database is configured;
   // keep the narrowing explicit instead of a non-null assertion.
   const db = getDb();
@@ -156,6 +160,20 @@ export async function POST(request: NextRequest) {
     // "The server rejected the request." — 503 is truthful and retryable.
     console.error("api/gallery POST: insert failed", err);
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  }
+
+  if (description) {
+    const mentioned = await mentionRecipients(description, user.id);
+    await notifyMany(
+      mentioned.map((id) => ({
+        userId: id,
+        actorId: user.id,
+        actorName: account.username,
+        type: "mention" as const,
+        itemId: created.id,
+        excerpt: markdownExcerpt(description, 140),
+      }))
+    );
   }
 
   return NextResponse.json({ ...publicRow(created), liked: false, commentCount: 0 }, { status: 201 });

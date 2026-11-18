@@ -39,3 +39,21 @@ export const siteConfig = {
     map: "#",
   },
 } as const;
+
+const FALLBACK_SITE_URL = "https://www.techsteal.space";
+
+/**
+ * Canonical public origin with no trailing slash. Guards against empty or
+ * malformed `NEXT_PUBLIC_SITE_URL` values so `new URL(...)` in metadata or
+ * RSS generation can never throw at module load.
+ */
+export function getSiteUrl(): string {
+  const raw = (process.env.NEXT_PUBLIC_SITE_URL ?? "").trim();
+  if (!raw) return FALLBACK_SITE_URL;
+  try {
+    const parsed = new URL(raw);
+    return `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, "");
+  } catch {
+    return FALLBACK_SITE_URL;
+  }
+}

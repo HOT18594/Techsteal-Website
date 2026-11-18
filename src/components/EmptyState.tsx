@@ -20,7 +20,7 @@ export function EmptyState({
 }) {
   return (
     <div
-      className={`text-sm text-[var(--muted)] py-14 text-center border border-dashed border-[var(--border)] rounded-xl ${className}`}
+      className={`text-sm text-[var(--muted)] py-14 text-center border border-dashed border-[var(--border)] rounded-[14px] ${className}`}
     >
       {/* `icon` is the bare FA name (e.g. "fa-inbox") — the fa-solid prefix
           here supplies the font-family + weight; without it the glyph renders
@@ -41,8 +41,8 @@ export function ErrorState({ onRetry, what }: { onRetry: () => void; what: strin
       title={`Couldn't load the ${what}`}
       hint="Check your connection and try again."
       action={
-        <button className="btn-secondary btn-sm" onClick={onRetry}>
-          <i className="fa-solid fa-rotate" />
+        <button type="button" className="btn-secondary btn-sm" onClick={onRetry}>
+          <i className="fa-solid fa-rotate" aria-hidden="true" />
           Retry
         </button>
       }

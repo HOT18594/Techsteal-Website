@@ -20,16 +20,16 @@ const PER_GROUP = 8;
 // accounts without a linked Minecraft name are excluded from member hits,
 // and raw liker ids never leave the server (publicRow strips likedBy).
 export async function GET(request: NextRequest): Promise<NextResponse> {
+  const q = (request.nextUrl.searchParams.get("q") ?? "").trim().slice(0, 80);
+  // A one-character query matches nearly everything and is never useful —
+  // wait for a real term before touching the rate limiter or database.
+  if (q.length < 2) return NextResponse.json(EMPTY);
+
   // Anonymous endpoint — key the limiter on the platform-appended client IP
   // so a scripted hammer can't fan out unbounded LIKE scans.
   if (isRateLimited(`search:${rateLimitIp(request)}`, 40, 60_000)) {
     return NextResponse.json({ error: "Slow down a little." }, { status: 429 });
   }
-
-  const q = (request.nextUrl.searchParams.get("q") ?? "").trim().slice(0, 80);
-  // A one-character query matches nearly everything and is never useful —
-  // wait for a real term before touching the database.
-  if (q.length < 2) return NextResponse.json(EMPTY);
 
   const db = getDb();
   if (!db) return NextResponse.json(EMPTY);
@@ -37,9 +37,27 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const like = `%${escapeLike(q)}%`;
 
-    const [threadRows, galleryRows, memberRows] = await Promise.all([
+    const [threadRows, galleryRows, memberRows, status] = await Promise.all([
       db
-        .select()
+        .select({
+          id: forumThreads.id,
+          title: forumThreads.title,
+          content: forumThreads.content,
+          author: forumThreads.author,
+          authorId: forumThreads.authorId,
+          avatar: forumThreads.avatar,
+          color: forumThreads.color,
+          category: forumThreads.category,
+          tagClass: forumThreads.tagClass,
+          replies: forumThreads.replies,
+          last: forumThreads.last,
+          pinned: forumThreads.pinned,
+          views: forumThreads.views,
+          locked: forumThreads.locked,
+          likes: forumThreads.likes,
+          editedAt: forumThreads.editedAt,
+          createdAt: forumThreads.createdAt,
+        })
         .from(forumThreads)
         .where(
           or(
@@ -51,7 +69,19 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         .orderBy(desc(forumThreads.createdAt))
         .limit(PER_GROUP),
       db
-        .select()
+        .select({
+          id: galleryItems.id,
+          title: galleryItems.title,
+          builder: galleryItems.builder,
+          category: galleryItems.category,
+          likes: galleryItems.likes,
+          image: galleryItems.image,
+          height: galleryItems.height,
+          authorId: galleryItems.authorId,
+          featured: galleryItems.featured,
+          views: galleryItems.views,
+          createdAt: galleryItems.createdAt,
+        })
         .from(galleryItems)
         .where(
           or(
@@ -82,9 +112,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         )
         .orderBy(profiles.username)
         .limit(PER_GROUP),
+      getLiveStatus().catch(() => null),
     ]);
 
-    const avatars = await resolveAuthorAvatars([...threadRows, ...galleryRows]);
+    const avatars = await resolveAuthorAvatars([
+      ...threadRows,
+      ...galleryRows.map((g) => ({ authorId: g.authorId, author: g.builder })),
+    ]).catch(() => new Map<string, { avatarUrl: string | null; color: string }>());
 
     const threads: ForumThread[] = threadRows.map((row) => {
       const info = avatarInfoFor(avatars, row);
@@ -99,7 +133,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     });
 
     const gallery: GalleryItem[] = galleryRows.map((row) => {
-      const info = avatarInfoFor(avatars, row);
+      const info = avatarInfoFor(avatars, { authorId: row.authorId, author: row.builder });
       return {
         ...publicRow(row),
         height: row.height as GalleryItem["height"],
@@ -111,15 +145,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     // Online status from the same shared, cached snapshot the directory uses
     // — one upstream call, consistent dots across surfaces.
-    let onlineNames = new Set<string>();
-    try {
-      const status = await getLiveStatus();
-      if (status.source === "live" && status.online) {
-        onlineNames = new Set((status.playerList ?? []).map((n) => n.toLowerCase()));
-      }
-    } catch {
-      // status unavailable — everyone shows offline, which is safe/honest.
-    }
+    const onlineNames =
+      status?.source === "live" && status.online
+        ? new Set((status.playerList ?? []).map((n) => n.toLowerCase()))
+        : new Set<string>();
 
     const members: Member[] = memberRows
       .filter((row) => Boolean(row.minecraftUsername?.trim()))

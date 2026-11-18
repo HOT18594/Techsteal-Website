@@ -148,13 +148,22 @@ export function RichEditor({
   // the same render window would otherwise overwrite each other and
   // silently drop an uploaded image.
   const queuedInsert = useRef<string[]>([]);
+  const valueRef = useRef(value);
+  valueRef.current = value;
 
   useEffect(() => {
     if (mode !== "write" || queuedInsert.current.length === 0) return;
     const snippets = queuedInsert.current;
     queuedInsert.current = [];
     requestAnimationFrame(() => {
-      for (const snippet of snippets) insertAtCursor(snippet);
+      for (const snippet of snippets) {
+        const currentLen = taRef.current ? taRef.current.value.length : valueRef.current.length;
+        if (currentLen + snippet.length > maxLength) {
+          onUploadError?.("Not enough space left in the post to embed this image.");
+          break;
+        }
+        insertAtCursor(snippet);
+      }
     });
     // insertAtCursor identity is stable (useCallback on applyEdit).
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -275,6 +284,13 @@ export function RichEditor({
         }
         const url = await xhrUpload(compressed, (pct) => pushProgress(uploadId, pct), inflightUploads.current);
         const snippet = `\n![${compressed.name.replace(/[^\w.-]/g, "").slice(0, 60) || "image"}](${url})\n`;
+        const baseLen = taRef.current
+          ? taRef.current.value.length - (taRef.current.selectionEnd - taRef.current.selectionStart)
+          : valueRef.current.length + queuedInsert.current.reduce((sum, s) => sum + s.length, 0);
+        if (baseLen + snippet.length > maxLength) {
+          onUploadError?.("Not enough space left in the post to embed this image.");
+          return;
+        }
         if (taRef.current) {
           insertAtCursor(snippet);
         } else {
@@ -299,7 +315,7 @@ export function RichEditor({
         }
       }
     },
-    [disabled, insertAtCursor, onUploadError, pushProgress]
+    [disabled, insertAtCursor, maxLength, onUploadError, pushProgress]
   );
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -345,7 +361,11 @@ export function RichEditor({
         e.preventDefault();
         setDragOver(true);
       }}
-      onDragLeave={() => setDragOver(false)}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          setDragOver(false);
+        }
+      }}
       onDrop={onDrop}
     >
       {/* Tab bar: Write / Preview + toolbar */}

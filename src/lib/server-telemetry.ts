@@ -3,7 +3,13 @@ import { getExarotonConfig } from "./exaroton";
 
 const EXAROTON_API = "https://api.exaroton.com/v1";
 const CACHE_MS = 30_000;
-let cache: { at: number; promise: Promise<ServerTelemetry> } | null = null;
+const NEGATIVE_CACHE_MS = 3_000;
+let cache: { at: number; ttl: number; promise: Promise<ServerTelemetry> } | null = null;
+
+/** Bust the telemetry cache after console commands, RAM updates, or power actions. */
+export function invalidateServerTelemetry(): void {
+  cache = null;
+}
 
 interface RamResponse {
   success?: boolean;
@@ -91,15 +97,27 @@ async function fetchTelemetry(): Promise<ServerTelemetry> {
   };
 }
 
-export function getServerTelemetry(): Promise<ServerTelemetry> {
+export function getServerTelemetry(force = false): Promise<ServerTelemetry> {
   const now = Date.now();
-  if (cache && now - cache.at < CACHE_MS) return cache.promise;
-  const promise = fetchTelemetry().catch(() => ({
-    source: "unavailable" as const,
-    ramGb: null,
-    lines: [],
-    sampledAt: null,
-  }));
-  cache = { at: now, promise };
-  return promise;
+  if (!force && cache && now - cache.at < cache.ttl) return cache.promise;
+  const entry = {
+    at: now,
+    ttl: CACHE_MS,
+    promise: fetchTelemetry()
+      .then((res) => {
+        if (res.source === "unavailable") entry.ttl = NEGATIVE_CACHE_MS;
+        return res;
+      })
+      .catch(() => {
+        entry.ttl = NEGATIVE_CACHE_MS;
+        return {
+          source: "unavailable" as const,
+          ramGb: null,
+          lines: [],
+          sampledAt: null,
+        };
+      }),
+  };
+  cache = entry;
+  return entry.promise;
 }

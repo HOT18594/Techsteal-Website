@@ -4,15 +4,18 @@ import { getDb } from "@/lib/db";
 import { forumPolls, forumPollVotes, forumReplies, forumThreads } from "@/lib/schema";
 import { fallbackThreads } from "@/lib/fallback-data";
 import { getSessionUser } from "@/lib/auth";
-import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, checkAdmin } from "@/lib/accounts";
+import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, requireAdminAccount } from "@/lib/accounts";
+import { logAudit } from "@/lib/audit";
 import { isRateLimited } from "@/lib/rate-limit";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import { CATEGORY_LIST } from "@/lib/forum-categories";
 import { parsePollInput, pollOptionRows } from "@/lib/polls";
 import { publicRow } from "@/lib/public-row";
 import { parseBodyId } from "@/lib/route-ids";
-import { escapeLike } from "@/lib/excerpt";
+import { escapeLike, markdownExcerpt } from "@/lib/excerpt";
+import { mentionRecipients, notifyMany } from "@/lib/notifications";
 import { deleteImagesByUrl, extractStorageUrls } from "@/lib/storage";
+import type { Account } from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -32,9 +35,29 @@ export interface ForumListResponse {
   categoryCounts: Record<string, number>;
 }
 
-type ThreadRow = typeof forumThreads.$inferSelect;
+type ThreadListRow = Omit<typeof forumThreads.$inferSelect, "likedBy">;
 
-function serializeThread(row: ThreadRow, avatarUrl: string | null, hasPoll: boolean, color: string) {
+const THREAD_LIST_COLUMNS = {
+  id: forumThreads.id,
+  title: forumThreads.title,
+  content: forumThreads.content,
+  author: forumThreads.author,
+  authorId: forumThreads.authorId,
+  avatar: forumThreads.avatar,
+  color: forumThreads.color,
+  category: forumThreads.category,
+  tagClass: forumThreads.tagClass,
+  replies: forumThreads.replies,
+  last: forumThreads.last,
+  pinned: forumThreads.pinned,
+  views: forumThreads.views,
+  locked: forumThreads.locked,
+  likes: forumThreads.likes,
+  editedAt: forumThreads.editedAt,
+  createdAt: forumThreads.createdAt,
+};
+
+function serializeThread(row: ThreadListRow, avatarUrl: string | null, hasPoll: boolean, color: string) {
   // `color` is the resolved per-account tile color so the list renders the
   // same avatar a thread's detail page does (rows store only a default).
   // likedBy (account ids) stays server-side.
@@ -111,6 +134,19 @@ async function listThreads(request: NextRequest): Promise<NextResponse> {
       .groupBy(forumThreads.category),
   ]);
   const total = totals[0]?.n ?? 0;
+  const categoryCounts: Record<string, number> = {};
+  for (const c of categoryRows) categoryCounts[c.category] = c.n;
+
+  if (total === 0) {
+    return NextResponse.json({
+      threads: [],
+      total: 0,
+      page: 1,
+      perPage: PER_PAGE,
+      hasMore: false,
+      categoryCounts,
+    });
+  }
 
   // Clamp to the last available page (e.g. threads deleted while a reader
   // sits on page 5) so the client's "the server clamps" assumption holds.
@@ -118,28 +154,27 @@ async function listThreads(request: NextRequest): Promise<NextResponse> {
   const safePage = Math.min(page, totalPages);
 
   const rows = await db
-    .select()
+    .select(THREAD_LIST_COLUMNS)
     .from(forumThreads)
     .where(where)
     .orderBy(...orderBy)
     .limit(PER_PAGE)
     .offset((safePage - 1) * PER_PAGE);
 
-  // One poll-existence query for the whole page.
+  // One poll-existence query + one avatar lookup in parallel for the page.
   const threadIds = rows.map((r) => r.id);
-  const pollRows =
+  const [pollRows, avatars] = await Promise.all([
     threadIds.length > 0
-      ? await db
+      ? db
           .select({ threadId: forumPolls.threadId })
           .from(forumPolls)
           .where(inArray(forumPolls.threadId, threadIds))
-      : [];
+      : Promise.resolve([]),
+    resolveAuthorAvatars(rows).catch(
+      () => new Map<string, { avatarUrl: string | null; color: string }>()
+    ),
+  ]);
   const pollThreadIds = new Set(pollRows.map((p) => p.threadId));
-
-  const avatars = await resolveAuthorAvatars(rows);
-
-  const categoryCounts: Record<string, number> = {};
-  for (const c of categoryRows) categoryCounts[c.category] = c.n;
 
   return NextResponse.json({
     threads: rows.map((row) => {
@@ -209,15 +244,10 @@ export async function POST(request: NextRequest) {
   }
 
   // Polls are admin-only — validated up front so the transaction can't
-  // half-commit a thread the admin didn't mean to create. An outage is not
-  // a demotion: answer 503 rather than telling an admin they aren't one.
+  // half-commit a thread the admin didn't mean to create.
   let pollInput: { question: string; options: string[]; endsAt: Date } | null = null;
   if (body.poll !== undefined && body.poll !== null) {
-    const adminVerdict = await checkAdmin();
-    if (adminVerdict === "db_error") {
-      return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
-    }
-    if (adminVerdict === "no") {
+    if (account.role !== "admin") {
       return NextResponse.json({ error: "Only admins can start polls." }, { status: 403 });
     }
     const parsed = parsePollInput(body.poll);
@@ -275,7 +305,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
 
-  const avatars = await resolveAuthorAvatars([created]);
+  if (content) {
+    const mentioned = await mentionRecipients(content, user.id);
+    await notifyMany(
+      mentioned.map((id) => ({
+        userId: id,
+        actorId: user.id,
+        actorName: username,
+        type: "mention" as const,
+        threadId: created.id,
+        excerpt: markdownExcerpt(content, 140),
+      }))
+    );
+  }
+
+  const avatars = await resolveAuthorAvatars([created]).catch(
+    () => new Map<string, { avatarUrl: string | null; color: string }>()
+  );
   const info = avatarInfoFor(avatars, created);
   return NextResponse.json(
     {
@@ -320,8 +366,7 @@ export async function PUT(request: NextRequest) {
   if (!db) return NextResponse.json({ error: "Database not configured" }, { status: 503 });
 
   // Live-account gate for the OWNER path: a removed member's unexpired
-  // cookie must not keep editing content. (The admin path below calls
-  // checkAdmin(), which re-reads the DB and rejects banned accounts.)
+  // cookie must not keep editing content.
   const gate = await accountGate(user.id);
   if (gate.status === "missing" || gate.status === "banned") {
     return NextResponse.json(
@@ -333,61 +378,78 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
 
-  const [thread] = await db
-    .select({ authorId: forumThreads.authorId, content: forumThreads.content })
-    .from(forumThreads)
-    .where(eq(forumThreads.id, id))
-    .limit(1);
-  if (!thread) return NextResponse.json({ error: "Thread not found" }, { status: 404 });
-  const isOwner = thread.authorId === user.id && thread.authorId !== "";
-  if (!isOwner) {
-    const adminVerdict = await checkAdmin();
-    if (adminVerdict === "db_error") {
-      return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  try {
+    const [thread] = await db
+      .select({ authorId: forumThreads.authorId, content: forumThreads.content })
+      .from(forumThreads)
+      .where(eq(forumThreads.id, id))
+      .limit(1);
+    if (!thread) return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+    const isOwner = thread.authorId === user.id && thread.authorId !== "";
+    let adminAccount: Account | null = null;
+    if (!isOwner) {
+      const adminGate = await requireAdminAccount();
+      if (adminGate.status === "db_error") {
+        return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+      }
+      if (adminGate.status === "no") {
+        return NextResponse.json({ error: "You can only edit your own posts." }, { status: 403 });
+      }
+      adminAccount = adminGate.account;
     }
-    if (adminVerdict === "no") {
-      return NextResponse.json({ error: "You can only edit your own posts." }, { status: 403 });
+
+    // Editing the body can drop embedded images. Collect old embeds that are
+    // no longer in the new text so they get garbage-collected like the delete
+    // path does — without this, every edit leaked its removed uploads in the
+    // bucket forever.
+    const newEmbeds = content !== undefined ? new Set(extractStorageUrls(content)) : null;
+    const removedEmbeds =
+      newEmbeds === null
+        ? []
+        : extractStorageUrls(thread.content).filter((url) => !newEmbeds.has(url));
+
+    const rows = await db
+      .update(forumThreads)
+      .set({
+        ...(title !== undefined ? { title } : {}),
+        ...(content !== undefined ? { content } : {}),
+        editedAt: new Date(),
+      })
+      .where(eq(forumThreads.id, id))
+      .returning();
+    // The existence check above raced a concurrent delete: an empty update
+    // result means the row vanished — answer 404, not `publicRow(undefined)`.
+    if (rows.length === 0) {
+      return NextResponse.json({ error: "Thread not found" }, { status: 404 });
     }
+    if (removedEmbeds.length > 0) {
+      await deleteImagesByUrl(removedEmbeds, { id: user.id, isAdmin: !isOwner });
+    }
+    if (adminAccount) {
+      await logAudit({
+        actorId: adminAccount.id,
+        actorName: adminAccount.username,
+        action: "thread_edit",
+        targetId: String(id),
+        targetName: rows[0].title,
+        detail: `Edited thread by ${rows[0].author}`,
+      });
+    }
+    return NextResponse.json(publicRow(rows[0]));
+  } catch (err) {
+    console.error("api/forum PUT: update failed", err);
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
-
-  // Editing the body can drop embedded images. Collect old embeds that are
-  // no longer in the new text so they get garbage-collected like the delete
-  // path does — without this, every edit leaked its removed uploads in the
-  // bucket forever.
-  const newEmbeds = content !== undefined ? new Set(extractStorageUrls(content)) : null;
-  const removedEmbeds =
-    newEmbeds === null
-      ? []
-      : extractStorageUrls(thread.content).filter((url) => !newEmbeds.has(url));
-
-  const rows = await db
-    .update(forumThreads)
-    .set({
-      ...(title !== undefined ? { title } : {}),
-      ...(content !== undefined ? { content } : {}),
-      editedAt: new Date(),
-    })
-    .where(eq(forumThreads.id, id))
-    .returning();
-  // The existence check above raced a concurrent delete: an empty update
-  // result means the row vanished — answer 404, not `publicRow(undefined)`.
-  if (rows.length === 0) {
-    return NextResponse.json({ error: "Thread not found" }, { status: 404 });
-  }
-  if (removedEmbeds.length > 0) {
-    await deleteImagesByUrl(removedEmbeds, { id: user.id, isAdmin: !isOwner });
-  }
-  return NextResponse.json(publicRow(rows[0]));
 }
 
 // Admin moderation: pin/unpin or lock/unlock a thread.
 // Body: { id, pinned? , locked? }
 export async function PATCH(request: NextRequest) {
-  const adminVerdict = await checkAdmin();
-  if (adminVerdict === "db_error") {
+  const adminGate = await requireAdminAccount();
+  if (adminGate.status === "db_error") {
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
-  if (adminVerdict === "no") {
+  if (adminGate.status === "no") {
     return NextResponse.json({ error: "Admins only." }, { status: 403 });
   }
 
@@ -421,15 +483,40 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
   }
 
-  const rows = await db
-    .update(forumThreads)
-    .set(patch)
-    .where(eq(forumThreads.id, id))
-    .returning();
-  if (rows.length === 0) {
-    return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+  try {
+    const rows = await db
+      .update(forumThreads)
+      .set(patch)
+      .where(eq(forumThreads.id, id))
+      .returning();
+    if (rows.length === 0) {
+      return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+    }
+    if (patch.pinned !== undefined) {
+      await logAudit({
+        actorId: adminGate.account.id,
+        actorName: adminGate.account.username,
+        action: "thread_pin",
+        targetId: String(id),
+        targetName: rows[0].title,
+        detail: patch.pinned ? "pinned" : "unpinned",
+      });
+    }
+    if (patch.locked !== undefined) {
+      await logAudit({
+        actorId: adminGate.account.id,
+        actorName: adminGate.account.username,
+        action: "thread_lock",
+        targetId: String(id),
+        targetName: rows[0].title,
+        detail: patch.locked ? "locked" : "unlocked",
+      });
+    }
+    return NextResponse.json(publicRow(rows[0]));
+  } catch (err) {
+    console.error("api/forum PATCH: update failed", err);
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
-  return NextResponse.json(publicRow(rows[0]));
 }
 
 // Delete a thread. Admins can delete anything; members can delete their
@@ -463,59 +550,80 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
 
-  const [thread] = await db
-    .select({ authorId: forumThreads.authorId })
-    .from(forumThreads)
-    .where(eq(forumThreads.id, id))
-    .limit(1);
-  if (!thread) {
-    return NextResponse.json({ error: "Thread not found" }, { status: 404 });
-  }
-  const isOwner = thread.authorId === user.id && thread.authorId !== "";
-  if (!isOwner) {
-    const adminVerdict = await checkAdmin();
-    if (adminVerdict === "db_error") {
-      return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+  try {
+    const [thread] = await db
+      .select({ authorId: forumThreads.authorId })
+      .from(forumThreads)
+      .where(eq(forumThreads.id, id))
+      .limit(1);
+    if (!thread) {
+      return NextResponse.json({ error: "Thread not found" }, { status: 404 });
     }
-    if (adminVerdict === "no") {
-      return NextResponse.json({ error: "Admins only." }, { status: 403 });
+    const isOwner = thread.authorId === user.id && thread.authorId !== "";
+    let adminAccount: Account | null = null;
+    if (!isOwner) {
+      const adminGate = await requireAdminAccount();
+      if (adminGate.status === "db_error") {
+        return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
+      }
+      if (adminGate.status === "no") {
+        return NextResponse.json({ error: "Admins only." }, { status: 403 });
+      }
+      adminAccount = adminGate.account;
     }
-  }
 
-  // Atomic cascade: thread, replies, poll and votes go together — a
-  // mid-failure must not orphan replies/polls pointing at a dead thread.
-  const deleted = await db.transaction(async (tx) => {
-    const rows = await tx.delete(forumThreads).where(eq(forumThreads.id, id)).returning();
-    if (rows.length === 0) return null;
-    // Collect embed URLs before the cascade wipes them — the content is
-    // needed below to garbage-collect the bucket.
-    const replyContents = await tx
-      .select({ content: forumReplies.content })
-      .from(forumReplies)
-      .where(eq(forumReplies.threadId, id));
-    await tx.delete(forumReplies).where(eq(forumReplies.threadId, id));
-    const polls = await tx
-      .select({ id: forumPolls.id })
-      .from(forumPolls)
-      .where(eq(forumPolls.threadId, id));
-    for (const p of polls) {
-      await tx.delete(forumPollVotes).where(eq(forumPollVotes.pollId, p.id));
+    // Atomic cascade: thread, replies, poll and votes go together — a
+    // mid-failure must not orphan replies/polls pointing at a dead thread.
+    const deleted = await db.transaction(async (tx) => {
+      const rows = await tx.delete(forumThreads).where(eq(forumThreads.id, id)).returning();
+      if (rows.length === 0) return null;
+      // Collect embed URLs as the cascade wipes replies — the content is
+      // needed below to garbage-collect the bucket.
+      const replyContents = await tx
+        .delete(forumReplies)
+        .where(eq(forumReplies.threadId, id))
+        .returning({ content: forumReplies.content });
+      const polls = await tx
+        .select({ id: forumPolls.id })
+        .from(forumPolls)
+        .where(eq(forumPolls.threadId, id));
+      for (const p of polls) {
+        await tx.delete(forumPollVotes).where(eq(forumPollVotes.pollId, p.id));
+      }
+      await tx.delete(forumPolls).where(eq(forumPolls.threadId, id));
+      return {
+        threadTitle: rows[0].title,
+        threadAuthor: rows[0].author,
+        threadContent: rows[0].content,
+        replyContents,
+      };
+    });
+    if (!deleted) {
+      return NextResponse.json({ error: "Thread not found" }, { status: 404 });
     }
-    await tx.delete(forumPolls).where(eq(forumPolls.threadId, id));
-    return { threadContent: rows[0].content, replyContents };
-  });
-  if (!deleted) {
-    return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+    // Free the bucket: forum embeds live inline in post/reply text, so unlike
+    // gallery posts (which track their images in columns) deleting the rows
+    // used to orphan every uploaded image forever. Best-effort, like gallery.
+    const embedUrls = [
+      ...extractStorageUrls(deleted.threadContent ?? ""),
+      ...deleted.replyContents.flatMap((r) => extractStorageUrls(r.content ?? "")),
+    ];
+    if (embedUrls.length > 0) {
+      await deleteImagesByUrl(embedUrls, { id: user.id, isAdmin: !isOwner });
+    }
+    if (adminAccount) {
+      await logAudit({
+        actorId: adminAccount.id,
+        actorName: adminAccount.username,
+        action: "thread_delete",
+        targetId: String(id),
+        targetName: deleted.threadTitle,
+        detail: `Deleted thread by ${deleted.threadAuthor}`,
+      });
+    }
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("api/forum DELETE: delete failed", err);
+    return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
-  // Free the bucket: forum embeds live inline in post/reply text, so unlike
-  // gallery posts (which track their images in columns) deleting the rows
-  // used to orphan every uploaded image forever. Best-effort, like gallery.
-  const embedUrls = [
-    ...extractStorageUrls(deleted.threadContent ?? ""),
-    ...deleted.replyContents.flatMap((r) => extractStorageUrls(r.content ?? "")),
-  ];
-  if (embedUrls.length > 0) {
-    await deleteImagesByUrl(embedUrls, { id: user.id, isAdmin: !isOwner });
-  }
-  return NextResponse.json({ ok: true });
 }

@@ -1,18 +1,28 @@
 // Tracks stacked overlays (modals, lightboxes, announcements) so Escape
-// closes only the topmost one. Keydown handlers all live on `document`,
-// where stopPropagation cannot stop sibling listeners — without this
-// ordering, one Escape press slams shut every open overlay at once.
+// closes only the topmost one, and reference-counts body scroll lock so
+// out-of-order unmounts never strand `document.body.style.overflow`.
 const stack: symbol[] = [];
+let savedOverflow: string | null = null;
 
 export function pushOverlay(): symbol {
+  const wasEmpty = stack.length === 0;
   const id = Symbol("overlay");
   stack.push(id);
+  if (wasEmpty && typeof document !== "undefined") {
+    savedOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+  }
   return id;
 }
 
 export function popOverlay(id: symbol): void {
   const i = stack.lastIndexOf(id);
-  if (i !== -1) stack.splice(i, 1);
+  if (i === -1) return;
+  stack.splice(i, 1);
+  if (stack.length === 0 && typeof document !== "undefined") {
+    document.body.style.overflow = savedOverflow ?? "";
+    savedOverflow = null;
+  }
 }
 
 /** True when `id` is the topmost overlay — only it may react to Escape. */

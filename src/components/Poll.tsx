@@ -71,6 +71,11 @@ export function PollBuilder({
   draft: PollDraft;
   onChange: (d: PollDraft) => void;
 }) {
+  const [mountedNow, setMountedNow] = useState<number | null>(null);
+  useEffect(() => {
+    setMountedNow(Date.now());
+  }, []);
+
   const setOption = (key: string, v: string) =>
     onChange({
       ...draft,
@@ -78,7 +83,9 @@ export function PollBuilder({
     });
 
   const preset = (days: number) => {
-    const d = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    const now = Date.now();
+    setMountedNow(now);
+    const d = new Date(now + days * 24 * 60 * 60 * 1000);
     onChange({ ...draft, endsAt: localInputValue(d) });
   };
 
@@ -150,7 +157,7 @@ export function PollBuilder({
             type="datetime-local"
             className="input flex-1 min-w-[12rem]"
             value={draft.endsAt ? toLocalInput(draft.endsAt) : ""}
-            min={localInputValue(new Date(Date.now() + 60_000))}
+            min={mountedNow !== null ? localInputValue(new Date(mountedNow + 60_000)) : undefined}
             onChange={(e) => onChange({ ...draft, endsAt: e.target.value })}
           />
           {[
@@ -163,7 +170,7 @@ export function PollBuilder({
             </button>
           ))}
         </div>
-        {draft.endsAt && new Date(draft.endsAt).getTime() <= Date.now() ? (
+        {mountedNow !== null && draft.endsAt && new Date(draft.endsAt).getTime() <= mountedNow ? (
           <p className="text-xs text-[var(--redstone)] mt-1.5">The end date must be in the future.</p>
         ) : null}
       </div>
@@ -191,12 +198,13 @@ function deadline(endsAt: string): number | null {
   return Number.isNaN(t) ? null : t;
 }
 
-function countdown(endsAt: string): string {
+function countdown(endsAt: string, now: number | null, endedFallback: boolean): string {
   const end = deadline(endsAt);
   // An unparseable deadline used to return "" while `ended` stayed false, so
   // the badge rendered as a lone hourglass icon with no text next to it.
   if (end === null) return "No end date";
-  const ms = end - Date.now();
+  if (now === null) return endedFallback ? "Final results" : "Active poll";
+  const ms = end - now;
   if (ms <= 0) return "Final results";
   const mins = Math.floor(ms / 60_000);
   if (mins < 1) return "Ends in under a minute";
@@ -222,20 +230,30 @@ export function PollViewer({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
   // Recompute the countdown label every 30s while open — this also flips
   // `ended` at the deadline even though the server snapshot is stale.
   const [, forceTick] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => forceTick((n) => n + 1), 30_000);
-    return () => clearInterval(t);
+    setMounted(true);
+    const t = setInterval(() => {
+      if (document.visibilityState !== "hidden") forceTick((n) => n + 1);
+    }, 30_000);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") forceTick((n) => n + 1);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
-  // Compute ended from endsAt NOW, not from the (possibly stale) server
-  // snapshot — a poll sitting open in a tab must close itself at the
-  // deadline without a refetch. An unparseable date is treated as "open"
-  // rather than "ended" so a bad row doesn't silently lock out voting.
+  // Avoid Date.now() during SSR render — fall back to `poll.ended ?? false`
+  // before mount, then compute live against `Date.now()` once mounted.
   const end = deadline(poll.endsAt);
-  const ended = end !== null && end <= Date.now();
+  const now = mounted ? Date.now() : null;
+  const ended = now !== null ? end !== null && end <= now : (poll.ended ?? false);
   const total = useMemo(
     () => poll.totalVotes ?? Object.values(poll.counts ?? {}).reduce((a, b) => a + b, 0),
     [poll]
@@ -243,7 +261,7 @@ export function PollViewer({
   const voted = Boolean(poll.myVote);
 
   const vote = async (optionId: string) => {
-    if (busy || ended || !canVote) return;
+    if (busy || ended || !canVote || poll.myVote === optionId) return;
     setBusy(true);
     setError(null);
     try {
@@ -259,7 +277,7 @@ export function PollViewer({
     <div className={bare ? "" : "card p-5 sm:p-6 mt-6 poll-card"} aria-label={`Poll: ${poll.question}`}>
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <h3 className="font-display text-lg font-bold flex items-center gap-2">
-          <i className="fa-solid fa-square-poll-vertical text-[var(--diamond)]" />
+          <i className="fa-solid fa-square-poll-vertical text-[var(--diamond)]" aria-hidden="true" />
           {poll.question}
         </h3>
         <span
@@ -269,8 +287,8 @@ export function PollViewer({
               : "text-[var(--diamond)] border-[var(--diamond)]/40 bg-[var(--diamond)]/10"
           }`}
         >
-          <i className={`fa-solid ${ended ? "fa-flag-checkered" : "fa-hourglass-half"} text-[10px]`} />
-          {countdown(poll.endsAt)}
+          <i className={`fa-solid ${ended ? "fa-flag-checkered" : "fa-hourglass-half"} text-[10px]`} aria-hidden="true" />
+          {countdown(poll.endsAt, now, ended)}
         </span>
       </div>
 

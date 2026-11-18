@@ -84,3 +84,54 @@ export function discordAvatarUrl(user: DiscordUser): string | null {
   const ext = user.avatar.startsWith("a_") ? "gif" : "png";
   return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}?size=128`;
 }
+
+export type DiscordGuildCheckResult =
+  | { status: "unconfigured" }
+  | { status: "definitive"; verified: boolean }
+  | { status: "transient_error" };
+
+/**
+ * Check whether `accountOrSnowflake` ("discord:<id>" or "<id>") is currently a
+ * member of `DISCORD_GUILD_ID` using `DISCORD_BOT_TOKEN`. Distinguishes code
+ * 10007 (unknown member = definitively not in server) from 10004 (unknown
+ * guild) or 429/5xx so transient hiccups never wipe stored verification.
+ */
+export async function checkDiscordGuildMembership(
+  accountOrSnowflake: string
+): Promise<DiscordGuildCheckResult> {
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  const guildId = process.env.DISCORD_GUILD_ID;
+  if (!botToken || !guildId) return { status: "unconfigured" };
+
+  const discordId = accountOrSnowflake.replace(/^discord:/, "").trim();
+  if (!/^\d{5,30}$/.test(discordId)) return { status: "transient_error" };
+
+  try {
+    const res = await fetch(
+      `https://discord.com/api/guilds/${encodeURIComponent(guildId)}/members/${encodeURIComponent(discordId)}`,
+      {
+        headers: { Authorization: `Bot ${botToken}` },
+        signal: AbortSignal.timeout(10_000),
+      }
+    );
+    if (res.status === 200) {
+      await res.body?.cancel().catch(() => {});
+      return { status: "definitive", verified: true };
+    }
+    if (res.status === 404) {
+      try {
+        const payload = (await res.json()) as { code?: number } | null;
+        if (payload?.code === 10007) {
+          return { status: "definitive", verified: false };
+        }
+      } catch {
+        /* non-JSON 404 — treat as transient */
+      }
+      return { status: "transient_error" };
+    }
+    await res.body?.cancel().catch(() => {});
+    return { status: "transient_error" };
+  } catch {
+    return { status: "transient_error" };
+  }
+}

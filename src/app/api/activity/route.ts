@@ -14,8 +14,30 @@ export async function GET() {
   if (!db) return NextResponse.json([]);
   try {
     const [threads, gallery, members] = await Promise.all([
-      db.select().from(forumThreads).orderBy(desc(forumThreads.createdAt)).limit(10),
-      db.select().from(galleryItems).orderBy(desc(galleryItems.createdAt)).limit(10),
+      db
+        .select({
+          id: forumThreads.id,
+          title: forumThreads.title,
+          author: forumThreads.author,
+          authorId: forumThreads.authorId,
+          color: forumThreads.color,
+          createdAt: forumThreads.createdAt,
+        })
+        .from(forumThreads)
+        .orderBy(desc(forumThreads.createdAt))
+        .limit(10),
+      db
+        .select({
+          id: galleryItems.id,
+          title: galleryItems.title,
+          builder: galleryItems.builder,
+          authorId: galleryItems.authorId,
+          createdAt: galleryItems.createdAt,
+          image: galleryItems.image,
+        })
+        .from(galleryItems)
+        .orderBy(desc(galleryItems.createdAt))
+        .limit(10),
       db
         .select({
           id: profiles.id,
@@ -24,7 +46,14 @@ export async function GET() {
           createdAt: profiles.createdAt,
         })
         .from(profiles)
-        .where(and(eq(profiles.banned, false), isNotNull(profiles.minecraftUsername), ne(profiles.minecraftUsername, "")))
+        .where(
+          and(
+            eq(profiles.banned, false),
+            isNotNull(profiles.minecraftUsername),
+            ne(profiles.minecraftUsername, ""),
+            isNotNull(profiles.createdAt)
+          )
+        )
         .orderBy(desc(profiles.createdAt))
         .limit(5),
     ]);
@@ -32,7 +61,7 @@ export async function GET() {
     const avatars = await resolveAuthorAvatars([
       ...threads,
       ...gallery.map((g) => ({ authorId: g.authorId, author: g.builder })),
-    ]);
+    ]).catch(() => new Map<string, { avatarUrl: string | null; color: string }>());
 
     const events: ActivityEvent[] = [];
     for (const t of threads) {

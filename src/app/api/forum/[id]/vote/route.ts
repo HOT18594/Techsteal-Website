@@ -40,18 +40,18 @@ export async function POST(
   if (gate.status === "db_error") {
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
-  // Members are rate limited on vote churn; admins are exempt.
-  if (
-    (gate.status !== "ok" || gate.account.role !== "admin") &&
-    isRateLimited(`vote:${user.id}`, 20, 60_000)
-  ) {
-    return NextResponse.json({ error: "Too many votes — slow down." }, { status: 429 });
-  }
 
   const body = await request.json().catch(() => ({}));
   const optionId = typeof body?.optionId === "string" ? body.optionId : "";
   if (!optionId) {
     return NextResponse.json({ error: "optionId is required" }, { status: 400 });
+  }
+
+  // Members are rate limited on vote churn; admins are exempt. Checked after
+  // optionId validation so malformed requests don't spend the user's quota.
+  const isAdmin = gate.status === "ok" && gate.account.role === "admin";
+  if (!isAdmin && isRateLimited(`vote:${user.id}`, 20, 60_000)) {
+    return NextResponse.json({ error: "Too many votes — slow down." }, { status: 429 });
   }
 
   const db = getDb();
@@ -84,7 +84,7 @@ export async function POST(
         set: { optionId, createdAt: new Date() },
       });
 
-    const serialized = await serializePoll(db, threadId, user.id);
+    const serialized = await serializePoll(db, threadId, user.id, poll);
     return NextResponse.json({ poll: serialized });
   } catch (err) {
     console.error("api/forum/[id]/vote: write failed", err);
@@ -139,7 +139,7 @@ export async function DELETE(
     await db
       .delete(forumPollVotes)
       .where(and(eq(forumPollVotes.pollId, poll.id), eq(forumPollVotes.userId, user.id)));
-    const serialized = await serializePoll(db, threadId, user.id);
+    const serialized = await serializePoll(db, threadId, user.id, poll);
     return NextResponse.json({ poll: serialized });
   } catch (err) {
     console.error("api/forum/[id]/vote: delete failed", err);

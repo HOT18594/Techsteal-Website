@@ -177,9 +177,11 @@ function buildSystemPrompt(opts: {
 }): string {
   const c = siteConfig;
   const u = opts.user;
-  const memberSince = u.memberSince
-    ? new Date(u.memberSince).toISOString().slice(0, 10)
-    : null;
+  const parsedMemberSince = u.memberSince ? new Date(u.memberSince) : null;
+  const memberSince =
+    parsedMemberSince && !Number.isNaN(parsedMemberSince.getTime())
+      ? parsedMemberSince.toISOString().slice(0, 10)
+      : null;
   const userFacts = [
     `- Username: ${u.username}`,
     `- Role: ${u.role === "admin" ? "admin (they manage the server and the Manage Panel)" : "member"}`,
@@ -328,7 +330,7 @@ async function buildKnowledgeSnapshot(): Promise<{ text: string; hasDb: boolean 
         .orderBy(profiles.username)
         .limit(30),
       db.select().from(timelineEvents).orderBy(desc(timelineEvents.id)).limit(15),
-      db.select().from(galleryItems).limit(10),
+      db.select().from(galleryItems).orderBy(desc(galleryItems.id)).limit(10),
       db.select().from(forumThreads).orderBy(desc(forumThreads.createdAt)).limit(6),
     ]);
 
@@ -516,6 +518,8 @@ async function completionRound(opts: {
   let buffer = "";
   const calls = new Map<number, PartialToolCall>();
   let sawAbort = false;
+  let sawDone = false;
+  let emittedTextInRound = false;
 
   // One decoded SSE line → text deltas / accumulated tool-call fragments.
   // Shared by the read loop and the final tail flush so a complete last
@@ -524,10 +528,15 @@ async function completionRound(opts: {
     const trimmed = line.trim();
     if (!trimmed.startsWith("data:")) return;
     const payload = trimmed.slice(5).trim();
-    if (!payload || payload === "[DONE]") return;
+    if (!payload) return;
+    if (payload === "[DONE]") {
+      sawDone = true;
+      return;
+    }
     try {
       const json = JSON.parse(payload) as {
         choices?: Array<{
+          finish_reason?: string | null;
           delta?: {
             content?: string;
             tool_calls?: Array<{
@@ -538,9 +547,14 @@ async function completionRound(opts: {
           };
         }>;
       };
-      const delta = json.choices?.[0]?.delta;
+      const choice = json.choices?.[0];
+      if (choice?.finish_reason) sawDone = true;
+      const delta = choice?.delta;
       if (!delta) return;
-      if (delta.content) opts.emit({ t: "text", v: delta.content });
+      if (delta.content) {
+        emittedTextInRound = true;
+        opts.emit({ t: "text", v: delta.content });
+      }
       for (const tc of delta.tool_calls ?? []) {
         const i = tc.index ?? 0;
         const acc = calls.get(i) ?? { id: "", name: "", args: "" };
@@ -579,17 +593,20 @@ async function completionRound(opts: {
     // Two rejection causes must NOT be treated as "the upstream merely
     // hiccuped": a client abort (Stop button / navigation) voids the whole
     // round, and a round timeout must propagate so attemptRound's model
-    // cascade and error classification still run. reader.read() spends
-    // almost all its life blocked, so both normally surface HERE, not via
-    // the between-reads poll above — swallowing them produced silent empty
-    // replies and truncated tool calls being executed with default args.
+    // cascade and error classification still run. If a socket dropped while
+    // accumulating tool calls (before [DONE] / finish_reason) and no text was
+    // emitted yet, propagate so the cascade retries cleanly instead of
+    // executing half-parsed tool arguments.
     await reader.cancel().catch(() => {});
     if (opts.signal?.aborted) {
       sawAbort = true;
     } else if ((err as Error | undefined)?.name === "TimeoutError") {
+      (err as { partialStream?: boolean }).partialStream = emittedTextInRound;
+      throw err;
+    } else if (!sawDone && calls.size > 0 && !emittedTextInRound) {
       throw err;
     }
-    // Genuine upstream body hiccup: end the round with what was collected.
+    // Genuine upstream body hiccup after partial text: end with what was collected.
   }
 
   if (sawAbort || opts.signal?.aborted) return null;
@@ -772,6 +789,12 @@ export async function streamChatReply(
           return { round, model: candidate.model };
         } catch (error) {
           lastError = error;
+          // If this candidate already streamed text to the client before
+          // stalling/failing, starting a second model from scratch would glue
+          // two half-answers together in the UI — abort the cascade instead.
+          if ((error as { partialStream?: boolean })?.partialStream) {
+            break;
+          }
           const status = (error as { status?: number }).status;
           if (candidate.withTools && (status === 400 || status === 404 || status === 422)) {
             rejectsTools.add(candidate.model);
@@ -819,13 +842,20 @@ export async function streamChatReply(
       const proactiveResults = await Promise.all(
         proactiveCalls.map(async (call) => ({ call, result: await runToolWithTrace(call) }))
       );
-      const latestUserMessage = messages[messages.length - 1] as { content?: string };
-      latestUserMessage.content =
-        `${latestUserMessage.content ?? ""}\n\n` +
-        "PROACTIVELY FETCHED LIVE CONTEXT (fresh; use it as the source of truth and do not repeat these same lookups):\n\n" +
+      const contextSuffix =
+        "\n\nPROACTIVELY FETCHED LIVE CONTEXT (fresh; use it as the source of truth and do not repeat these same lookups):\n\n" +
         proactiveResults
           .map(({ call, result }) => `${call.name}:\n${result.content}`)
           .join("\n\n");
+      const latestUserMessage = messages[messages.length - 1] as {
+        content?: string | Array<{ type: string; text?: string }>;
+      };
+      if (Array.isArray(latestUserMessage.content)) {
+        const textPart = latestUserMessage.content.find((part) => part.type === "text");
+        if (textPart) textPart.text = `${textPart.text ?? ""}${contextSuffix}`;
+      } else {
+        latestUserMessage.content = `${latestUserMessage.content ?? ""}${contextSuffix}`;
+      }
     }
 
     let round: Round | null;
@@ -841,7 +871,9 @@ export async function streamChatReply(
         status,
         String((error as { body?: string }).body ?? "").slice(0, 300)
       );
-      emit({ t: "text", v: status === 429 ? RATE_LIMITED_MESSAGE : ERROR_MESSAGE });
+      if (!streamedText) {
+        emit({ t: "text", v: status === 429 ? RATE_LIMITED_MESSAGE : ERROR_MESSAGE });
+      }
       return;
     }
     if (round === null) return;

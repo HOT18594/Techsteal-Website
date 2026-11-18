@@ -4,6 +4,7 @@
 // exposed to the browser). Server-to-Supabase requests avoid browser CORS.
 
 import { createHash } from "node:crypto";
+import { type AnyColumn, ilike, or, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { forumReplies, forumThreads, galleryComments, galleryItems } from "@/lib/schema";
 
@@ -103,6 +104,7 @@ export async function uploadImage(
   // permanent storage leak for every such upload).
   const base =
     (originalName || "image")
+      .replace(/\.[^.]+$/, "")
       .replace(/[^\w.-]/g, "")
       .replace(/^[.]+/, "")
       .replace(/\.{2,}/g, ".")
@@ -127,6 +129,7 @@ export async function uploadImage(
     await res.body?.cancel().catch(() => {});
     throw new Error(`Upload failed (${res.status}).`);
   }
+  await res.body?.cancel().catch(() => {});
 
   return `${url}/storage/v1/object/public/${BUCKET}/${path}`;
 }
@@ -146,10 +149,25 @@ export function storagePathFromUrl(publicUrl: string): string | null {
   }
   const prefix = `${base}/storage/v1/object/public/${BUCKET}/`;
   if (!publicUrl.startsWith(prefix)) return null;
-  const path = publicUrl.slice(prefix.length).split("?")[0];
-  // No traversal, no empty path.
-  if (!path || path.includes("..")) return null;
-  return path;
+  const rawPath = publicUrl.slice(prefix.length).split(/[?#]/)[0];
+  if (!rawPath) return null;
+  let decoded = rawPath;
+  try {
+    decoded = decodeURIComponent(rawPath);
+  } catch {
+    return null;
+  }
+  // No traversal, no empty path, no leading/double slashes.
+  if (
+    !decoded ||
+    rawPath.includes("..") ||
+    decoded.includes("..") ||
+    decoded.startsWith("/") ||
+    decoded.includes("//")
+  ) {
+    return null;
+  }
+  return rawPath;
 }
 
 /**
@@ -325,6 +343,69 @@ export async function deleteStorageObjects(paths: string[]): Promise<number> {
  *
  * Returns the number of objects Supabase reported as deleted.
  */
+function escapeLikePattern(text: string): string {
+  return text.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+/**
+ * Targeted reference check for a small set of candidate paths (used on post
+ * delete/edit so we only fetch rows mentioning those paths rather than full-
+ * scanning all four tables into Node memory). Returns null on DB failure so
+ * callers fail closed and keep every candidate object.
+ */
+export async function referencedStoragePathsForCandidates(
+  candidates: string[]
+): Promise<Set<string> | null> {
+  if (candidates.length === 0) return new Set();
+  const db = getDb();
+  if (!db) return new Set();
+  try {
+    const patterns = candidates.map((p) => `%${escapeLikePattern(p)}%`);
+    const matchText = (col: AnyColumn) =>
+      or(...patterns.map((pat) => ilike(col, pat)))!;
+    const matchGallery = or(
+      ...patterns.flatMap((pat) => [
+        ilike(galleryItems.image, pat),
+        ilike(galleryItems.description, pat),
+        sql`${galleryItems.images}::text ilike ${pat}`,
+      ])
+    )!;
+
+    const [threads, replies, items, comments] = await Promise.all([
+      db.select({ content: forumThreads.content }).from(forumThreads).where(matchText(forumThreads.content)),
+      db.select({ content: forumReplies.content }).from(forumReplies).where(matchText(forumReplies.content)),
+      db
+        .select({
+          image: galleryItems.image,
+          images: galleryItems.images,
+          description: galleryItems.description,
+        })
+        .from(galleryItems)
+        .where(matchGallery),
+      db.select({ content: galleryComments.content }).from(galleryComments).where(matchText(galleryComments.content)),
+    ]);
+
+    const candidateSet = new Set(candidates);
+    const refs = new Set<string>();
+    const addUrl = (u: string) => {
+      const path = storagePathFromUrl(u);
+      if (path && candidateSet.has(path)) refs.add(path);
+    };
+    for (const row of [...threads, ...replies, ...comments]) {
+      for (const u of extractStorageUrls(row.content)) addUrl(u);
+    }
+    for (const item of items) {
+      addUrl(item.image);
+      for (const u of item.images ?? []) addUrl(u);
+      for (const u of extractStorageUrls(item.description)) addUrl(u);
+    }
+    return refs;
+  } catch (err) {
+    console.error("storage: candidate reference scan failed", err);
+    return null;
+  }
+}
+
 export async function deleteImagesByUrl(
   publicUrls: string[],
   actor: { id: string; isAdmin: boolean }
@@ -344,7 +425,7 @@ export async function deleteImagesByUrl(
   });
   if (owned.length === 0) return 0;
 
-  const refs = await referencedStoragePaths();
+  const refs = await referencedStoragePathsForCandidates(owned);
   // Scan failed → we can't prove an object is unused, so keep everything.
   if (refs === null) return 0;
   const orphans = owned.filter((p) => !refs.has(p));

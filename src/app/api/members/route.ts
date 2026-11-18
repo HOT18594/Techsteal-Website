@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, isNotNull, ne } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { profiles } from "@/lib/schema";
 import { fallbackMembers } from "@/lib/fallback-data";
@@ -31,34 +31,34 @@ export async function GET() {
 }
 
 async function memberRoster(db: Exclude<ReturnType<typeof getDb>, null>): Promise<NextResponse> {
-  const rows = await db
-    .select({
-      id: profiles.id,
-      username: profiles.username,
-      role: profiles.role,
-      minecraftUsername: profiles.minecraftUsername,
-      discordVerified: profiles.discordVerified,
-      createdAt: profiles.createdAt,
-    })
-    .from(profiles)
-    // Removed (banned) accounts are a denylist, not directory entries —
-    // every other account surface filters them out; this one must too.
-    .where(eq(profiles.banned, false))
-    .orderBy(profiles.username);
+  const [rows, status] = await Promise.all([
+    db
+      .select({
+        id: profiles.id,
+        username: profiles.username,
+        role: profiles.role,
+        minecraftUsername: profiles.minecraftUsername,
+        discordVerified: profiles.discordVerified,
+        createdAt: profiles.createdAt,
+      })
+      .from(profiles)
+      // Removed (banned) accounts and accounts without a linked Minecraft
+      // username are excluded in SQL so we don't transfer non-roster profiles.
+      .where(
+        and(
+          eq(profiles.banned, false),
+          isNotNull(profiles.minecraftUsername),
+          ne(profiles.minecraftUsername, "")
+        )
+      )
+      .orderBy(profiles.username),
+    getLiveStatus().catch(() => null),
+  ]);
 
-  // Fetch live status once and build a set of currently-online Minecraft
-  // names so each account can be marked without per-row API calls. The
-  // exaroton panel list is authoritative — ping-based lists (mcsrvstat)
-  // are often empty even with players online.
-  let onlineNames = new Set<string>();
-  try {
-    const status = await getLiveStatus();
-    if (status.source === "live" && status.online) {
-      onlineNames = new Set((status.playerList ?? []).map((n) => n.toLowerCase()));
-    }
-  } catch {
-    // status unavailable — everyone shows offline, which is safe/honest.
-  }
+  const onlineNames =
+    status?.source === "live" && status.online
+      ? new Set((status.playerList ?? []).map((n) => n.toLowerCase()))
+      : new Set<string>();
 
   const members: Member[] = rows
     .filter((row) => Boolean(row.minecraftUsername?.trim()))

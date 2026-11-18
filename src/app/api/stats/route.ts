@@ -28,7 +28,7 @@ export async function GET() {
   if (!db) return NextResponse.json(base);
 
   try {
-    const [members, builds, discussions, replies] = await Promise.all([
+    const [members, builds, discussions, replies, status] = await Promise.all([
       db
         .select({ value: count() })
         .from(profiles)
@@ -36,17 +36,11 @@ export async function GET() {
       db.select({ value: count() }).from(galleryItems),
       db.select({ value: count() }).from(forumThreads),
       db.select({ value: count() }).from(forumReplies),
+      siteConfig.seasonLive ? getLiveStatus().catch(() => null) : Promise.resolve(null),
     ]);
 
-    let online = 0;
-    if (siteConfig.seasonLive) {
-      try {
-        const status = await getLiveStatus();
-        if (status.source === "live" && status.online) online = status.players ?? 0;
-      } catch {
-        // status unavailable — report 0 rather than guessing.
-      }
-    }
+    const online =
+      status?.source === "live" && status.online ? (status.players ?? 0) : 0;
 
     const stats: SeasonStats = {
       ...base,

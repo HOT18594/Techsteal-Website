@@ -75,6 +75,8 @@ export async function GET(request: Request) {
       role: account.role,
       permissions: account.permissions,
       avatarUrl: account.avatarUrl,
+      onboarded: account.onboarded,
+      discordVerified: account.discordVerified,
     });
 
     // Land where the user started when the login flow began at a gated CTA

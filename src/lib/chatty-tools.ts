@@ -12,7 +12,8 @@ import { announcements, forumReplies, forumThreads, galleryItems, profiles, rule
 import { getLiveStatus } from "./live-status";
 import { formatSearchResults, webSearch } from "./web-search";
 import { formatModrinthResults, searchModrinth } from "./modrinth";
-import { parseRouteId } from "./route-ids";
+import { parseBodyId } from "./route-ids";
+import { siteConfig } from "./site";
 
 interface ChattyToolDef {
   type: "function";
@@ -243,13 +244,19 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
           return { ok: true, label, content: "Live status is unavailable right now (the status API is unreachable). Say so honestly." };
         }
         if (!status.online) {
-          return { ok: true, label, content: `The server is currently ${status.stateLabel ?? "OFFLINE"}.` };
+          const prepNote = !siteConfig.seasonLive
+            ? ` (${siteConfig.season} is coming soon and has not opened to players yet.)`
+            : "";
+          return { ok: true, label, content: `The server is currently ${status.stateLabel ?? "OFFLINE"}.${prepNote}` };
         }
         const names = (status.playerList ?? []).filter(Boolean);
+        const prepNote = !siteConfig.seasonLive
+          ? ` (${siteConfig.season} is in pre-launch prep and not open to players yet.)`
+          : "";
         return {
           ok: true,
           label,
-          content: `The server is ONLINE — ${status.players ?? 0}/${status.max ?? "?"} players. Version ${status.version ?? "unknown"}.${names.length ? ` Currently online: ${names.join(", ")}.` : " Nobody is online right now."}`,
+          content: `The server is ONLINE — ${status.players ?? 0}/${status.max ?? "?"} players. Version ${status.version ?? "unknown"}.${names.length ? ` Currently online: ${names.join(", ")}.` : " Nobody is online right now."}${prepNote}`,
         };
       } catch {
         return { ok: true, label, content: "Live status is unavailable right now." };
@@ -402,8 +409,8 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
       // The model sometimes passes the id as a string. Number.isInteger() alone
       // accepted 0 and negatives, which reached the database as a guaranteed
       // miss; the shared rule rejects them here instead.
-      const id = typeof args.id === "number" ? args.id : parseRouteId(typeof args.id === "string" ? args.id : null);
-      if (id === null || !Number.isSafeInteger(id) || id <= 0) {
+      const id = parseBodyId(args.id);
+      if (id === null) {
         return { ok: false, label, content: "A positive numeric thread id is required." };
       }
       const [thread] = await db.select().from(forumThreads).where(eq(forumThreads.id, id)).limit(1);
@@ -442,7 +449,7 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
           return `- ${row.title}${when ? ` (${when})` : ""}${row.body ? `: ${row.body}` : ""}`;
         })
         .join("\n");
-      return { ok: true, label, content: cap(`Current announcements://n${text}`, 1600) };
+      return { ok: true, label, content: cap(`Current announcements:\n${text}`, 1600) };
     }
 
     case "get_site_stats": {

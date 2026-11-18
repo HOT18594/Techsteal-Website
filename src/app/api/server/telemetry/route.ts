@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getServerTelemetry } from "@/lib/server-telemetry";
 import { getSessionUser } from "@/lib/auth";
-import { ACCOUNT_DB_ERROR_MESSAGE, checkAdmin } from "@/lib/accounts";
+import { ACCOUNT_DB_ERROR_MESSAGE, requireAdminAccount } from "@/lib/accounts";
 
 export const dynamic = "force-dynamic";
 
@@ -10,19 +10,20 @@ export const dynamic = "force-dynamic";
 // Admin-only now — it used to be a public GET, handing recon-grade intel
 // about the exact mod set to anyone who asked. The status page's console
 // panel already degrades to "unavailable" on 401/403/503 for everyone else.
-export async function GET() {
+export async function GET(request: NextRequest) {
   const user = await getSessionUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  // Re-read the account from the DB (not the cookie role) so a removed or
-  // banned admin loses console access immediately, same as server control.
-  const verdict = await checkAdmin();
-  if (verdict === "db_error") {
+  // Re-read the account from the DB (not the cookie role) so promotions and
+  // demotions/bans take effect immediately, same as server control.
+  const adminGate = await requireAdminAccount();
+  if (adminGate.status === "db_error") {
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
-  if (verdict !== "yes") {
+  if (adminGate.status !== "yes") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  return NextResponse.json(await getServerTelemetry());
+  const fresh = request.nextUrl.searchParams.get("fresh") === "1";
+  return NextResponse.json(await getServerTelemetry(fresh));
 }

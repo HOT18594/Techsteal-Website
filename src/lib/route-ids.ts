@@ -6,9 +6,12 @@
 // queries that always miss, answering 404 instead of 400 — and `?replyId=`
 // (empty) silently became reply 0. Every route now shares this parser.
 
+/** Max signed 32-bit integer accepted by PostgreSQL `serial` / `integer` columns. */
+export const PG_INT4_MAX = 2_147_483_647;
+
 /**
- * Parse a positive integer route/query id.
- * Returns null for anything that isn't a plain positive integer.
+ * Parse a positive integer route/query id within PostgreSQL INT4 bounds.
+ * Returns null for anything that isn't a plain positive 32-bit integer.
  */
 export function parseRouteId(raw: string | null | undefined): number | null {
   if (typeof raw !== "string") return null;
@@ -17,18 +20,18 @@ export function parseRouteId(raw: string | null | undefined): number | null {
   // "0x10". Leading zeros are harmless ("007" → 7).
   if (!/^\d+$/.test(trimmed)) return null;
   const n = Number(trimmed);
-  if (!Number.isSafeInteger(n) || n <= 0) return null;
+  if (!Number.isSafeInteger(n) || n <= 0 || n > PG_INT4_MAX) return null;
   return n;
 }
 
 /**
  * Parse an id from a JSON body (number or numeric string), rejecting
- * null/""/0/negatives. One shared copy — the per-route duplicates had begun
- * to drift.
+ * null/""/0/negatives/INT4-overflow. One shared copy — the per-route
+ * duplicates had begun to drift.
  */
 export function parseBodyId(value: unknown): number | null {
   if (typeof value === "number") {
-    return Number.isSafeInteger(value) && value > 0 ? value : null;
+    return Number.isSafeInteger(value) && value > 0 && value <= PG_INT4_MAX ? value : null;
   }
   return parseRouteId(typeof value === "string" ? value : null);
 }

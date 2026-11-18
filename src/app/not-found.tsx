@@ -1,5 +1,10 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { SubPage } from "@/components/SubPage";
+
+export const metadata: Metadata = {
+  title: "Page not found",
+};
 
 export default function NotFound() {
   return (

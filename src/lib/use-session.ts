@@ -15,7 +15,7 @@ import type { SessionUser } from "@/types";
 let inflight: Promise<SessionUser | null> | null = null;
 
 async function fetchOnce(): Promise<SessionUser | null> {
-  const res = await fetch("/api/auth/me");
+  const res = await fetch("/api/auth/me", { cache: "no-store" });
   if (!res.ok) throw new Error(`/api/auth/me → ${res.status}`);
   const data = (await res.json()) as { user: SessionUser | null };
   return data.user ?? null;
@@ -93,8 +93,10 @@ export function useSession(): SessionState {
 
   const logout = useCallback(async (): Promise<boolean> => {
     // Invalidate any in-flight session fetch first: its result predates the
-    // logout and must not overwrite the cleared state.
+    // logout and must not overwrite the cleared state or be joined by a
+    // component mounting right after navigation.
     sessionGeneration++;
+    inflight = null;
     // Only clear local state when the server actually cleared the cookie —
     // otherwise the still-valid session "resurrects" on the next refresh.
     try {

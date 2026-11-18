@@ -119,9 +119,10 @@ src/
 │   ├── history/ rules/ join/    # Server-rendered (real content in first paint)
 │   ├── login/ onboarding/ settings/ admin/ assistant/
 │   ├── error.tsx global-error.tsx not-found.tsx
+│   ├── robots.ts sitemap.ts     # Dynamic SEO robots.txt + XML sitemap
 │   ├── layout.tsx               # Root layout: fonts, navbar, footer, palette bootstrap, toast
-│   └── api/                     # 30 route handlers (see below)
-├── components/                  # One-purpose components (Navbar, Chatty, RichEditor, Poll, NotificationBell, …)
+│   └── api/                     # 36 route handlers (see below)
+├── components/                  # One-purpose components (Navbar, Chatty, AdminPanel, RichEditor, Poll, …)
 ├── lib/                         # site config, db, auth, accounts, exaroton, ai, storage, palettes…
 ├── types/                       # Shared TypeScript types
 public/                          # hero image, Minecraft fonts, assistant logo
@@ -134,7 +135,8 @@ audit/                           # past audit reports (context, not specs)
 `notifications`, `chat`, `forum` (+`[id]`, `like`, `vote`), `gallery` (+`[id]`,
 `like`), `members` (+`[id]`), `polls/active`, `timeline`, `rules`, `profile`,
 `upload`, `minecraft/skin`, `server/control`, `server/telemetry`, `announcements`
-(+`[id]`), `admin/members`, `admin/announcements`, `admin/audit`,
+(+`[id]`), `admin/overview`, `admin/members`, `admin/server`, `admin/announcements`,
+`admin/rules`, `admin/timeline`, `admin/moderation`, `admin/storage`, `admin/audit`,
 `auth/discord` (+`callback`, `verify`), `auth/logout`, `auth/me`.
 
 **Data model** (`src/lib/schema.ts`): `forum_threads`, `forum_replies`,
@@ -144,14 +146,20 @@ audit/                           # past audit reports (context, not specs)
 navbar bell), `audit_log` (append-only admin trail), `announcements` (sitewide
 bar). Content is edited in the DB — the site updates without a redeploy.
 
-**Announcements**: admins publish a title, optional body, and a tone from the
-admin panel. The newest active row renders as a dismissible bar under the
-navbar; hiding a row removes it without deleting the history.
+**Announcements**: admins publish, preview, and edit a title, optional body, and
+tone from `/admin` → Site Content. The newest active row renders as a dismissible
+bar directly under the navbar; hiding a row removes it without deleting history.
 
-**Admin panel** (`/admin`, four tabs): **Member access** (roles, permissions,
-ban/restore), **Announcements**, **Server** (live state + start/stop — admins
-can use this before launch, everyone else is refused until `seasonLive` is
-true), and **Audit log** (every privileged action, newest first).
+**Admin Command Center** (`/admin`, six tabs): **Overview** (KPIs + Season 6
+launch readiness checklist + 1-click timeline/rules initialization), **Members**
+(roles, inherited vs manual capability perks, MC username & live Discord guild
+re-verification, ban/restore, CSV export), **Server Ops** (Start/Stop/Restart,
+RAM allocation, live console command runner + redacted `mclo.gs` sharing, and
+Exaroton Whitelist/Ops/Bans with 1-click verified member sync), **Site Content**
+(Announcements, Server Rules CMS, and History Timeline CMS), **Moderation**
+(threads & polls, global replies/comments stream, gallery builds, and Supabase
+Storage orphan cleaner), and **Audit Log** (searchable, categorized, CSV-exportable
+trail of every privileged action).
 
 **Notifications** (`lib/notifications.ts`): a reply to your thread, a like, an
 `@mention`, or a comment/like on your build appends a row. Never self-notifies,
@@ -215,10 +223,11 @@ itself (e.g. a "live now" banner over a "coming soon" stats tile).
    at the Season 6 host, update `address` in `site.ts` and
    `MINECRAFT_SERVER`/`MINECRAFT_PORT` in the Vercel env; otherwise leave both
    pointing at the exaroton host.
-3. **Write the timeline row.** The History page reads `timeline_events`. Season 6
-   must switch from "Coming soon" to the opening date with era "Current Season",
-   and Season 5 from "Current Season" to "Concluded". Without this the page
-   still says Season 6 is upcoming.
+3. **Write the timeline row.** Open `/admin` → **Site Content** → **History Timeline**
+   (or click **Mark Launched** on the Overview readiness card) to switch Season 6
+   from "Coming soon" to the opening date with era "Current Season", and archive
+   Season 5 as "Concluded". Without this the History page still says Season 6 is
+   upcoming.
 4. **Flip the flag.** `seasonLive: false` → `true` in `src/lib/site.ts`.
 5. **Verify locally.** `npx tsc --noEmit` → `npm run lint` → `npm run build`,
    then `npm run dev` and check home / status / join say what you expect, and

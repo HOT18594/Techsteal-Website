@@ -2,19 +2,20 @@ import { NextResponse } from "next/server";
 import { desc } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { announcements } from "@/lib/schema";
-import { checkAdmin, ACCOUNT_DB_ERROR_MESSAGE } from "@/lib/accounts";
+import { ACCOUNT_DB_ERROR_MESSAGE, requireAdminAccount } from "@/lib/accounts";
 
 export const dynamic = "force-dynamic";
 
 // Admin view of the announcement table: every row, including hidden ones, so
-// the panel can re-show something it hid earlier. The public endpoint only
-// ever returns active rows.
+// the panel can re-show or edit something it hid earlier.
 export async function GET() {
-  const verdict = await checkAdmin();
-  if (verdict === "db_error") {
+  const gate = await requireAdminAccount();
+  if (gate.status === "db_error") {
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
-  if (verdict === "no") return NextResponse.json({ error: "Admins only." }, { status: 403 });
+  if (gate.status === "no") {
+    return NextResponse.json({ error: "Admins only." }, { status: 403 });
+  }
 
   const db = getDb();
   if (!db) return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });

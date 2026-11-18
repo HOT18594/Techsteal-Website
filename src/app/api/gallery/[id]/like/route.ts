@@ -46,8 +46,10 @@ export async function POST(
   }
 
   // Likes take FOR UPDATE row locks — a scripted hammer serializes on the
-  // row and churns pooler connections, so like writes get a generous cap.
-  if (isRateLimited(`like:${user.id}`, 60, 60_000)) {
+  // row and churns pooler connections, so member like writes get a generous
+  // cap while admins remain exempt.
+  const isAdmin = gate.status === "ok" && gate.account.role === "admin";
+  if (!isAdmin && isRateLimited(`like:${user.id}`, 60, 60_000)) {
     return NextResponse.json({ error: "Slow down a little." }, { status: 429 });
   }
 

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Avatar } from "./Avatar";
+import { hasOpenOverlays } from "@/lib/overlay-stack";
 import { useApi } from "@/lib/use-api";
 import { useSession } from "@/lib/use-session";
 import { timeAgo } from "@/lib/time";
@@ -47,8 +48,17 @@ export function NotificationBell() {
 
   useEffect(() => {
     if (!user) return;
-    const timer = setInterval(() => void refetch(), 45_000);
-    return () => clearInterval(timer);
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "hidden") void refetch();
+    }, 45_000);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refetch();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [user, refetch]);
 
   useEffect(() => { setOpen(false); }, [pathname]);
@@ -60,7 +70,11 @@ export function NotificationBell() {
       if (!wrapRef.current?.contains(target) && !btnRef.current?.contains(target)) setOpen(false);
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { setOpen(false); btnRef.current?.focus(); }
+      if (event.key === "Escape") {
+        if (hasOpenOverlays()) return;
+        setOpen(false);
+        btnRef.current?.focus();
+      }
     };
     document.addEventListener("mousedown", onClick);
     document.addEventListener("keydown", onKey);

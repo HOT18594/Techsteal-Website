@@ -66,9 +66,11 @@ function scanInline(src: string, i: number): InlineScan {
   }
 
   // Image ![alt](url) — must be checked before plain links.
-  if (rest.startsWith("![") && safeUrl(MD_IMAGE_RE.exec(rest)?.[2] ?? "")) {
-    const m = MD_IMAGE_RE.exec(rest)!;
-    return { kind: "image", len: m[0].length, url: m[2], alt: m[1] };
+  if (rest.startsWith("![")) {
+    const m = MD_IMAGE_RE.exec(rest);
+    if (m && safeUrl(m[2])) {
+      return { kind: "image", len: m[0].length, url: m[2], alt: m[1] };
+    }
   }
 
   // Link [text](url)
@@ -140,7 +142,7 @@ function scanInline(src: string, i: number): InlineScan {
     // Sentence punctuation after a URL is prose, not part of it
     // ("see https://example.com.") — leave it as text outside the link.
     url = url.replace(/[.,!?;:'"'…]+$/, "");
-    if (!url) return { kind: "text", len: 1 };
+    if (!url || !safeUrl(url)) return { kind: "text", len: 1 };
     return { kind: "autolink", len: url.length, url };
   }
 
@@ -149,6 +151,7 @@ function scanInline(src: string, i: number): InlineScan {
 
 /** Strip markdown tokens from a string (used for list markers etc.). */
 function inlineNodes(src: string, keyPrefix: string, depth = 0): ReactNode[] {
+  if (depth > 8) return [src];
   const out: ReactNode[] = [];
   let i = 0;
   let key = 0;

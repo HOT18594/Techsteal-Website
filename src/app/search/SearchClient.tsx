@@ -17,15 +17,24 @@ const EMPTY: SearchResults = { threads: [], gallery: [], members: [] };
 export function SearchClient() {
   const router = useRouter();
   const params = useSearchParams();
-  const initialQ = (params.get("q") ?? "").slice(0, 80);
-  const [input, setInput] = useState(initialQ);
-  const [q, setQ] = useState(initialQ.trim());
+  const urlQ = (params.get("q") ?? "").slice(0, 80);
+  const [input, setInput] = useState(urlQ);
+  const [q, setQ] = useState(urlQ.trim());
   const inputRef = useRef<HTMLInputElement>(null);
   const mounted = useRef(false);
+  const prevUrlQ = useRef(urlQ);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // Sync input and active query when URL ?q= changes via browser Back/Forward.
+  useEffect(() => {
+    if (prevUrlQ.current === urlQ) return;
+    prevUrlQ.current = urlQ;
+    setInput(urlQ);
+    setQ(urlQ.trim());
+  }, [urlQ]);
 
   // Debounce typing into a query and mirror it to a shareable URL. The first
   // run is skipped so a deep-linked ?q= isn't immediately re-written.
@@ -34,13 +43,23 @@ export function SearchClient() {
       mounted.current = true;
       return;
     }
+    const next = input.trim();
+    if (next === q && prevUrlQ.current === next) return;
     const t = setTimeout(() => {
-      const next = input.trim();
+      prevUrlQ.current = next;
       setQ(next);
       router.replace(next ? `/search?q=${encodeURIComponent(next)}` : "/search", { scroll: false });
     }, 350);
     return () => clearTimeout(t);
-  }, [input, router]);
+  }, [input, q, router]);
+
+  const clearSearch = () => {
+    prevUrlQ.current = "";
+    setInput("");
+    setQ("");
+    router.replace("/search", { scroll: false });
+    inputRef.current?.focus();
+  };
 
   const enabled = q.length >= 2;
   const { data, loading, error, refetch } = useApi<SearchResults>(
@@ -58,7 +77,10 @@ export function SearchClient() {
         </div>
 
         <div className="relative mb-8 max-w-2xl">
-          <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-sm text-[var(--muted-2)]" />
+          <i
+            className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-sm text-[var(--muted-2)]"
+            aria-hidden="true"
+          />
           <input
             ref={inputRef}
             className="input pl-11! pr-10! py-3.5! text-base!"
@@ -70,11 +92,12 @@ export function SearchClient() {
           />
           {input ? (
             <button
+              type="button"
               className="absolute right-3.5 top-1/2 -translate-y-1/2 text-sm text-[var(--muted-2)] hover:text-[var(--fg)] transition"
-              onClick={() => setInput("")}
+              onClick={clearSearch}
               aria-label="Clear search"
             >
-              <i className="fa-solid fa-xmark" />
+              <i className="fa-solid fa-xmark" aria-hidden="true" />
             </button>
           ) : null}
         </div>
@@ -112,11 +135,11 @@ export function SearchClient() {
                 <SectionHead icon="fa-comments" title="Discussions" count={data.threads.length} />
                 <div className="space-y-3 stagger">
                   {data.threads.map((t) => (
-                    <div key={t.id ?? t.title} className="relative thread-row group rounded-xl">
+                    <div key={t.id ?? t.title} className="relative thread-row group rounded-[14px]">
                       {t.id ? (
                         <Link
                           href={`/forum/${t.id}`}
-                          className="absolute inset-0 z-0 rounded-xl"
+                          className="absolute inset-0 z-0 rounded-[14px]"
                           aria-label={`Open thread: ${t.title}`}
                         />
                       ) : null}
@@ -126,7 +149,9 @@ export function SearchClient() {
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-semibold text-[var(--fg)]">{t.author}</span>
                             <span className="text-xs text-[var(--muted-2)]">· {timeAgo(t.last)}</span>
-                            <span className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded border ${categoryClass(t.category)}`}>
+                            <span
+                              className={`inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded border ${categoryClass(t.category)}`}
+                            >
                               {t.category}
                             </span>
                           </div>
@@ -134,15 +159,23 @@ export function SearchClient() {
                             {t.title}
                           </h3>
                           {t.content ? (
-                            <p className="mt-1 text-sm text-[var(--muted)] line-clamp-2">{markdownExcerpt(t.content)}</p>
+                            <p className="mt-1 text-sm text-[var(--muted)] line-clamp-2">
+                              {markdownExcerpt(t.content)}
+                            </p>
                           ) : null}
                         </div>
                         <div className="flex items-center gap-2 text-xs font-semibold text-[var(--muted)] flex-shrink-0">
-                          <span className="inline-flex items-center gap-1.5 border border-[var(--border)] rounded-full px-2.5 py-1" title="Replies">
-                            <i className="fa-regular fa-comment" /> {t.replies}
+                          <span
+                            className="inline-flex items-center gap-1.5 border border-[var(--border)] rounded-full px-2.5 py-1"
+                            title="Replies"
+                          >
+                            <i className="fa-regular fa-comment" aria-hidden="true" /> {t.replies}
                           </span>
-                          <span className="inline-flex items-center gap-1.5 border border-[var(--border)] rounded-full px-2.5 py-1" title="Likes">
-                            <i className="fa-solid fa-heart" /> {t.likes ?? 0}
+                          <span
+                            className="inline-flex items-center gap-1.5 border border-[var(--border)] rounded-full px-2.5 py-1"
+                            title="Likes"
+                          >
+                            <i className="fa-solid fa-heart" aria-hidden="true" /> {t.likes ?? 0}
                           </span>
                         </div>
                       </div>
@@ -173,13 +206,19 @@ export function SearchClient() {
                         />
                       </div>
                       <div className="p-4">
-                        <h3 className="font-bold text-[var(--fg)] leading-snug line-clamp-1 group-hover:text-[var(--accent)] transition">{g.title}</h3>
+                        <h3 className="font-bold text-[var(--fg)] leading-snug line-clamp-1 group-hover:text-[var(--accent)] transition">
+                          {g.title}
+                        </h3>
                         <p className="mt-1 text-xs text-[var(--muted)] flex items-center gap-2">
                           <span className="text-[var(--fg-2)]">{g.builder}</span>
-                          <span className={`inline-block px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded border ${categoryClass(g.category)}`}>{g.category}</span>
+                          <span
+                            className={`inline-block px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded border ${categoryClass(g.category)}`}
+                          >
+                            {g.category}
+                          </span>
                         </p>
                         <p className="mt-2 text-xs text-[var(--muted-2)] inline-flex items-center gap-1.5">
-                          <i className="fa-solid fa-heart" /> {g.likes}
+                          <i className="fa-solid fa-heart" aria-hidden="true" /> {g.likes}
                         </p>
                       </div>
                     </Link>
@@ -197,20 +236,35 @@ export function SearchClient() {
                       {m.id ? (
                         <Link
                           href={`/members/${encodeURIComponent(m.id)}`}
-                          className="absolute inset-0 z-0"
+                          className="absolute inset-0 z-0 rounded-[14px] focus-visible:outline-offset-[-3px]"
                           aria-label={`View profile: ${m.name}`}
                         />
                       ) : null}
                       <div className="relative z-10 flex items-start gap-4 pointer-events-none">
-                        <Avatar name={m.name} src={m.avatarUrl} size="md" color={m.color} online={m.status === "online"} />
+                        <Avatar
+                          name={m.name}
+                          src={m.avatarUrl}
+                          size="md"
+                          color={m.color}
+                          online={m.status === "online"}
+                        />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <h3 className="font-display text-lg font-bold break-words">{m.name}</h3>
                             <span className={`tag ${m.status === "online" ? "tag-emerald" : ""}`}>{m.role}</span>
                           </div>
                           <p className="mt-1 text-xs text-[var(--muted)]">
-                            {m.minecraftUsername ? <>MC · <span className="text-[var(--fg-2)]">{m.minecraftUsername}</span></> : null}
-                            {m.joined ? <>{m.minecraftUsername ? " · " : ""}Joined <span className="text-[var(--fg-2)]">{m.joined}</span></> : null}
+                            {m.minecraftUsername ? (
+                              <>
+                                MC · <span className="text-[var(--fg-2)]">{m.minecraftUsername}</span>
+                              </>
+                            ) : null}
+                            {m.joined ? (
+                              <>
+                                {m.minecraftUsername ? " · " : ""}Joined{" "}
+                                <span className="text-[var(--fg-2)]">{m.joined}</span>
+                              </>
+                            ) : null}
                           </p>
                         </div>
                       </div>

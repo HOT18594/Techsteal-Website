@@ -1,3 +1,5 @@
+"use client";
+
 // Avatar tile — image when available, otherwise a pixel-art placeholder:
 // the user's first letter in the Minecraft pixel font over a ghosted
 // creeper-style face on their gradient tile. Broken image URLs fall back

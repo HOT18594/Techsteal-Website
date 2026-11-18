@@ -14,26 +14,24 @@ export async function GET() {
   const db = getDb();
   if (!db) return NextResponse.json({ poll: null });
 
-  let row: { poll: typeof forumPolls.$inferSelect; threadTitle: string; threadCategory: string } | null;
   try {
-    row = await activeRow(db);
+    const [row, user] = await Promise.all([activeRow(db), getSessionUser()]);
+    if (!row) return NextResponse.json({ poll: null });
+
+    const poll = await serializePoll(db, row.poll.threadId, user?.id ?? null, row.poll);
+    if (!poll) return NextResponse.json({ poll: null });
+
+    return NextResponse.json({
+      poll: {
+        ...poll,
+        threadTitle: row.threadTitle,
+        threadCategory: row.threadCategory,
+      },
+    });
   } catch (err) {
     console.error("api/polls/active: query failed", err);
     return NextResponse.json({ poll: null });
   }
-  if (!row) return NextResponse.json({ poll: null });
-
-  const user = await getSessionUser();
-  const poll = await serializePoll(db, row.poll.threadId, user?.id ?? null).catch(() => null);
-  if (!poll) return NextResponse.json({ poll: null });
-
-  return NextResponse.json({
-    poll: {
-      ...poll,
-      threadTitle: row.threadTitle,
-      threadCategory: row.threadCategory,
-    },
-  });
 }
 
 async function activeRow(

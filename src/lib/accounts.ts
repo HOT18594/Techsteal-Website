@@ -261,11 +261,17 @@ export async function findOrCreateDiscordAccount(input: {
     throw new Error("ACCOUNT_BANNED");
   }
   if (existing) {
-    // Refresh the profile picture on every login so avatar changes on
-    // Discord show up here too — including REMOVING it (avatarUrl null),
-    // otherwise a deleted Discord PFP leaves a stale, soon-404ing URL.
-    if ((input.avatarUrl ?? null) !== (existing.avatarUrl ?? null)) {
-      const updated = await updateAccount(id, { avatarUrl: input.avatarUrl ?? null });
+    // Refresh the profile picture and Discord username on every login so
+    // profile changes on Discord show up here too — including REMOVING an
+    // avatar (avatarUrl null), otherwise a deleted Discord PFP leaves a
+    // stale, soon-404ing URL.
+    const avatarChanged = (input.avatarUrl ?? null) !== (existing.avatarUrl ?? null);
+    const nameChanged = Boolean(input.username.trim()) && input.username !== existing.username;
+    if (avatarChanged || nameChanged) {
+      const updated = await updateAccount(id, {
+        ...(avatarChanged ? { avatarUrl: input.avatarUrl ?? null } : {}),
+        ...(nameChanged ? { username: input.username } : {}),
+      });
       if (updated) return updated;
     }
     return existing;
@@ -356,17 +362,53 @@ export function canControlServer(account: Account | undefined): boolean {
  * incident `accountGate` was written to stop lying about. Callers must
  * answer db_error with a 503 instead.
  */
-export async function checkAdmin(): Promise<"yes" | "no" | "db_error"> {
+export type AdminAccountGate =
+  | { status: "yes"; account: Account }
+  | { status: "no" }
+  | { status: "db_error" };
+
+/**
+ * Resolve the current session user against the database and verify admin role
+ * in a single lookup. Checking the DB regardless of `user.role` in the 7-day
+ * JWT ensures BOTH promotions and demotions take effect immediately without
+ * forcing the user to sign out and back in, and returns the fresh DB account
+ * so `logAudit()` always records the current username.
+ */
+export async function requireAdminAccount(): Promise<AdminAccountGate> {
   const user = await getSessionUser();
-  if (!user || user.role !== "admin") return "no";
-  if (!getDb()) return "yes"; // no database — trust the signed session
+  if (!user) return { status: "no" };
+  if (!getDb()) {
+    return user.role === "admin"
+      ? {
+          status: "yes",
+          account: {
+            id: user.id,
+            username: user.username,
+            role: "admin",
+            permissions: user.permissions,
+            avatarUrl: user.avatarUrl,
+            onboarded: user.onboarded,
+            discordVerified: user.discordVerified,
+            minecraftUsername: user.minecraftUsername ?? undefined,
+          },
+        }
+      : { status: "no" };
+  }
   try {
     const account = await findAccount(user.id);
-    return account?.role === "admin" && !account.banned ? "yes" : "no";
+    if (!account || account.banned || account.role !== "admin") {
+      return { status: "no" };
+    }
+    return { status: "yes", account };
   } catch (err) {
     console.error("checkAdmin: lookup failed", err);
-    return "db_error";
+    return { status: "db_error" };
   }
+}
+
+export async function checkAdmin(): Promise<"yes" | "no" | "db_error"> {
+  const gate = await requireAdminAccount();
+  return gate.status;
 }
 // No boolean isAdminUser() wrapper is provided on purpose: every caller must
 // handle the "db_error" tri-state (fail closed) instead of collapsing the
