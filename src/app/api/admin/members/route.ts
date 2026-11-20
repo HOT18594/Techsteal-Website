@@ -84,7 +84,7 @@ export async function POST(request: Request) {
   if (!guard.ok) return guard.response;
   const admin = guard.admin;
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   if (!body || typeof body !== "object") {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
@@ -317,7 +317,7 @@ export async function DELETE(request: Request) {
   if (!guard.ok) return guard.response;
   const admin = guard.admin;
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   const id = typeof body?.id === "string" ? body.id.trim() : "";
   if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
 
@@ -347,7 +347,7 @@ export async function PUT(request: Request) {
   if (!guard.ok) return guard.response;
   const admin = guard.admin;
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   const id = typeof body?.id === "string" ? body.id.trim() : "";
   if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
 

@@ -13,6 +13,7 @@ import { ToastProvider } from "@/components/Toast";
 import { PaletteProvider } from "@/components/PaletteProvider";
 import { paletteBootstrap } from "@/lib/palettes";
 import { getSiteUrl, siteConfig } from "@/lib/site";
+import { RSS_ALTERNATE_TYPES, SHARE_IMAGES } from "./shared-metadata";
 // Self-hosted Font Awesome: the old cdnjs <link> was render-blocking, so on
 // networks that block or blackhole the CDN every page stayed blank until the
 // request timed out. Bundled CSS + webfonts remove the third-party dependency.
@@ -45,18 +46,16 @@ export const metadata: Metadata = {
     siteName: siteConfig.name,
     description: `Status, forum, members, gallery, and rules for the ${siteConfig.name} Minecraft server.`,
     type: "website",
-    images: ["/techsteal-hero.jpeg"],
+    images: SHARE_IMAGES,
   },
   twitter: {
     card: "summary_large_image",
     title: "Techsteal",
     description: `Status, forum, members, gallery, and rules for the ${siteConfig.name} Minecraft server.`,
-    images: ["/techsteal-hero.jpeg"],
+    images: SHARE_IMAGES,
   },
   alternates: {
-    types: {
-      "application/rss+xml": "/forum/rss.xml",
-    },
+    types: RSS_ALTERNATE_TYPES,
   },
 };
 

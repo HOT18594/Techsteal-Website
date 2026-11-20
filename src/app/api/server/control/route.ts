@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   const action: unknown = body?.action;
   if (action !== "start" && action !== "stop" && action !== "restart") {
     return NextResponse.json(

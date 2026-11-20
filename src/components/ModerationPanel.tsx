@@ -201,7 +201,13 @@ export function ModerationPanel() {
     setBusyKey("confirm-del");
     try {
       if (confirmItem.type === "thread") {
-        const res = await fetch(`/api/forum?id=${confirmItem.item.id}`, { method: "DELETE" });
+        // The route reads the id from the JSON body — the old query-string
+        // form parsed as an empty body and always answered 400.
+        const res = await fetch("/api/forum", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: confirmItem.item.id }),
+        });
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         if (!res.ok) throw new Error(data.error || "Delete failed.");
         setThreads((prev) => prev.filter((r) => r.id !== confirmItem.item.id));
@@ -214,11 +220,16 @@ export function ModerationPanel() {
         show("Build deleted", `"${confirmItem.item.title}" removed from gallery.`);
       } else if (confirmItem.type === "comment") {
         const c = confirmItem.item;
+        // Both DELETE handlers read the id from the JSON body. A body-less
+        // request to the gallery route means "delete the whole post" — the
+        // query string was silently ignored, so this was destructive.
         const url =
-          c.kind === "forum_reply"
-            ? `/api/forum/${c.parentId}?replyId=${c.id}`
-            : `/api/gallery/${c.parentId}?commentId=${c.id}`;
-        const res = await fetch(url, { method: "DELETE" });
+          c.kind === "forum_reply" ? `/api/forum/${c.parentId}` : `/api/gallery/${c.parentId}`;
+        const res = await fetch(url, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(c.kind === "forum_reply" ? { replyId: c.id } : { commentId: c.id }),
+        });
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         if (!res.ok) throw new Error(data.error || "Delete failed.");
         setComments((prev) => prev.filter((r) => !(r.kind === c.kind && r.id === c.id)));

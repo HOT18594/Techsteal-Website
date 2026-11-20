@@ -1,10 +1,24 @@
 import type { Metadata } from "next";
 import { eq } from "drizzle-orm";
+import { notFound } from "next/navigation";
+import { RSS_ALTERNATE_TYPES, SHARE_IMAGES } from "@/app/shared-metadata";
 import { getDb } from "@/lib/db";
 import { markdownExcerpt } from "@/lib/excerpt";
 import { fallbackThreads } from "@/lib/fallback-data";
+import { parseRouteId } from "@/lib/route-ids";
 import { forumThreads } from "@/lib/schema";
+import { siteConfig } from "@/lib/site";
 import { ThreadClient } from "./ThreadClient";
+
+// Strict route id parse, shared with the API routes (digits only, positive,
+// inside Postgres INT4). The old `Number.parseInt` let `/forum/12abc` render
+// thread 12 with HTTP 200 under thread 12's metadata; non-canonical ids are a
+// real 404 now, matching GET /api/forum/[id]'s rejection of the same input.
+function canonicalThreadId(raw: string): number {
+  const id = parseRouteId(raw);
+  if (id === null) notFound();
+  return id;
+}
 
 export async function generateMetadata({
   params,
@@ -12,10 +26,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id: raw } = await params;
-  const numId = Number.parseInt(raw, 10);
-  if (!Number.isInteger(numId) || numId <= 0) {
-    return { title: "Thread not found", robots: { index: false, follow: false } };
-  }
+  const numId = canonicalThreadId(raw);
 
   let title: string | null = null;
   let content = "";
@@ -64,18 +75,34 @@ export async function generateMetadata({
 
   const excerpt = content ? markdownExcerpt(content) : "";
   const description = excerpt || `Discussion by ${author} in ${category}.`;
+  const path = `/forum/${numId}`;
 
+  // Next replaces the whole `openGraph`/`alternates` objects, so re-declare
+  // the layout's share image, site name, and RSS link explicitly.
   return {
     title,
     description,
+    alternates: {
+      canonical: path,
+      types: RSS_ALTERNATE_TYPES,
+    },
     openGraph: {
       title,
       description,
       type: "article",
+      siteName: siteConfig.name,
+      url: path,
+      images: SHARE_IMAGES,
     },
   };
 }
 
-export default function ThreadPage() {
+export default async function ThreadPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  canonicalThreadId(id);
   return <ThreadClient />;
 }

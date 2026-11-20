@@ -64,7 +64,8 @@ No database? The site still renders: every content API falls back to content in
 
 ```bash
 npm install
-cp .env.example .env.local   # fill values; all optional except SESSION_SECRET for login
+cp .env.example .env.local   # fill values; everything is optional in dev, but
+                             # SESSION_SECRET and ADMIN_CODE are required in production
 npm run dev                  # http://localhost:3000
 ```
 
@@ -75,10 +76,11 @@ npm run build       # production build
 npm run lint        # eslint 9 flat config (warnings are accepted; see AGENTS.md)
 npm run db:generate # drizzle-kit: generate SQL migration from src/lib/schema.ts
 npm run db:push     # drizzle-kit: push schema to the database
-npm run db:seed     # seed placeholder content (drizzle/seed.ts)
+npm run db:seed     # seed placeholder content (refuses if the DB already has content; --force to wipe)
 ```
 
-Node 24 + npm 11 are what the project is developed and deployed with.
+Node 24+ and npm 11 are required — declared via `engines` / `packageManager` in
+`package.json`.
 
 ---
 
@@ -121,13 +123,13 @@ src/
 │   ├── error.tsx global-error.tsx not-found.tsx
 │   ├── robots.ts sitemap.ts     # Dynamic SEO robots.txt + XML sitemap
 │   ├── layout.tsx               # Root layout: fonts, navbar, footer, palette bootstrap, toast
-│   └── api/                     # 36 route handlers (see below)
+│   └── api/                     # 39 route handlers (see below)
 ├── components/                  # One-purpose components (Navbar, Chatty, AdminPanel, RichEditor, Poll, …)
 ├── lib/                         # site config, db, auth, accounts, exaroton, ai, storage, palettes…
 ├── types/                       # Shared TypeScript types
-public/                          # hero image, Minecraft fonts, assistant logo
+public/                          # hero image + Minecraft fonts (Chatty logo is inline SVG)
 drizzle/                         # schema migrations + seed script
-scripts/                         # deploy.ps1, apply-vercel-env.mjs, dev utilities
+scripts/                         # deploy.ps1, apply-vercel-env.mjs, local dev harness
 audit/                           # past audit reports (context, not specs)
 ```
 
@@ -137,7 +139,9 @@ audit/                           # past audit reports (context, not specs)
 `upload`, `minecraft/skin`, `server/control`, `server/telemetry`, `announcements`
 (+`[id]`), `admin/overview`, `admin/members`, `admin/server`, `admin/announcements`,
 `admin/rules`, `admin/timeline`, `admin/moderation`, `admin/storage`, `admin/audit`,
-`auth/discord` (+`callback`, `verify`), `auth/logout`, `auth/me`.
+`auth/discord` (+`callback`, `verify`), `auth/logout`, `auth/me`. The
+`forum/rss.xml`, `robots.txt`, and `sitemap.xml` handlers live outside
+`src/app/api/` — 42 request handlers in total.
 
 **Data model** (`src/lib/schema.ts`): `forum_threads`, `forum_replies`,
 `forum_polls`, `forum_poll_votes`, `gallery_items`, `gallery_comments`,
@@ -204,8 +208,11 @@ npx vercel deploy --prod
 
 `scripts/deploy.ps1` wraps this: it first pushes env vars from `.env.vercel`
 via `scripts/apply-vercel-env.mjs` (only that file's keys — never `.env.local`),
-then deploys. Verify a deploy actually went live (HTML contains the current
-season banner / new asset) instead of trusting the CLI's "production" label.
+then deploys. The env push is fail-fast: it aborts the whole deploy (non-zero
+exit) when `.env.vercel` is missing or no non-empty key was pushed, so a deploy
+can never silently run with stale env. Verify a deploy actually went live (HTML
+contains the current season banner / new asset) instead of trusting the CLI's
+"production" label.
 
 Environment variables are managed in the Vercel dashboard (all of the table
 above); `.env.vercel` only carries the subset the script pushes.
@@ -224,10 +231,11 @@ itself (e.g. a "live now" banner over a "coming soon" stats tile).
    `MINECRAFT_SERVER`/`MINECRAFT_PORT` in the Vercel env; otherwise leave both
    pointing at the exaroton host.
 3. **Write the timeline row.** Open `/admin` → **Site Content** → **History Timeline**
-   (or click **Mark Launched** on the Overview readiness card) to switch Season 6
-   from "Coming soon" to the opening date with era "Current Season", and archive
-   Season 5 as "Concluded". Without this the History page still says Season 6 is
-   upcoming.
+   and click **Mark Season 6 Live** to switch Season 6 from "Coming soon" to the
+   opening date with era "Current Season" and archive Season 5 as "Concluded"
+   (the Overview readiness card's timeline button only prepares the prep row
+   while `seasonLive` is false). Without this the History page still says
+   Season 6 is upcoming.
 4. **Flip the flag.** `seasonLive: false` → `true` in `src/lib/site.ts`.
 5. **Verify locally.** `npx tsc --noEmit` → `npm run lint` → `npm run build`,
    then `npm run dev` and check home / status / join say what you expect, and

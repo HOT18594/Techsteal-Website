@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { and, desc, eq, isNotNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, ne } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { forumThreads, profiles } from "@/lib/schema";
 import { getSiteUrl } from "@/lib/site";
@@ -47,10 +47,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       db
         .select({
           id: profiles.id,
+          minecraftUsername: profiles.minecraftUsername,
           createdAt: profiles.createdAt,
         })
         .from(profiles)
-        .where(and(eq(profiles.banned, false), isNotNull(profiles.minecraftUsername)))
+        // Mirrors the /members/[id] visibility rule (lib/public-profile.ts):
+        // banned accounts and accounts without a linked Minecraft name have no
+        // public profile, so they must never be advertised to crawlers.
+        .where(
+          and(
+            eq(profiles.banned, false),
+            isNotNull(profiles.minecraftUsername),
+            ne(profiles.minecraftUsername, "")
+          )
+        )
         .limit(500),
     ]);
 
@@ -66,6 +76,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     for (const member of memberRows) {
       if (!member.id.startsWith("discord:")) continue;
+      // Same trim guard as the profile page: whitespace-only names are treated
+      // as missing there and resolve to a 404.
+      if (!member.minecraftUsername?.trim()) continue;
       const parsed = member.createdAt ? new Date(member.createdAt) : null;
       entries.push({
         url: `${base}/members/${encodeURIComponent(member.id)}`,

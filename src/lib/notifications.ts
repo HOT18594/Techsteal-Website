@@ -1,5 +1,5 @@
-import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
-import { getDb } from "@/lib/db";
+import { and, count, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { getDb, type Db } from "@/lib/db";
 import { notifications, profiles } from "@/lib/schema";
 import { avatarInfoFor, resolveAuthorAvatars } from "@/lib/forum-avatars";
 import type { Notification, NotificationType } from "@/types";
@@ -20,6 +20,36 @@ export interface NotifyInput {
   excerpt?: string;
 }
 
+/** Like notifications repeat pointlessly on an unlike → re-like toggle, so
+ *  only one per recipient+actor+type+target is kept inside this window.
+ *  Reply/mention types are never deduped. */
+const LIKE_DEDUPE_TYPES: ReadonlySet<NotificationType> = new Set(["like", "gallery_like"]);
+const LIKE_DEDUPE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** True when the same like notification was already queued inside the dedupe
+ *  window. Throws on query failure — callers treat that as "allow the insert". */
+async function hasRecentLikeNotification(db: Db, input: NotifyInput): Promise<boolean> {
+  const sameTarget = and(
+    input.threadId == null ? isNull(notifications.threadId) : eq(notifications.threadId, input.threadId),
+    input.replyId == null ? isNull(notifications.replyId) : eq(notifications.replyId, input.replyId),
+    input.itemId == null ? isNull(notifications.itemId) : eq(notifications.itemId, input.itemId)
+  );
+  const [row] = await db
+    .select({ id: notifications.id })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.userId, input.userId),
+        eq(notifications.actorId, input.actorId),
+        eq(notifications.type, input.type),
+        sameTarget,
+        gte(notifications.createdAt, new Date(Date.now() - LIKE_DEDUPE_WINDOW_MS))
+      )
+    )
+    .limit(1);
+  return Boolean(row);
+}
+
 /** Insert one notification. Never notifies yourself; best-effort (a failure
  *  here must not roll back the reply/like that triggered it). */
 export async function notify(input: NotifyInput): Promise<void> {
@@ -27,6 +57,14 @@ export async function notify(input: NotifyInput): Promise<void> {
   const db = getDb();
   if (!db) return;
   try {
+    if (LIKE_DEDUPE_TYPES.has(input.type)) {
+      try {
+        if (await hasRecentLikeNotification(db, input)) return;
+      } catch (err) {
+        // Dedupe is best-effort: a lookup failure must not drop the ping.
+        console.error("notify: like dedupe check failed", err);
+      }
+    }
     await db.insert(notifications).values({
       userId: input.userId,
       actorId: input.actorId,

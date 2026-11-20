@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Avatar } from "./Avatar";
+import { useToast } from "./Toast";
 import { hasOpenOverlays } from "@/lib/overlay-stack";
 import { useApi } from "@/lib/use-api";
 import { useSession } from "@/lib/use-session";
@@ -38,6 +39,7 @@ function labelFor(n: Notification): string {
 // closes on outside-click / Escape / navigation, and marks items read on open.
 export function NotificationBell() {
   const { user } = useSession();
+  const { show } = useToast();
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -93,28 +95,47 @@ export function NotificationBell() {
     if (busy || unread === 0) return;
     setBusy(true);
     try {
-      await fetch("/api/notifications", {
+      const res = await fetch("/api/notifications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ all: true }),
       });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || "Couldn't mark notifications read.");
+      }
       await refetch();
-    } catch {
-      // transient — the next poll reconciles the count.
+    } catch (err) {
+      // A failed POST (401/403/429, network) used to look like success and
+      // the badge silently came back on the next poll. Reconcile + say why.
+      show("Couldn't mark read", err instanceof Error ? err.message : "Try again in a moment.", "error");
+      void refetch();
     } finally {
       setBusy(false);
     }
   };
 
-  const openItem = (n: Notification) => {
-    setOpen(false);
-    if (!n.read) {
-      void fetch("/api/notifications", {
+  const markRead = async (n: Notification) => {
+    try {
+      const res = await fetch("/api/notifications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: n.id }),
-      }).then(() => refetch()).catch(() => {});
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || "Couldn't mark the notification read.");
+      }
+      await refetch();
+    } catch (err) {
+      show("Couldn't mark read", err instanceof Error ? err.message : "Try again in a moment.", "error");
+      void refetch(); // badge/state must match the server, not the failed click
     }
+  };
+
+  const openItem = (n: Notification) => {
+    setOpen(false);
+    if (!n.read) void markRead(n);
     router.push(hrefFor(n));
   };
 

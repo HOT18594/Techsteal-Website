@@ -269,6 +269,15 @@ export async function POST(request: NextRequest) {
     }
     try {
       const { url, id } = await exarotonShareLogs();
+      // Sharing the server log uploads it to a third-party host — a
+      // privileged action, so it must appear in the audit trail like every
+      // other Server Ops action.
+      await logAudit({
+        actorId: admin.id,
+        actorName: admin.username,
+        action: "server_share_logs",
+        detail: id ? `Shared server log to mclo.gs (${id})` : "Shared server log to mclo.gs",
+      });
       return NextResponse.json({ ok: true, url, id });
     } catch (err) {
       console.error("api/admin/server POST share_logs: failed", err);

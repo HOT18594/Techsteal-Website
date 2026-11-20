@@ -217,7 +217,7 @@ export async function POST(request: NextRequest) {
   }
   const account = gate.account;
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   const title = typeof body.title === "string" ? body.title.trim() : "";
   const content = typeof body.content === "string" ? body.content.trim() : "";
   let category = typeof body.category === "string" ? body.category : "General";
@@ -343,7 +343,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   const id = parseBodyId(body?.id);
   if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
 
@@ -453,7 +453,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Admins only." }, { status: 403 });
   }
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   const id = parseBodyId(body?.id);
   if (!id) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
@@ -527,7 +527,7 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "You must be signed in." }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   const id = parseBodyId(body?.id);
   if (!id) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });

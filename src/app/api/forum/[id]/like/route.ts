@@ -31,7 +31,7 @@ export async function POST(
     return NextResponse.json({ error: "Invalid thread id" }, { status: 400 });
   }
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   // A present-but-invalid replyId must not silently become a thread like —
   // reject it so a client bug can't toggle the wrong thing.
   let replyId: number | null = null;

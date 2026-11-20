@@ -156,14 +156,17 @@ export function RichEditor({
     const snippets = queuedInsert.current;
     queuedInsert.current = [];
     requestAnimationFrame(() => {
-      for (const snippet of snippets) {
-        const currentLen = taRef.current ? taRef.current.value.length : valueRef.current.length;
-        if (currentLen + snippet.length > maxLength) {
-          onUploadError?.("Not enough space left in the post to embed this image.");
-          break;
-        }
-        insertAtCursor(snippet);
+      // Insert all queued embeds in ONE edit, in upload order. Applying them
+      // one at a time re-read the same DOM value inside the frame (React has
+      // not re-rendered yet), so each insert overwrote the previous one and
+      // only the last image survived.
+      const combined = snippets.join("");
+      const currentLen = taRef.current ? taRef.current.value.length : valueRef.current.length;
+      if (currentLen + combined.length > maxLength) {
+        onUploadError?.("Not enough space left in the post to embed this image.");
+        return;
       }
+      insertAtCursor(combined);
     });
     // insertAtCursor identity is stable (useCallback on applyEdit).
     // eslint-disable-next-line react-hooks/exhaustive-deps

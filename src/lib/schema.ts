@@ -133,7 +133,8 @@ export const timelineEvents = pgTable("timeline_events", {
   era: text("era").notNull().default("Era I"),
   major: boolean("major").notNull().default(false),
   // Shown under major events on the History page (nullable — a one-line
-  // event needs no body). Seeded by fallback-data / scripts/add-seasons.ts.
+  // event needs no body). Seeded by fallback-data / drizzle/seed.ts and
+  // managed from the admin Timeline CMS.
   description: text("description"),
 });
 

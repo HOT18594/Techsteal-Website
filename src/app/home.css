@@ -28,7 +28,7 @@
 @keyframes seasonShimmer { 0%, 55% { left: -60%; } 90%, 100% { left: 130%; } }
 .world-label > span:first-child { width: 5px; height: 5px; border-radius: 50%; background: #d0bf9b; }
 .world-label-divider { color: #f0eee566; padding: 0 4px; }
-.home-wordmark { margin: 36px 0 24px; font-family: var(--font-minecraft-logo), monospace; font-weight: 400; font-size: clamp(52px, 10.8vw, 160px); color: #f4f0e5; letter-spacing: .01em; line-height: 1; text-shadow: 0 4px 0 rgba(0, 0, 0, 0.55); }
+.home-wordmark { margin: 36px 0 24px; font-family: var(--font-minecraft-logo), monospace; font-weight: 400; font-size: clamp(34px, 10.8vw, 160px); color: #f4f0e5; letter-spacing: .01em; line-height: 1; text-shadow: 0 4px 0 rgba(0, 0, 0, 0.55); }
 .hero-address { display: inline-flex; align-items: center; gap: 14px; color: #f0eee5d9; font-size: 13px; letter-spacing: .025em; cursor: pointer; padding: 12px; }
 .hero-address i { color: #f0eee599; font-size: 12px; }
 .hero-address:hover { color: white; }

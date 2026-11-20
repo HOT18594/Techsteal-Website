@@ -752,6 +752,9 @@ export function StatusClient() {
         <div className="ops-tabs" role="tablist" aria-label="Server information" onKeyDown={onTabListKeyDown}>
           {tabs.map((id) => {
             const badge = tabBadge(id);
+            // Only the active tab's panel is mounted, so only point
+            // aria-controls at a real element (inactive ids used to reference
+            // panels that were not in the DOM).
             return (
               <button
                 key={id}
@@ -759,7 +762,7 @@ export function StatusClient() {
                 type="button"
                 role="tab"
                 aria-selected={tab === id}
-                aria-controls={`ops-panel-${id}`}
+                aria-controls={tab === id ? `ops-panel-${id}` : undefined}
                 tabIndex={tab === id ? 0 : -1}
                 className={`ops-tab ${tab === id ? "is-active" : ""}`}
                 onClick={() => setTab(id)}

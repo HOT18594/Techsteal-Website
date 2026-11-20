@@ -6,6 +6,9 @@ import { isRateLimited } from "@/lib/rate-limit";
 import { isChatModelId } from "@/lib/chat-models";
 
 export const runtime = "nodejs";
+// Session cookie + per-user permissions make this response user-specific —
+// never let a CDN or proxy cache it.
+export const dynamic = "force-dynamic";
 // Tool-using agent: each round-trip can involve model calls + tool execution
 // (status checks, DB lookups, web search), so give the whole request room.
 export const maxDuration = 60;
@@ -21,7 +24,7 @@ const TEXT_HEADERS = {
 // grant / be an admin). Permissions are read from the database, not the
 // session cookie, so granting or revoking access takes effect immediately.
 export async function POST(request: NextRequest) {
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   const message = typeof body.message === "string" ? body.message.trim() : "";
   if (!message) {
     return new Response("Please send a message.", { headers: TEXT_HEADERS, status: 400 });

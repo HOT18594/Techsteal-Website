@@ -123,7 +123,7 @@ export async function POST(
   }
   const account = gate.status === "ok" ? gate.account : null;
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   const content = typeof body.content === "string" ? body.content.trim() : "";
   if (!content) {
     return NextResponse.json({ error: "A reply can't be empty." }, { status: 400 });
@@ -264,7 +264,7 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid thread id" }, { status: 400 });
   }
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   const replyId = parseBodyId(body?.replyId);
   if (!replyId) {
     return NextResponse.json({ error: "replyId is required" }, { status: 400 });
@@ -337,7 +337,7 @@ export async function PUT(
     return NextResponse.json({ error: "Invalid thread id" }, { status: 400 });
   }
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   const replyId = parseBodyId(body?.replyId);
   if (!replyId) {
     return NextResponse.json({ error: "replyId is required" }, { status: 400 });
@@ -450,7 +450,7 @@ export async function DELETE(
     return NextResponse.json({ error: "Invalid thread id" }, { status: 400 });
   }
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   const replyId = parseBodyId(body?.replyId);
   if (!replyId) {
     return NextResponse.json({ error: "replyId is required" }, { status: 400 });

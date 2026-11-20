@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { RSS_ALTERNATE_TYPES, SHARE_IMAGES } from "@/app/shared-metadata";
 import { getPublicProfile } from "@/lib/public-profile";
 import { siteConfig } from "@/lib/site";
 import { ProfileClient } from "./ProfileClient";
@@ -31,14 +32,23 @@ export async function generateMetadata({
     return { title: "Member not found", robots: { index: false, follow: false } };
   }
   const description = `${profile.name} (${profile.minecraftUsername ?? profile.role}) on ${siteConfig.name} — ${profile.stats.builds} ${profile.stats.builds === 1 ? "build" : "builds"}, ${profile.stats.discussions} ${profile.stats.discussions === 1 ? "discussion" : "discussions"}.`;
+  const path = `/members/${encodeURIComponent(profile.id)}`;
+  // Next replaces the whole `openGraph`/`alternates` objects, so re-declare
+  // the layout's share image (skin when available), site name, and RSS link.
   return {
     title: profile.name,
     description,
+    alternates: {
+      canonical: path,
+      types: RSS_ALTERNATE_TYPES,
+    },
     openGraph: {
       title: profile.name,
       description,
       type: "profile",
-      ...(profile.skinUrl ? { images: [profile.skinUrl] } : {}),
+      siteName: siteConfig.name,
+      url: path,
+      images: profile.skinUrl ? [profile.skinUrl] : SHARE_IMAGES,
     },
   };
 }

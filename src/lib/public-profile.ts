@@ -156,8 +156,11 @@ export const getPublicProfile = cache(async (id: string): Promise<PublicProfile 
       },
     };
   } catch (err) {
+    // "Row absent / not a suitable profile" already returned null above. A
+    // failed query is an outage, not a deleted member — rethrow so the API's
+    // 503 branch (and the page error boundary) can say so instead of 404.
     console.error("getPublicProfile: query failed", err);
-    return null;
+    throw err;
   }
 });
 

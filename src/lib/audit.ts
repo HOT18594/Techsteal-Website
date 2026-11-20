@@ -15,6 +15,7 @@ export type AuditAction =
   | "server_restart"
   | "server_command"
   | "server_ram"
+  | "server_share_logs"
   | "whitelist_add"
   | "whitelist_remove"
   | "whitelist_sync"

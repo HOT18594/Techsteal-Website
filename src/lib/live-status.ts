@@ -17,7 +17,7 @@ import { siteConfig } from "./site";
 // sections consistent and well under any rate limit; in-flight requests are
 // shared so even a cold burst is ONE upstream call.
 const CACHE_MS = 15_000;
-let cache: { at: number; promise: Promise<ServerStatus> } | null = null;
+let cache: { at: number; pending: boolean; promise: Promise<ServerStatus> } | null = null;
 
 /** Bust the cached status immediately after a server start/stop/restart action. */
 export function invalidateLiveStatus(): void {
@@ -26,15 +26,24 @@ export function invalidateLiveStatus(): void {
 
 export function getLiveStatus(): Promise<ServerStatus> {
   const now = Date.now();
-  if (cache && now - cache.at < CACHE_MS) return cache.promise;
-  const promise = fetchLiveStatus();
-  cache = { at: now, promise };
-  // A rejected fetch must not poison the window — drop it so the next
-  // caller retries. (fetchLiveStatus resolves, never rejects; belt & braces.)
-  promise.catch(() => {
-    if (cache?.promise === promise) cache = null;
-  });
-  return promise;
+  // Join an in-flight fetch even if it outlives CACHE_MS (exaroton can take
+  // 8s and the mcsrv fallback another 8s) — the cache window starts when the
+  // promise SETTLES, so callers never start a second upstream fetch behind
+  // the first one.
+  if (cache && (cache.pending || now - cache.at < CACHE_MS)) return cache.promise;
+  const entry = { at: now, pending: true, promise: fetchLiveStatus() };
+  cache = entry;
+  entry.promise
+    .then(() => {
+      entry.at = Date.now();
+      entry.pending = false;
+    })
+    .catch(() => {
+      // A rejected fetch must not poison the window — drop it so the next
+      // caller retries. (fetchLiveStatus resolves, never rejects; belt & braces.)
+      if (cache === entry) cache = null;
+    });
+  return entry.promise;
 }
 
 async function fetchLiveStatus(): Promise<ServerStatus> {

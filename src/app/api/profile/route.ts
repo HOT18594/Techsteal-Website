@@ -73,7 +73,7 @@ export async function PATCH(request: NextRequest) {
   // Edge-appended XFF entry — client-supplied prefixes are spoofable.
   const ip = rateLimitIp(request);
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   const patch: Parameters<typeof updateAccount>[1] = {};
   let claimedAdmin = false;
 
@@ -188,7 +188,12 @@ export async function PATCH(request: NextRequest) {
     // 23505 = unique violation on profiles_mc_name_lower_uq. The SELECT above
     // is a check-then-write that races under concurrent claims; the partial
     // unique index is the real guarantee — surface the same friendly 409 here.
-    if ((err as { code?: string } | null)?.code === "23505") {
+    // Drizzle 0.45 wraps driver errors in a DrizzleQueryError, so the pg code
+    // lives on `err.cause.code` (the admin route checks the cause for the same
+    // reason) — checking only `err.code` made this branch dead and answered
+    // 503 "database unreachable" for a plain name collision.
+    const failure = err as { code?: string; cause?: { code?: string } } | null;
+    if ((failure?.code ?? failure?.cause?.code) === "23505") {
       return NextResponse.json(
         { error: "That Minecraft username is already linked to another member." },
         { status: 409 }

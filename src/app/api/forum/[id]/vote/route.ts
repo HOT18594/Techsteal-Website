@@ -41,7 +41,7 @@ export async function POST(
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   const optionId = typeof body?.optionId === "string" ? body.optionId : "";
   if (!optionId) {
     return NextResponse.json({ error: "optionId is required" }, { status: 400 });

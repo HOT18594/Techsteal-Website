@@ -22,6 +22,13 @@ export default function GlobalError({
     <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: paletteBootstrap }} />
+        {/* This boundary replaces the root layout, so the next/font variable
+            set on <html> there (`--font-grotesk`) is missing here and the
+            globals.css font stacks that reference it resolve to an invalid
+            value — i.e. the UA serif fallback. Define a sans stack for the
+            variable so the code stays inherited from layout without
+            importing next/font into the error chunk. */}
+        <style>{`:root{--font-grotesk:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif}`}</style>
       </head>
       <body className="antialiased min-h-screen flex flex-col items-center justify-center px-6 text-center">
         <div className="card p-8 max-w-md w-full">

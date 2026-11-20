@@ -37,7 +37,7 @@ npm run lint         # eslint; NEW react-hooks v6 rules are warn-level on purpos
 npm run build        # must pass before any deploy
 npm run db:generate  # after editing src/lib/schema.ts
 npm run db:push      # apply schema (see DB warning below)
-npm run db:seed      # placeholder content
+npm run db:seed      # placeholder content (refuses if content exists; --force to wipe)
 ```
 
 Verification order after any change: `tsc --noEmit` → `npm run lint` →
@@ -47,7 +47,7 @@ gallery, status, login) plus `/api/forum` for DB connectivity.
 **Lint caveat:** run `npx eslint src` (or `npm run lint` with no stray build
 directories present). If a leftover `.next*` folder exists that isn't matched by
 the ignore list, eslint walks it and reports thousands of phantom problems. The
-real baseline is **34 warnings, 0 errors**.
+real baseline is **45 warnings, 0 errors**.
 
 ## Conventions
 
@@ -128,8 +128,14 @@ diff. Prefer additive migrations (`db:generate` → review SQL → `db:push`).
 
 Note: the live database has no `drizzle.__drizzle_migrations` table — the
 current schema was pushed with `db:push`, not applied as migration files. The
-two generated migrations in `drizzle/` (`0001`, `0002`) describe the current
-schema but are not recorded as applied.
+four tracked migrations in `drizzle/` (`0000` baseline, `0001`, `0002`, and
+`0003`, which adds the `announcements` table) describe the current schema but are
+not recorded as applied.
+
+`npm run db:seed` clears every content table (forum, gallery, timeline, rules)
+before inserting placeholder rows; it refuses to run against a database that
+already has content unless passed `--force` (or `SEED_FORCE=1`). Never run it
+with `--force` against production unless you intend to wipe the community data.
 
 ## Deploy reality
 
@@ -144,12 +150,14 @@ permanent fix is one dashboard toggle: Settings → Git → Production Branch �
 
 ## Accepted current state (do not "fix" without asking)
 
-- 34 eslint **warnings** from the react-hooks v6 rules
-  (`set-state-in-effect`, `purity`, `refs`, `immutability`,
-  `preserve-manual-memoization`, `exhaustive-deps`) — downgraded to warn in
+- 45 eslint **warnings** from the react-hooks v6 rules
+  (`set-state-in-effect` 32, `refs` 5, `immutability` 3,
+  `preserve-manual-memoization` 3, `purity` 2) — downgraded to warn in
   `eslint.config.mjs`; adopting them means refactoring every fetch effect.
-- `npm audit`: 11 moderate advisories, all in the dev-only
-  drizzle-kit/esbuild/eslint chain, no fix available in-range. Runtime tree is
+- `npm audit`: 4 moderate advisories, all in the dev-only
+  drizzle-kit/@esbuild-kit/esbuild tooling chain (the 2026-11-20 in-range update
+  cleared the previous minimatch/@typescript-eslint advisories); no fix exists
+  without downgrading drizzle-kit to 0.18, which is rejected. Runtime tree is
   clean (0 critical / 0 high since the 2026-11 security updates).
 - `admincode`/`chat`/`control` rate limits are per-serverless-instance
   (in-memory). Shared-storage counters need a new table; `db:push` risk above.

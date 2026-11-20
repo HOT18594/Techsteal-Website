@@ -76,14 +76,11 @@
   /* Accent — neutral platinum */
   --accent: #d2d2cb;
   --accent-bright: #e8e8e1;
-  --accent-glow: transparent;
   --accent-dim: #d2d2cb14;
 
   /* Semantic */
   --emerald: #22c55e;
-  --emerald-glow: transparent;
   --redstone: #f43f5e;
-  --redstone-glow: transparent;
   --diamond: #c6c9c4;
 }
 
@@ -1536,60 +1533,6 @@ body:has(> .announce-bar, > .onboarding-reminder) .subpage-spacer {
   }
 }
 
-/* Conversation bubbles */
-.chat-bubble-ai {
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-}
-.chat-bubble-user {
-  background: var(--accent-dim);
-  border: 1px solid var(--border-strong);
-  border-radius: 14px;
-}
-/* Tool activity/trace chips — live while the agent works ("Checking live
-   status…"), then attached to the reply it produced. */
-.chat-tool-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--accent-bright);
-  background: var(--accent-dim);
-  border: 1px solid rgba(198, 183, 157, 0.35);
-}
-.chat-tool-chip i {
-  font-size: 10px;
-}
-.chat-tool-chip.live {
-  color: var(--fg-2);
-  background: rgba(255, 255, 255, 0.03);
-  border-color: var(--border-strong);
-}
-.chat-tool-chip.live i {
-  color: var(--accent);
-}
-/* Capability chips on the welcome hero */
-.chat-cap-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 11px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid var(--border);
-}
-.chat-cap-chip i {
-  font-size: 10px;
-  color: var(--accent);
-}
 /* Rich-ish rendered markdown inside AI bubbles */
 .chat-md > :first-child {
   margin-top: 0;
@@ -1635,18 +1578,6 @@ body:has(> .announce-bar, > .onboarding-reminder) .subpage-spacer {
 .chat-codeblock-header button:hover {
   color: var(--accent-bright);
   background: var(--accent-dim);
-}
-/* Tiny kbd hint in the input disclaimer */
-.chat-kbd {
-  display: inline-block;
-  padding: 0 5px;
-  border-radius: 4px;
-  border: 1px solid var(--border-strong);
-  background: rgba(255, 255, 255, 0.04);
-  font-family: inherit;
-  font-size: 10px;
-  line-height: 1.5;
-  color: var(--muted);
 }
 .typing-dot {
   width: 6px;
@@ -2487,9 +2418,6 @@ button:focus-visible {
 .btn-primary:hover { background: var(--accent-bright); transform: none; }
 .btn-secondary, .btn-secondary:hover { background: transparent; box-shadow: none; text-transform: none; letter-spacing: 0; border-radius: 10px; }
 .btn-secondary:hover { background: #ffffff08; color: var(--fg); transform: none; }
-.btn-discord { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: #5865F2; color: #ffffff; padding: 14px 28px; font-weight: 650; font-size: 14px; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 10px; cursor: pointer; transition: background 0.18s ease, opacity 0.18s ease; }
-.btn-discord:hover:not(:disabled) { background: #4752c4; color: #ffffff; }
-.btn-discord:disabled { opacity: 0.6; cursor: not-allowed; }
 .page-enter { animation-duration: .18s; }
 a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 ::selection { background: var(--accent); color: var(--bg); }

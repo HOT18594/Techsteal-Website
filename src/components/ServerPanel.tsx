@@ -67,6 +67,12 @@ export function ServerPanel() {
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const consoleEndRef = useRef<HTMLDivElement | null>(null);
+  // Latest selected tab, readable from async callbacks (the 3.5s follow-up
+  // timer used to close over the list that was active when it was scheduled)
+  // and the request sequence that stops a slower, older list response from
+  // rendering its entries under the tab the admin is on now.
+  const activeListRef = useRef<ServerPlayerListName>("whitelist");
+  const listReqSeq = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -74,51 +80,59 @@ export function ServerPanel() {
     };
   }, []);
 
-  const load = useCallback(
-    async (listToFetch: ServerPlayerListName = activeList) => {
-      setLoading(true);
-      try {
-        const [statusRes, controlRes, opsRes] = await Promise.all([
-          fetch("/api/status", { cache: "no-store" }),
-          fetch("/api/server/control", { cache: "no-store" }),
-          fetch(`/api/admin/server?list=${encodeURIComponent(listToFetch)}`, { cache: "no-store" }),
-        ]);
-        const statusData = (await statusRes.json().catch(() => null)) as ServerStatus | null;
-        const controlData = (await controlRes.json().catch(() => ({}))) as {
-          configured?: boolean;
-          allowed?: boolean;
-        };
-        const opsData = (await opsRes.json().catch(() => ({}))) as AdminServerResponse;
+  const load = useCallback(async (listToFetch: ServerPlayerListName = activeListRef.current) => {
+    // Only the newest request commits. A slow Whitelist fetch landing after
+    // the admin clicked Operators used to paint whitelist names under the
+    // Operators tab (so the row's ✕ removed the wrong list's player).
+    const reqId = ++listReqSeq.current;
+    setLoading(true);
+    try {
+      const [statusRes, controlRes, opsRes] = await Promise.all([
+        fetch("/api/status", { cache: "no-store" }),
+        fetch("/api/server/control", { cache: "no-store" }),
+        fetch(`/api/admin/server?list=${encodeURIComponent(listToFetch)}`, { cache: "no-store" }),
+      ]);
+      const statusData = (await statusRes.json().catch(() => null)) as ServerStatus | null;
+      const controlData = (await controlRes.json().catch(() => ({}))) as {
+        configured?: boolean;
+        allowed?: boolean;
+      };
+      const opsData = (await opsRes.json().catch(() => ({}))) as AdminServerResponse;
 
-        if (statusData) setStatus(statusData);
-        setConfigured(opsData.configured ?? controlData.configured ?? false);
-        setAllowed(controlData.allowed ?? false);
-        if (opsData.telemetry) {
-          setTelemetry(opsData.telemetry);
-          if (typeof opsData.telemetry.ramGb === "number") {
-            setRamDraft(opsData.telemetry.ramGb);
-          }
+      // Superseded (newer tab / newer request) or no longer the active list:
+      // drop the whole payload instead of overwriting the current tab's data.
+      if (reqId !== listReqSeq.current || listToFetch !== activeListRef.current) return;
+
+      if (statusData) setStatus(statusData);
+      setConfigured(opsData.configured ?? controlData.configured ?? false);
+      setAllowed(controlData.allowed ?? false);
+      if (opsData.telemetry) {
+        setTelemetry(opsData.telemetry);
+        if (typeof opsData.telemetry.ramGb === "number") {
+          setRamDraft(opsData.telemetry.ramGb);
         }
-        setEntries(opsData.entries ?? []);
-        setListError(opsData.listError ?? null);
-        if (opsData.verifiedMembers) setVerifiedMembers(opsData.verifiedMembers);
-      } catch {
-        /* retain previous snapshot */
-      } finally {
-        setLoading(false);
       }
-    },
-    [activeList]
-  );
+      setEntries(opsData.entries ?? []);
+      setListError(opsData.listError ?? null);
+      if (opsData.verifiedMembers) setVerifiedMembers(opsData.verifiedMembers);
+    } catch {
+      /* retain previous snapshot */
+    } finally {
+      if (reqId === listReqSeq.current) setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
+    activeListRef.current = activeList;
     void load(activeList);
   }, [activeList, load]);
 
   const scheduleFollowupRefresh = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
-      void load(activeList);
+      // load() defaults to the list selected when the timer FIRES — not the
+      // one that was selected when the power action scheduled it.
+      void load();
     }, 3500);
   };
 
@@ -147,7 +161,7 @@ export function ServerPanel() {
         action === "start" ? "Starting server" : action === "restart" ? "Restarting server" : "Stopping server",
         "Exaroton accepted the command — refreshing state shortly."
       );
-      await load(activeList);
+      await load();
       scheduleFollowupRefresh();
     } catch (err) {
       show("Control failed", err instanceof Error ? err.message : "Try again.", "error");
@@ -197,7 +211,7 @@ export function ServerPanel() {
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(data.error || "Couldn't update RAM.");
       show("RAM updated", `Allocated ${ramDraft} GB to the server.`);
-      await load(activeList);
+      await load();
     } catch (err) {
       show("RAM update failed", err instanceof Error ? err.message : "Server must be offline to resize RAM.", "error");
     } finally {
@@ -216,8 +230,19 @@ export function ServerPanel() {
       const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
       if (!res.ok || !data.url) throw new Error(data.error || "Couldn't upload log.");
       setSharedLogUrl(data.url);
-      await navigator.clipboard?.writeText(data.url).catch(() => {});
-      show("Log shared to mclo.gs", "Redacted log URL copied to your clipboard.");
+      try {
+        await navigator.clipboard.writeText(data.url);
+        show("Log shared to mclo.gs", "Redacted log URL copied to your clipboard.");
+      } catch {
+        // The share itself succeeded and the URL renders in the bar above —
+        // only the clipboard write failed (insecure origin, permission).
+        // Claiming it was copied sent admins to paste stale clipboard text.
+        show(
+          "Log shared to mclo.gs",
+          "Clipboard blocked — the URL is ready above to copy manually.",
+          "error"
+        );
+      }
     } catch (err) {
       show("Share failed", err instanceof Error ? err.message : "Try again.", "error");
     } finally {
@@ -238,8 +263,14 @@ export function ServerPanel() {
   const copyConsole = async () => {
     const text = filteredLines.map((l) => l.text).join("\n");
     if (!text) return;
-    await navigator.clipboard?.writeText(text).catch(() => {});
-    show("Copied", `Copied ${filteredLines.length} log line(s).`);
+    try {
+      await navigator.clipboard.writeText(text);
+      show("Copied", `Copied ${filteredLines.length} log line(s).`);
+    } catch {
+      // No clipboard (plain HTTP/LAN, permission denied) — don't report a
+      // copy that didn't happen; the admin would paste stale content.
+      show("Couldn't copy", "Your browser blocked clipboard access.", "error");
+    }
   };
 
   const addPlayer = async () => {
@@ -372,7 +403,7 @@ export function ServerPanel() {
             ) : null}
             <button
               type="button"
-              onClick={() => void load(activeList)}
+              onClick={() => void load()}
               disabled={loading}
               className="admin-action-btn"
             >

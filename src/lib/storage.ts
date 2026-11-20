@@ -167,7 +167,11 @@ export function storagePathFromUrl(publicUrl: string): string | null {
   ) {
     return null;
   }
-  return rawPath;
+  // Return the DECODED path, because that is the object key Supabase speaks:
+  // public URLs are percent-encoded ("my%20build.png") while list/delete use
+  // raw keys ("my build.png"). Returning the encoded spelling made reference
+  // checks miss and the orphan cleaner could delete a live image.
+  return decoded;
 }
 
 /**
@@ -347,6 +351,12 @@ function escapeLikePattern(text: string): string {
   return text.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
+/** Percent-encoded spelling of a bucket path, as it appears inside a public
+ *  URL. Per-segment so folder slashes stay slashes. */
+function encodeStoragePath(path: string): string {
+  return path.split("/").map((segment) => encodeURIComponent(segment)).join("/");
+}
+
 /**
  * Targeted reference check for a small set of candidate paths (used on post
  * delete/edit so we only fetch rows mentioning those paths rather than full-
@@ -360,7 +370,15 @@ export async function referencedStoragePathsForCandidates(
   const db = getDb();
   if (!db) return new Set();
   try {
-    const patterns = candidates.map((p) => `%${escapeLikePattern(p)}%`);
+    // Candidates are decoded bucket paths (storagePathFromUrl), but stored
+    // content holds percent-encoded public URLs — match BOTH spellings or a
+    // live encoded reference would look unused and get deleted.
+    const patterns = candidates.flatMap((p) => {
+      const encoded = encodeStoragePath(p);
+      return encoded === p
+        ? [`%${escapeLikePattern(p)}%`]
+        : [`%${escapeLikePattern(p)}%`, `%${escapeLikePattern(encoded)}%`];
+    });
     const matchText = (col: AnyColumn) =>
       or(...patterns.map((pat) => ilike(col, pat)))!;
     const matchGallery = or(

@@ -5,7 +5,7 @@ import { galleryComments, galleryItems } from "@/lib/schema";
 import { fallbackGallery } from "@/lib/fallback-data";
 import { getSessionUser } from "@/lib/auth";
 import { accountGate, ACCOUNT_DB_ERROR_MESSAGE, canPostToGallery } from "@/lib/accounts";
-import { isRateLimited } from "@/lib/rate-limit";
+import { isRateLimited, rateLimitIp } from "@/lib/rate-limit";
 import { GALLERY_CATEGORIES } from "@/lib/gallery-categories";
 import { storagePathFromUrl } from "@/lib/storage";
 import { publicRow } from "@/lib/public-row";
@@ -15,6 +15,8 @@ import { mentionRecipients, notifyMany } from "@/lib/notifications";
 export const dynamic = "force-dynamic";
 
 const MAX_IMAGES = 8;
+/** Hard cap on the public grid payload — one row per build, newest 500. */
+const MAX_LIST_ITEMS = 500;
 
 /** Images must live in this project's Supabase storage — gallery posts are
  * uploaded files, not arbitrary hotlinks (which could rot or smuggle
@@ -26,7 +28,14 @@ function isOurStorageUrl(url: string): boolean {
 }
 
 // List all gallery items, featured first then newest, with comment counts.
-export async function GET() {
+export async function GET(request: NextRequest) {
+  // Anonymous read used to be fully unbounded (every row + an unbounded
+  // comment GROUP BY, no session required). A scripted hammer could pin the
+  // pooler; key the limiter on the platform-appended client IP and cap the
+  // payload like the forum list does.
+  if (isRateLimited(`galleryget:${rateLimitIp(request)}`, 60, 60_000)) {
+    return NextResponse.json({ error: "Slow down a little." }, { status: 429 });
+  }
   const db = getDb();
   if (!db) return NextResponse.json(fallbackGallery);
   try {
@@ -39,7 +48,11 @@ export async function GET() {
 
 async function listGallery(db: Exclude<ReturnType<typeof getDb>, null>): Promise<NextResponse> {
   const [rows, commentCounts, viewer] = await Promise.all([
-    db.select().from(galleryItems).orderBy(desc(galleryItems.featured), desc(galleryItems.id)),
+    db
+      .select()
+      .from(galleryItems)
+      .orderBy(desc(galleryItems.featured), desc(galleryItems.id))
+      .limit(MAX_LIST_ITEMS),
     db
       .select({ itemId: galleryComments.itemId, n: count() })
       .from(galleryComments)
@@ -93,7 +106,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   const title = typeof body.title === "string" ? body.title.trim() : "";
   const category = typeof body.category === "string" ? body.category : "";
   const description = typeof body.description === "string" ? body.description.trim() : "";

@@ -154,18 +154,30 @@ export interface ChatPreferences {
   images?: string[];
 }
 
-/** Accept only inline raster data URLs, capped so one image can't blow the
+/** Chat image payload limits. Base64 data URLs are re-sent to the model on
+ *  every round, and the whole chat POST (prompt + history + images) must stay
+ *  under the 4.5 MB serverless request cap — so cap each image and the total
+ *  combined data-URL length, not just the count. */
+const MAX_CHAT_IMAGES = 2;
+const MAX_CHAT_IMAGE_CHARS = 2_000_000;
+const MAX_CHAT_IMAGES_TOTAL_CHARS = 3_000_000;
+
+/** Accept only inline raster data URLs, capped so the images can't blow the
  *  request budget. Anything else is dropped rather than forwarded upstream. */
 export function validChatImages(input: unknown): string[] {
   if (!Array.isArray(input)) return [];
-  return input
-    .filter(
-      (value): value is string =>
-        typeof value === "string" &&
-        /^data:image\/(png|jpe?g|webp|gif);base64,/i.test(value) &&
-        value.length <= 3_000_000
-    )
-    .slice(0, 2);
+  const accepted: string[] = [];
+  let totalChars = 0;
+  for (const value of input) {
+    if (accepted.length >= MAX_CHAT_IMAGES) break;
+    if (typeof value !== "string") continue;
+    if (!/^data:image\/(png|jpe?g|webp|gif);base64,/i.test(value)) continue;
+    if (value.length > MAX_CHAT_IMAGE_CHARS) continue;
+    if (totalChars + value.length > MAX_CHAT_IMAGES_TOTAL_CHARS) continue;
+    accepted.push(value);
+    totalChars += value.length;
+  }
+  return accepted;
 }
 
 /** The assistant's role, knowledge, and style rules. */
@@ -610,11 +622,17 @@ async function completionRound(opts: {
   }
 
   if (sawAbort || opts.signal?.aborted) return null;
-  return {
-    toolCalls: [...calls.entries()]
-      .sort(([a], [b]) => a - b)
-      .map(([, c]) => ({ id: c.id || `call_${Math.random().toString(36).slice(2, 10)}`, name: c.name, args: c.args })),
-  };
+  const toolCalls = [...calls.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([, c]) => ({ id: c.id || `call_${Math.random().toString(36).slice(2, 10)}`, name: c.name, args: c.args }));
+  // A clean 200 stream that produced neither text nor tool calls is an
+  // upstream failure dressed as success (empty body / dropped socket on the
+  // free models). Throw so the cascade tries the next model instead of
+  // closing the reply with no words at all.
+  if (!emittedTextInRound && toolCalls.length === 0) {
+    throw new Error("upstream returned an empty completion");
+  }
+  return { toolCalls };
 }
 
 /**

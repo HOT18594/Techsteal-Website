@@ -125,7 +125,7 @@ export async function POST(
   }
   const account = gate.account;
 
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   const content = typeof body.content === "string" ? body.content.trim() : "";
   if (!content) {
     return NextResponse.json({ error: "A comment can't be empty." }, { status: 400 });
@@ -229,7 +229,7 @@ export async function DELETE(
   if (itemId === null) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   // A PRESENT-but-invalid commentId (""/0/"12x") must not fall through
   // to whole-post deletion — that would destroy every comment and the post's
   // stored images on a malformed request. Only an ABSENT commentId means
@@ -395,7 +395,7 @@ export async function PATCH(
   if (itemId === null) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }
-  const body = await request.json().catch(() => ({}));
+  const body = (await request.json().catch(() => ({}))) ?? {};
   // Only a real boolean flips the flag — Boolean("false") === true, so a
   // stringified body would feature the post instead of unfeaturing it.
   if (typeof body.featured !== "boolean") {

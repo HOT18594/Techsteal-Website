@@ -16,6 +16,7 @@ import { Markdown } from "@/components/Markdown";
 import { useToast } from "@/components/Toast";
 import { useSession } from "@/lib/use-session";
 import { hasOpenOverlays } from "@/lib/overlay-stack";
+import { compressImage } from "@/lib/imaging";
 import "./chatty.css";
 import {
   CHAT_MODELS,
@@ -247,7 +248,7 @@ interface MessageRowProps {
   username?: string;
   avatarUrl?: string;
   onCopy: (text: string) => void;
-  onRetry: (text: string) => void;
+  onRetry: (message: ChatMessage) => void;
   onRegenerate: () => void;
 }
 
@@ -311,7 +312,7 @@ const ChatMessageRow = memo(function ChatMessageRow({
               <button
                 type="button"
                 className="assistant-retry"
-                onClick={isLast ? onRegenerate : () => onRetry(message.retry!)}
+                onClick={isLast ? onRegenerate : () => onRetry(message)}
               >
                 <i className="fa-solid fa-rotate-right" aria-hidden="true" /> Retry
               </button>
@@ -649,11 +650,13 @@ export function Chatty() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, messages.length, hasAccess]);
 
-  const send = async (raw?: string, baseMessages?: ChatMessage[]) => {
+  const send = async (raw?: string, baseMessages?: ChatMessage[], baseImage?: string) => {
     const fromComposer = raw === undefined;
-    // Attachments only ride along with a composer submission — suggestions,
-    // Retry, and Regenerate must not steal an unsent image from the composer.
-    const image = fromComposer ? attachment : null;
+    // Attachments ride along with a composer submission, or explicitly when a
+    // Retry/Regenerate replays the turn they came from ("Describe this image."
+    // is meaningless without the image). Suggestions must not steal an unsent
+    // image from the composer.
+    const image = baseImage ?? (fromComposer ? attachment : null);
     const typed = (raw ?? input).trim();
     const text = typed || (image ? "Describe this image." : "");
     // The controller is installed synchronously; React's typing state may
@@ -965,6 +968,11 @@ export function Chatty() {
   };
 
   const deleteChat = (id: string) => {
+    // Deleting the conversation that is currently replying must abort the
+    // stream first. Otherwise the next token creates/updates the streaming
+    // bubble in the chat that replaces it and the throttled save persists the
+    // reply there — permanently mixing the two conversations.
+    if (id === activeIdRef.current) stopStreaming();
     const remaining = chats.filter((entry) => entry.id !== id);
     if (id === activeIdRef.current) {
       if (saveTimer.current) {
@@ -1005,12 +1013,25 @@ export function Chatty() {
     if (typing || (controllerRef.current && !controllerRef.current.signal.aborted)) return;
     const cut = [...messages];
     while (cut.length > 1 && cut[cut.length - 1].role === "assistant") cut.pop();
-    const lastUser = cut.length > 1 ? cut[cut.length - 1].text : null;
-    if (!lastUser) return;
+    const lastUser = cut.length > 1 ? cut[cut.length - 1] : null;
+    if (!lastUser || lastUser.role !== "user") return;
     // Drop the question here too — send() re-adds it. Setting the full `cut`
-    // AND letting send() append would render the question twice.
+    // AND letting send() append would render the question twice. The image
+    // rides along: an image-only prompt is stored as "Describe this image.",
+    // so re-asking without the attachment asks a different question.
     setMessages(cut.slice(0, -1));
-    void send(lastUser, cut.slice(0, -1)); // exclude the question from context — send() re-adds it
+    void send(lastUser.text, cut.slice(0, -1), lastUser.image); // exclude the question from context — send() re-adds it
+  };
+
+  /** Re-run a failed reply from the user turn it belongs to. Its attachment
+   *  must be resent with it — Retry used to drop it, so an image-only prompt
+   *  was retried as bare placeholder text. */
+  const retry = (message: ChatMessage) => {
+    if (typing || (controllerRef.current && !controllerRef.current.signal.aborted)) return;
+    const list = messagesRef.current;
+    const index = list.findIndex((entry) => entry.id === message.id);
+    const image = index > 0 && list[index - 1].role === "user" ? list[index - 1].image : undefined;
+    void send(message.retry ?? "", undefined, image);
   };
 
   const isEmpty = messages.length <= 1 && messages[0]?.role === "assistant";
@@ -1020,10 +1041,10 @@ export function Chatty() {
 
   // Stable per-action callbacks so the memoized rows don't re-render when
   // an unrelated state change (e.g. a streamed token) recreates closures.
-  const actionsRef = useRef({ send, regenerate, copyMessage });
-  actionsRef.current = { send, regenerate, copyMessage };
+  const actionsRef = useRef({ send, regenerate, retry, copyMessage });
+  actionsRef.current = { send, regenerate, retry, copyMessage };
   const onCopy = useCallback((text: string) => void actionsRef.current.copyMessage(text), []);
-  const onRetry = useCallback((text: string) => void actionsRef.current.send(text), []);
+  const onRetry = useCallback((message: ChatMessage) => void actionsRef.current.retry(message), []);
   const onRegenerate = useCallback(() => actionsRef.current.regenerate(), []);
 
   const activeModel = CHAT_MODELS.find((model) => model.id === selectedModel) ?? CHAT_MODELS[0];
@@ -1181,15 +1202,28 @@ export function Chatty() {
               const file = item?.getAsFile();
               if (!file) return; // plain text paste — let the browser handle it
               event.preventDefault();
-              if (file.size > 2_000_000) {
-                show("Image too large", "Keep it under 2 MB.", "error");
-                return;
-              }
-              const reader = new FileReader();
-              reader.onload = () => {
-                if (typeof reader.result === "string") setAttachment(reader.result);
-              };
-              reader.readAsDataURL(file);
+              // Downscale/compress in the browser first (same helper the editors
+              // use). The chat POST is JSON with a base64 data URL, so an
+              // untouched 2 MB screenshot would become ~2.7 M chars — silently
+              // dropped by the server's per-image cap and crowding the 4.5 MB
+              // Vercel request limit.
+              void (async () => {
+                let upload = file;
+                try {
+                  upload = await compressImage(file, 1280, 0.82);
+                } catch {
+                  /* keep the original file — the size guard below still applies */
+                }
+                if (upload.size > 1_400_000) {
+                  show("Image too large", "Keep it under about 1.4 MB.", "error");
+                  return;
+                }
+                const reader = new FileReader();
+                reader.onload = () => {
+                  if (typeof reader.result === "string") setAttachment(reader.result);
+                };
+                reader.readAsDataURL(upload);
+              })();
             }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
