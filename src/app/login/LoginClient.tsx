@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { siteConfig } from "@/lib/site";
 import { useToast } from "@/components/Toast";
@@ -12,7 +12,7 @@ export function LoginClient() {
   const { show } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, loading: sessionLoading } = useSession();
+  const { user, loading: sessionLoading, refresh } = useSession();
 
   // Where to land after login (gated CTAs pass ?next=/their/page). Only
   // same-site relative paths are honored (same validator the API enforces).
@@ -25,6 +25,36 @@ export function LoginClient() {
       router.replace(nextParam ?? (user.role === "admin" ? "/admin" : "/"));
     }
   }, [user, sessionLoading, router, nextParam]);
+
+  // Guest login (shared password, no Discord needed).
+  const [guestOpen, setGuestOpen] = useState(false);
+  const [guestName, setGuestName] = useState("");
+  const [guestPassword, setGuestPassword] = useState("");
+  const [guestBusy, setGuestBusy] = useState(false);
+
+  const guestLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (guestBusy || !guestPassword.trim()) return;
+    setGuestBusy(true);
+    try {
+      const res = await fetch("/api/auth/guest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: guestPassword, name: guestName }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        show("Guest sign-in failed", data.error ?? "Something went wrong.", "error");
+        return;
+      }
+      await refresh();
+      // The effect above redirects once the session shows up.
+    } catch {
+      show("Couldn't reach the server", "Check your connection and try again.", "error");
+    } finally {
+      setGuestBusy(false);
+    }
+  };
 
   // Show a toast if the Discord callback bounced us back with an error.
   const errorToastShown = useRef(false);
@@ -58,7 +88,7 @@ export function LoginClient() {
             </div>
             <h1 className="font-display text-2xl font-bold">{siteConfig.name}</h1>
             <p className="text-sm text-[var(--muted)] mt-2">
-              Sign in with Discord to access member features.
+              Sign in with Discord — or continue as a guest — to access member features.
             </p>
           </div>
 
@@ -73,6 +103,57 @@ export function LoginClient() {
             Continue with Discord
           </a>
 
+          {/* Guest login */}
+          <div className="flex items-center gap-3 my-5 text-xs text-[var(--muted-2)]">
+            <span className="flex-1 h-px bg-[var(--border)]" />
+            or
+            <span className="flex-1 h-px bg-[var(--border)]" />
+          </div>
+
+          {!guestOpen ? (
+            <button
+              type="button"
+              className="btn-secondary w-full justify-center"
+              onClick={() => setGuestOpen(true)}
+            >
+              <i className="fa-solid fa-user-secret text-lg" aria-hidden="true" />
+              Continue as guest
+            </button>
+          ) : (
+            <form onSubmit={guestLogin} className="flex flex-col gap-3">
+              <input
+                aria-label="Display name (optional)"
+                className="input"
+                placeholder="Display name (optional)"
+                maxLength={20}
+                autoComplete="nickname"
+                value={guestName}
+                onChange={(e) => setGuestName(e.target.value)}
+              />
+              <input
+                aria-label="Guest password"
+                type="password"
+                className="input"
+                placeholder="Guest password"
+                autoComplete="off"
+                autoFocus
+                value={guestPassword}
+                onChange={(e) => setGuestPassword(e.target.value)}
+              />
+              <button
+                type="submit"
+                className="btn-primary w-full justify-center"
+                disabled={guestBusy || !guestPassword.trim()}
+              >
+                {guestBusy ? (
+                  <i className="fa-solid fa-spinner fa-spin" aria-hidden="true" />
+                ) : (
+                  <i className="fa-solid fa-right-to-bracket" aria-hidden="true" />
+                )}
+                Sign in as guest
+              </button>
+            </form>
+          )}
           {/* Note */}
           <p className="text-center text-xs text-[var(--muted-2)] mt-6">
             First time here? You&apos;ll be nudged to link your Minecraft account after

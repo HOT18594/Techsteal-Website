@@ -100,6 +100,7 @@ Everything the code reads (authoritative list):
 | `EXAROTON_TOKEN` / `EXAROTON_SERVER_ID` | for status/control | Exaroton hosting API (the Season 6 server). Server ID may carry a leading `#` (stripped in code). Without these the status page falls back to mcsrvstat.us pings and hides server controls. |
 | `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` / `AI_FALLBACK_MODELS` | for assistant | Any OpenAI-compatible `/chat/completions` endpoint. `AI_FALLBACK_MODEL` (singular) is a legacy alias. Empty key = "assistant not connected" mode. |
 | `MINECRAFT_SERVER` / `MINECRAFT_PORT` | no | Address for the status API; defaults to `siteConfig.address`. |
+| `GUEST_PASSWORD` | for guest login | Shared password for "Continue as guest" on `/login`. Creates a `guest:<id>` profile with standard member perks (AI, server control, posting); guests can never claim admin or Discord-verify. Empty = guest login disabled. |
 | `NEXT_PUBLIC_SITE_URL` | recommended | Canonical URL used in metadata and the forum RSS feed (`https://www.techsteal.space`). |
 
 `.env.example` documents these; `.env*` real files are gitignored and must stay local.

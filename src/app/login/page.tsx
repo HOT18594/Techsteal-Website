@@ -6,7 +6,7 @@ import { LoginClient } from "./LoginClient";
 
 export const metadata: Metadata = {
   title: "Log in",
-  description: `Sign in with Discord to access ${siteConfig.name} member features.`,
+  description: `Sign in with Discord or as a guest to access ${siteConfig.name} member features.`,
   robots: { index: false, follow: false },
 };
 

@@ -141,6 +141,7 @@ export function SettingsClient() {
   };
 
   const isAdmin = user?.role === "admin" || profile?.role === "admin";
+  const isGuest = (user?.id ?? profile?.id ?? "").startsWith("guest:");
   const discordVerified = profile?.discordVerified ?? user?.discordVerified ?? false;
   const onboarded = profile?.onboarded ?? user?.onboarded ?? false;
 
@@ -220,7 +221,7 @@ export function SettingsClient() {
                     : "border-[var(--border)] text-[var(--muted-2)]"
                 }`}
               >
-                {discordVerified ? "Discord verified" : "Discord unverified"}
+                {isGuest ? "Guest" : discordVerified ? "Discord verified" : "Discord unverified"}
               </span>
               {onboarded ? (
                 <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full border border-[var(--emerald)]/40 text-[var(--emerald)]">
@@ -293,55 +294,69 @@ export function SettingsClient() {
         </div>
 
         {/* Discord verification */}
-        <div className="card p-6 mb-6">
-          <h2 className="font-display text-lg font-bold mb-1 flex items-center gap-2">
-            <i className="fa-brands fa-discord text-[var(--accent)]" aria-hidden="true" />
-            Discord
-          </h2>
-          <p className="text-sm text-[var(--muted)] mb-5">
-            Verify you&apos;re a member of the official server — it unlocks AI access,
-            Gallery posting, and Server Control, and shows the badge on your profile.
-          </p>
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-            <div
-              className={`flex-1 rounded-[14px] border px-4 py-3 text-sm ${
-                verifyState === "verified" || discordVerified
-                  ? "border-[var(--emerald)]/40 bg-[var(--emerald)]/10 text-[var(--emerald)]"
-                  : "border-[var(--border)] bg-[var(--bg-2)] text-[var(--muted)]"
-              }`}
-            >
-              {verifyState === "checking" ? (
-                <span className="flex items-center gap-2">
-                  <i className="fa-solid fa-spinner fa-spin text-[var(--accent)]" aria-hidden="true" /> Checking…
-                </span>
-              ) : verifyState === "verified" || discordVerified ? (
-                <span className="flex items-center gap-2">
-                  <i className="fa-solid fa-circle-check" aria-hidden="true" /> Verified member
-                </span>
-              ) : verifyState === "not_configured" ? (
-                <span className="flex items-center gap-2">
-                  <i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /> Verification isn&apos;t set up yet
-                </span>
-              ) : (
-                <span className="flex items-center gap-2">
-                  <i className="fa-solid fa-user-check" aria-hidden="true" /> Not verified yet
-                </span>
-              )}
-            </div>
-            <button
-              type="button"
-              className="btn-secondary flex-shrink-0"
-              onClick={() => void verifyDiscord()}
-              disabled={verifyState === "checking" || discordVerified}
-            >
-              <i className="fa-solid fa-rotate" aria-hidden="true" />
-              {discordVerified ? "Verified" : "Verify"}
-            </button>
+        {isGuest ? (
+          <div className="card p-6 mb-6">
+            <h2 className="font-display text-lg font-bold mb-1 flex items-center gap-2">
+              <i className="fa-solid fa-user-secret text-[var(--accent)]" aria-hidden="true" />
+              Guest account
+            </h2>
+            <p className="text-sm text-[var(--muted)]">
+              You&apos;re signed in as a guest. You have the standard member perks — AI
+              access, Gallery posting, and Server Control. Sign out and continue with
+              Discord any time to get a permanent profile.
+            </p>
           </div>
-        </div>
+        ) : (
+          <div className="card p-6 mb-6">
+            <h2 className="font-display text-lg font-bold mb-1 flex items-center gap-2">
+              <i className="fa-brands fa-discord text-[var(--accent)]" aria-hidden="true" />
+              Discord
+            </h2>
+            <p className="text-sm text-[var(--muted)] mb-5">
+              Verify you&apos;re a member of the official server — it unlocks AI access,
+              Gallery posting, and Server Control, and shows the badge on your profile.
+            </p>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+              <div
+                className={`flex-1 rounded-[14px] border px-4 py-3 text-sm ${
+                  verifyState === "verified" || discordVerified
+                    ? "border-[var(--emerald)]/40 bg-[var(--emerald)]/10 text-[var(--emerald)]"
+                    : "border-[var(--border)] bg-[var(--bg-2)] text-[var(--muted)]"
+                }`}
+              >
+                {verifyState === "checking" ? (
+                  <span className="flex items-center gap-2">
+                    <i className="fa-solid fa-spinner fa-spin text-[var(--accent)]" aria-hidden="true" /> Checking…
+                  </span>
+                ) : verifyState === "verified" || discordVerified ? (
+                  <span className="flex items-center gap-2">
+                    <i className="fa-solid fa-circle-check" aria-hidden="true" /> Verified member
+                  </span>
+                ) : verifyState === "not_configured" ? (
+                  <span className="flex items-center gap-2">
+                    <i className="fa-solid fa-triangle-exclamation" aria-hidden="true" /> Verification isn&apos;t set up yet
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-2">
+                    <i className="fa-solid fa-user-check" aria-hidden="true" /> Not verified yet
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                className="btn-secondary flex-shrink-0"
+                onClick={() => void verifyDiscord()}
+                disabled={verifyState === "checking" || discordVerified}
+              >
+                <i className="fa-solid fa-rotate" aria-hidden="true" />
+                {discordVerified ? "Verified" : "Verify"}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Admin code */}
-        {!isAdmin ? (
+        {isGuest ? null : !isAdmin ? (
           <div className="card p-6 mb-6">
             <h2 className="font-display text-lg font-bold mb-1 flex items-center gap-2">
               <i className="fa-solid fa-key text-[var(--accent)]" aria-hidden="true" />

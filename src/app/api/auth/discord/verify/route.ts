@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { applyDiscordVerification, findAccount } from "@/lib/accounts";
 import { checkDiscordGuildMembership } from "@/lib/discord";
+import { isGuestId } from "@/lib/guest";
 import { isRateLimited } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +23,11 @@ export const dynamic = "force-dynamic";
 export async function POST() {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Guests have no Discord account to check — their perks are explicit grants.
+  if (isGuestId(user.id)) {
+    return NextResponse.json({ configured: true, verified: false });
+  }
 
   if (isRateLimited(`verify:${user.id}`, 10, 60_000)) {
     return NextResponse.json(

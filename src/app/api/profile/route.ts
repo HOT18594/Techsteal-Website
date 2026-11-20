@@ -6,6 +6,7 @@ import { clearSession, getSessionUser, setSession } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { getAdminCode } from "@/lib/admin-code";
+import { isGuestId } from "@/lib/guest";
 import { isValidMcName } from "@/lib/mc-name";
 import { isRateLimited, rateLimitIp } from "@/lib/rate-limit";
 import { profiles } from "@/lib/schema";
@@ -149,6 +150,13 @@ export async function PATCH(request: NextRequest) {
   // (403, rate-limited) so onboarding can tell a wrong code apart from a
   // success, and slow down brute-forcing.
   if (typeof body.adminCode === "string" && body.adminCode.trim().length > 0) {
+    // Guest accounts come from a shared password — never allowed to self-promote.
+    if (isGuestId(account.id)) {
+      return NextResponse.json(
+        { error: "Guest accounts can't unlock admin access." },
+        { status: 403 }
+      );
+    }
     // Key the limiter on the signed-in user too — x-forwarded-for alone is
     // spoofable on misconfigured hosts and would let an attacker rotate IPs.
     if (
