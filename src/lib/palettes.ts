@@ -7,6 +7,10 @@ export const PALETTES = [
   { id: "rose", name: "Rosewood", colors: ["#20191d", "#2e2229", "#ddb4c5"] },
   { id: "amethyst", name: "Amethyst", colors: ["#1c1922", "#292331", "#c9b6e4"] },
   { id: "ocean", name: "Ocean", colors: ["#171d20", "#212d32", "#a4c6d3"] },
+  { id: "emerald", name: "Emerald", colors: ["#101b15", "#192c22", "#4ade80"] },
+  { id: "diamond", name: "Diamond", colors: ["#101920", "#192935", "#38bdf8"] },
+  { id: "crimson", name: "Redstone", colors: ["#211317", "#311c22", "#fb7185"] },
+  { id: "gold", name: "Gold", colors: ["#1f1a11", "#2f2719", "#facc15"] },
 ] as const;
 
 export type PaletteId = (typeof PALETTES)[number]["id"];

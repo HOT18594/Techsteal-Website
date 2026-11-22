@@ -4,6 +4,7 @@ import { ACCOUNT_DB_ERROR_MESSAGE, requireAdminAccount } from "@/lib/accounts";
 import { listAuditEntries } from "@/lib/audit";
 import { getDb } from "@/lib/db";
 import { getExarotonConfig } from "@/lib/exaroton";
+import { getLaunchState } from "@/lib/launch";
 import { getLiveStatus } from "@/lib/live-status";
 import {
   announcements,
@@ -30,6 +31,7 @@ export async function GET() {
   }
 
   const db = getDb();
+  const launch = await getLaunchState();
   const hostingFlags = {
     exarotonConfigured: getExarotonConfig() !== null,
     discordBotConfigured: Boolean(
@@ -44,8 +46,8 @@ export async function GET() {
   const configSummary = {
     season: siteConfig.season,
     previousSeason: siteConfig.previousSeason,
-    seasonLive: siteConfig.seasonLive,
-    seasonStart: siteConfig.seasonStart,
+    seasonLive: launch.seasonLive,
+    seasonStart: launch.enabled ? launch.launchAt.slice(0, 10) : siteConfig.seasonStart,
     address: siteConfig.address,
     version: siteConfig.version,
     software: siteConfig.software,

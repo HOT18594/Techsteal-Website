@@ -17,6 +17,8 @@
 import { desc, eq } from "drizzle-orm";
 import { siteConfig } from "./site";
 import { getDb } from "./db";
+import { getLaunchState } from "./launch";
+import { formatLaunchEastern, type LaunchState } from "./launch-shared";
 import { forumThreads, galleryItems, profiles, ruleSections, timelineEvents } from "./schema";
 import {
   CHATTY_TOOLS,
@@ -186,8 +188,14 @@ function buildSystemPrompt(opts: {
   knowledge: string;
   hasDb: boolean;
   webSearchEnabled: boolean;
+  launch: LaunchState;
 }): string {
   const c = siteConfig;
+  const seasonLive = opts.launch.seasonLive;
+  const launchLabel =
+    !seasonLive && opts.launch.enabled
+      ? formatLaunchEastern(opts.launch.launchAt, "full")
+      : "";
   const u = opts.user;
   const parsedMemberSince = u.memberSince ? new Date(u.memberSince) : null;
   const memberSince =
@@ -262,26 +270,23 @@ function buildSystemPrompt(opts: {
     `=== SERVER FACTS (from config — always true) ===`,
     `- Address: ${c.address}`,
     `- Edition: Java Edition ${c.version}`,
-    `- Difficulty: ${c.difficulty} · Whitelist: ${c.whitelist} · Region: ${c.location}`,
-    `- Software: ${c.software} · Season: ${c.season} (${c.seasonLive ? "live now" : "coming soon — NOT open to players yet"}) · Max players: ${c.maxPlayers}`,
+    `- Difficulty: ${c.difficulty} · Whitelist: ${c.whitelist === "Enabled" ? "Enabled" : "Disabled (NOT a whitelisted server — anyone with the pack can join once live)"} · Region: ${c.location}`,
+    `- Software: ${c.software} · Season: ${c.season} (${seasonLive ? "live now" : `coming soon — NOT open to players yet${launchLabel ? `, scheduled for ${launchLabel} Eastern` : ""}`}) · Max players: ${c.maxPlayers}`,
     `- Software type: ${c.software} is a MODDED server platform — server-side mods are managed by admins. Players may use client-side mods that follow the Rules page (visual/build aids are fine, unfair advantages are not). For questions about specific mods or modpacks, use search_mods.`,
-    `- Server stats: ${c.stats.tps} TPS target · ${c.seasonLive ? `${c.stats.uptimeDays} days into ${c.season}` : `${c.season} hasn't launched yet`} · world ${c.stats.worldSize} GB so far (uptime and world size reset every season)`,
+    `- Server stats: ${c.stats.tps} TPS target · ${seasonLive ? `${c.stats.uptimeDays} days into ${c.season}` : `${c.season} hasn't launched yet`} · world ${c.stats.worldSize} GB so far (uptime and world size reset every season)`,
     ``,
     `=== HOW TO JOIN (if asked, give exactly these steps) ===`,
-    ...(c.seasonLive
-      ? [
-          `1. Open Minecraft Java Edition (${c.version}).`,
-          `2. Main menu → Multiplayer → Add Server.`,
-          `3. Server address: ${c.address} → Done.`,
-          `4. Select the server and join.`,
-        ]
+    `1. Download the ${c.season} client ZIP directly from /join${c.modpackDownloadUrl ? ` (${c.modpackDownloadUrl})` : " once the download is posted"} — anyone on the website (including guests and signed-out visitors) can download it with no sign-in or Discord verification needed.`,
+    `2. Install it: Prism Launcher → Add Instance → Import → select the ZIP; CurseForge → Minecraft → Create Custom Profile → Import Profile .zip. For the official Minecraft Launcher or Modrinth App, follow the manual setup steps on /join.`,
+    `3. Launch the pack, then go to Multiplayer → Add Server → ${c.address} → Done. This is NOT a whitelisted server, so linking a username or getting approved is not required.`,
+    ...(seasonLive
+      ? [`4. Select the server and join.`]
       : [
-          `${c.season} is NOT open yet — it's still in testing. Do NOT give join steps or the server address as joinable.`,
-          `Tell players the season is coming soon, that joining details will be posted on /join and announced in Discord when it launches, and to watch those for the opening.`,
+          `${c.season} is NOT open yet${launchLabel ? ` (scheduled launch: ${launchLabel} Eastern)` : ""}. Players can install the pack and save the server now, but they cannot connect until launch. Never imply that the server is already joinable.`,
         ]),
     ``,
     `=== WEBSITE GUIDE (where to send people) ===`,
-    `- /status — live server status${c.seasonLive ? "; verified members can also start/stop the server there" : " (server start/stop controls open at launch — not available yet)"}`,
+    `- /status — live server status${seasonLive ? "; verified members can also start/stop the server there" : " (server start/stop controls open at launch — not available yet)"}`,
     `- /forum — discussions: anyone can read, signed-in members can post threads and replies`,
     `- /members — the member directory`,
     `- /gallery — build screenshots; verified members can post`,
@@ -673,7 +678,7 @@ export async function streamChatReply(
     webSearchEnabled &&
     !isServerQuestion &&
     /\b(how|where|when|which|what|recipe|craft|find|farm|mechanic|version|update|best|fastest)\b/i.test(message);
-  const [results, modHits, snapshot] = await Promise.all([
+  const [results, modHits, snapshot, launch] = await Promise.all([
     // Free web search pre-attached for general questions (saves a tool
     // round); pure server questions get tools instead. Mod questions keep
     // web results too — news complements the Modrinth data.
@@ -684,12 +689,14 @@ export async function streamChatReply(
     // Hard 8s ceiling: a pooler stall degrades to a no-snapshot answer
     // instead of hanging the response before headers can be sent.
     withTimeout(buildKnowledgeSnapshot(), 8_000, { text: "", hasDb: true }),
+    getLaunchState(),
   ]);
   const system = buildSystemPrompt({
     user,
     knowledge: snapshot.text,
     hasDb: snapshot.hasDb,
     webSearchEnabled,
+    launch,
   });
 
   // Sanitize client-sent history: cap turns, length, and roles — never

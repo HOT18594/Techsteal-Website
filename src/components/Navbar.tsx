@@ -8,6 +8,7 @@ import { fallbackStatus } from "@/lib/fallback-data";
 import { hasOpenOverlays } from "@/lib/overlay-stack";
 import type { ServerStatus } from "@/types";
 import { Avatar } from "./Avatar";
+import { useLaunchState } from "./LaunchProvider";
 import { NotificationBell } from "./NotificationBell";
 import { useToast } from "./Toast";
 import { useApi } from "@/lib/use-api";
@@ -118,13 +119,24 @@ export function Navbar() {
     }
   };
 
+  const { launch } = useLaunchState();
+  const seasonLive = launch.seasonLive;
+  const prevLiveRef = useRef(seasonLive);
+
+  useEffect(() => {
+    if (!prevLiveRef.current && seasonLive) {
+      void refetchStatus();
+    }
+    prevLiveRef.current = seasonLive;
+  }, [seasonLive, refetchStatus]);
+
   const isAdmin = user?.role === "admin";
   const statusLive = status.source === "live";
   const rawOnline = statusLive && status.online;
-  const online = siteConfig.seasonLive ? rawOnline : isAdmin && rawOnline;
+  const online = seasonLive ? rawOnline : isAdmin && rawOnline;
   const players = online ? (status.players ?? 0) : 0;
   const max = status.max ?? siteConfig.maxPlayers;
-  const statusText = !siteConfig.seasonLive
+  const statusText = !seasonLive
     ? isAdmin && rawOnline
       ? "Prep"
       : "Soon"
@@ -133,7 +145,7 @@ export function Navbar() {
       : online
         ? "Online"
         : "Offline";
-  const statusAria = !siteConfig.seasonLive
+  const statusAria = !seasonLive
     ? `${siteConfig.season} ${isAdmin && rawOnline ? "in prep" : "coming soon"}. View server status`
     : `${statusText}${online ? `, ${players} of ${max} players` : ""}. View server status`;
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);

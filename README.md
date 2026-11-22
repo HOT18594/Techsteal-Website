@@ -31,15 +31,14 @@ Current Season 6 config in `site.ts`:
 | Field | Value |
 | --- | --- |
 | `season` / `previousSeason` | `Season 6` / `Season 5` |
-| `address` | `techstealseason6.exaroton.me:19457` |
+| `address` | `play.techsteal.space` |
 | `version` / `software` | `1.21.11` / `Fabric` |
 | `maxPlayers` | `10` |
-| `seasonStart` | `2026-11-13` — **update to the real opening day before flipping the flag** |
+| `seasonStart` | `2026-11-22` — launch day; update again if the opening moves |
 
-> **DNS caveat:** `play.techsteal.space` still CNAMEs to the old Season 5 host.
-> Until it is flipped at the DNS provider, the site advertises the working
-> exaroton address directly. Do not switch `address` back to the CNAME before
-> the DNS change lands, or the join instructions break.
+> **Public join address:** `play.techsteal.space` CNAMEs to the Season 6
+> exaroton host. Use this branded address in all player-facing copy; the direct
+> exaroton hostname is only for internal hosting operations.
 
 ---
 
@@ -94,13 +93,14 @@ Everything the code reads (authoritative list):
 | `SESSION_SECRET` | **yes in prod** | Signs the session JWT. Production fails closed without a strong value. |
 | `ADMIN_CODE` | **yes in prod** | Code that promotes a member to admin (`ADMIN_UNLOCK_CODE` is accepted as a fallback). |
 | `SUPABASE_URL` | for uploads | `https://<ref>.supabase.co` |
-| `SUPABASE_SERVICE_ROLE_KEY` | for uploads | Server-only key; never expose to the browser. Bucket must be named `gallery`. |
+| `SUPABASE_SERVICE_ROLE_KEY` | for uploads | Server-only key; never expose to the browser. Gallery uploads use the public `gallery` bucket. The Season 6 client pack uses the separate `modpacks` bucket and streams through `/api/modpack` to any visitor (including guests). |
 | `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | for login | Discord OAuth app. Redirect URIs: `http://localhost:3000/api/auth/discord/callback` and `https://www.techsteal.space/api/auth/discord/callback`. |
 | `DISCORD_BOT_TOKEN` / `DISCORD_GUILD_ID` | for verification | Bot must be in the guild; used to verify membership during onboarding. |
 | `EXAROTON_TOKEN` / `EXAROTON_SERVER_ID` | for status/control | Exaroton hosting API (the Season 6 server). Server ID may carry a leading `#` (stripped in code). Without these the status page falls back to mcsrvstat.us pings and hides server controls. |
 | `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` / `AI_FALLBACK_MODELS` | for assistant | Any OpenAI-compatible `/chat/completions` endpoint. `AI_FALLBACK_MODEL` (singular) is a legacy alias. Empty key = "assistant not connected" mode. |
 | `MINECRAFT_SERVER` / `MINECRAFT_PORT` | no | Address for the status API; defaults to `siteConfig.address`. |
 | `GUEST_PASSWORD` | for guest login | Shared password for "Continue as guest" on `/login`. Creates a `guest:<id>` profile with standard member perks (AI, server control, posting); guests can never claim admin or Discord-verify. Empty = guest login disabled. |
+| `CRON_SECRET` | optional for cron | Bearer token sent by Vercel Cron when calling `GET /api/launch` to auto-start the server at the scheduled launch time. |
 | `NEXT_PUBLIC_SITE_URL` | recommended | Canonical URL used in metadata and the forum RSS feed (`https://www.techsteal.space`). |
 
 `.env.example` documents these; `.env*` real files are gitignored and must stay local.
@@ -124,7 +124,7 @@ src/
 │   ├── error.tsx global-error.tsx not-found.tsx
 │   ├── robots.ts sitemap.ts     # Dynamic SEO robots.txt + XML sitemap
 │   ├── layout.tsx               # Root layout: fonts, navbar, footer, palette bootstrap, toast
-│   └── api/                     # 39 route handlers (see below)
+│   └── api/                     # 40 route handlers (see below)
 ├── components/                  # One-purpose components (Navbar, Chatty, AdminPanel, RichEditor, Poll, …)
 ├── lib/                         # site config, db, auth, accounts, exaroton, ai, storage, palettes…
 ├── types/                       # Shared TypeScript types
@@ -137,19 +137,20 @@ audit/                           # past audit reports (context, not specs)
 **API routes** (`src/app/api/…`): `status`, `stats`, `activity`, `search`,
 `notifications`, `chat`, `forum` (+`[id]`, `like`, `vote`), `gallery` (+`[id]`,
 `like`), `members` (+`[id]`), `polls/active`, `timeline`, `rules`, `profile`,
-`upload`, `minecraft/skin`, `server/control`, `server/telemetry`, `announcements`
-(+`[id]`), `admin/overview`, `admin/members`, `admin/server`, `admin/announcements`,
+`upload`, `modpack`, `launch`, `minecraft/skin`, `server/control`, `server/telemetry`, `announcements`
+(+`[id]`), `admin/overview`, `admin/launch`, `admin/members`, `admin/server`, `admin/announcements`,
 `admin/rules`, `admin/timeline`, `admin/moderation`, `admin/storage`, `admin/audit`,
-`auth/discord` (+`callback`, `verify`), `auth/logout`, `auth/me`. The
+`auth/discord` (+`callback`, `verify`), `auth/guest`, `auth/logout`, `auth/me`. The
 `forum/rss.xml`, `robots.txt`, and `sitemap.xml` handlers live outside
-`src/app/api/` — 42 request handlers in total.
+`src/app/api/` — 46 request handlers in total.
 
 **Data model** (`src/lib/schema.ts`): `forum_threads`, `forum_replies`,
 `forum_polls`, `forum_poll_votes`, `gallery_items`, `gallery_comments`,
 `timeline_events`, `rule_sections`, `profiles` (Discord accounts; `role`,
 `permissions`, `banned` denylist), `notifications` (per-user inbox behind the
 navbar bell), `audit_log` (append-only admin trail), `announcements` (sitewide
-bar). Content is edited in the DB — the site updates without a redeploy.
+bar), `launch_settings` (admin-controlled launch countdown & server auto-start
+schedule). Content is edited in the DB — the site updates without a redeploy.
 
 **Announcements**: admins publish, preview, and edit a title, optional body, and
 tone from `/admin` → Site Content. The newest active row renders as a dismissible
@@ -227,22 +228,27 @@ itself (e.g. a "live now" banner over a "coming soon" stats tile).
 
 1. **Set the real date.** `seasonStart` in `src/lib/site.ts` → the actual
    opening day (`YYYY-MM-DD`). The home tile counts "days live" from it.
-2. **Fix the join address if DNS moved.** If `play.techsteal.space` now points
-   at the Season 6 host, update `address` in `site.ts` and
-   `MINECRAFT_SERVER`/`MINECRAFT_PORT` in the Vercel env; otherwise leave both
-   pointing at the exaroton host.
-3. **Write the timeline row.** Open `/admin` → **Site Content** → **History Timeline**
+2. **Check the public join address.** `address` in `site.ts` is
+   `play.techsteal.space`, which points at the Season 6 host. Keep
+   `MINECRAFT_SERVER`/`MINECRAFT_PORT` unset for normal public lookups, or use
+   the direct exaroton host only if a separate internal status lookup is needed.
+3. **Publish the client pack.** Upload the importable ZIP to the Supabase
+   `modpacks` bucket at `season-6/TECHSTEAL-Season-6.zip`. Keep
+   `modpackDownloadUrl` in `src/lib/site.ts` pointed at `/api/modpack`, which
+   streams the file to any visitor on the site (including guests). Keep the pack
+   separate from the `gallery` bucket so gallery cleanup never deletes it.
+4. **Write the timeline row.** Open `/admin` → **Site Content** → **History Timeline**
    and click **Mark Season 6 Live** to switch Season 6 from "Coming soon" to the
    opening date with era "Current Season" and archive Season 5 as "Concluded"
    (the Overview readiness card's timeline button only prepares the prep row
    while `seasonLive` is false). Without this the History page still says
    Season 6 is upcoming.
-4. **Flip the flag.** `seasonLive: false` → `true` in `src/lib/site.ts`.
-5. **Verify locally.** `npx tsc --noEmit` → `npm run lint` → `npm run build`,
+5. **Flip the flag.** `seasonLive: false` → `true` in `src/lib/site.ts`.
+6. **Verify locally.** `npx tsc --noEmit` → `npm run lint` → `npm run build`,
    then `npm run dev` and check home / status / join say what you expect, and
    that `/status` shows the Manage tab for an admin.
-6. **Deploy.** `npx vercel deploy --prod` (see the deploy caveat above).
-7. **Verify production.** Load the live domain and confirm the hero reads
+7. **Deploy.** `npx vercel deploy --prod` (see the deploy caveat above).
+8. **Verify production.** Load the live domain and confirm the hero reads
    "Season 6 — live now", the stats tile shows counts rather than "Coming soon",
    and `POST /api/server/control` is no longer 403.
 

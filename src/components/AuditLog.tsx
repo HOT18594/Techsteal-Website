@@ -22,6 +22,12 @@ export const AUDIT_ACTION_META: Record<string, ActionMeta> = {
   server_restart: { icon: "fa-rotate-right", label: "restarted the server", tone: "is-amber", category: "server" },
   server_command: { icon: "fa-terminal", label: "ran console command on", tone: "is-accent", category: "server" },
   server_ram: { icon: "fa-memory", label: "updated server RAM on", tone: "is-accent", category: "server" },
+  server_motd: { icon: "fa-message", label: "updated server MOTD on", tone: "is-accent", category: "server" },
+  server_config: { icon: "fa-sliders", label: "updated server config", tone: "is-accent", category: "server" },
+  server_file_write: { icon: "fa-file-pen", label: "edited server file", tone: "is-amber", category: "server" },
+  server_file_delete: { icon: "fa-file-circle-xmark", label: "deleted server file", tone: "is-red", category: "server" },
+  server_share_logs: { icon: "fa-share-nodes", label: "shared server logs", tone: "is-accent", category: "server" },
+  launch_schedule: { icon: "fa-clock", label: "updated the launch schedule for", tone: "is-accent", category: "server" },
   whitelist_add: { icon: "fa-user-check", label: "whitelisted", tone: "is-green", category: "server" },
   whitelist_remove: { icon: "fa-user-minus", label: "removed from whitelist", tone: "is-amber", category: "server" },
   whitelist_sync: { icon: "fa-arrows-rotate", label: "synced whitelist", tone: "is-green", category: "server" },
@@ -29,6 +35,8 @@ export const AUDIT_ACTION_META: Record<string, ActionMeta> = {
   ops_remove: { icon: "fa-user-xmark", label: "revoked operator from", tone: "is-red", category: "server" },
   banlist_add: { icon: "fa-gavel", label: "banned player", tone: "is-red", category: "server" },
   banlist_remove: { icon: "fa-unlock", label: "pardoned player", tone: "is-green", category: "server" },
+  banip_add: { icon: "fa-shield-halved", label: "banned IP on server", tone: "is-red", category: "server" },
+  banip_remove: { icon: "fa-unlock", label: "unbanned IP on server", tone: "is-green", category: "server" },
 
   // Member access
   ban: { icon: "fa-user-slash", label: "removed member", tone: "is-red", category: "members" },

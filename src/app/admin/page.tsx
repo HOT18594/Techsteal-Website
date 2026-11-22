@@ -3,7 +3,17 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { requireAdminAccount, ACCOUNT_DB_ERROR_MESSAGE } from "@/lib/accounts";
 import { AdminPanel } from "@/components/AdminPanel";
+import type { AdminSectionId } from "@/components/AdminOverview";
 import { SubPage } from "@/components/SubPage";
+
+const VALID_TABS = new Set<AdminSectionId>([
+  "overview",
+  "members",
+  "server",
+  "content",
+  "moderation",
+  "audit",
+]);
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +26,11 @@ export const metadata: Metadata = {
 // Admin-only page. Server-side guard: non-admins are redirected to /login or /.
 // The role check re-reads the database so BOTH promotions and demotions take
 // effect immediately instead of waiting for the 7-day session cookie to expire.
-export default async function AdminPage() {
+export default async function AdminPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect("/login?next=/admin");
 
@@ -45,5 +59,11 @@ export default async function AdminPage() {
     minecraftUsername: gate.account.minecraftUsername ?? null,
   };
 
-  return <AdminPanel currentUser={freshUser} />;
+  const params = await searchParams;
+  const rawTab = typeof params?.tab === "string" ? params.tab : "";
+  const initialTab: AdminSectionId = VALID_TABS.has(rawTab as AdminSectionId)
+    ? (rawTab as AdminSectionId)
+    : "overview";
+
+  return <AdminPanel currentUser={freshUser} initialTab={initialTab} />;
 }

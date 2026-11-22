@@ -21,24 +21,28 @@ export const fallbackThreads: ForumThread[] = [];
 
 export const fallbackGallery: GalleryItem[] = [];
 
-export const fallbackTimeline: TimelineEvent[] = [
-  { date: "Concluded", title: "Season 1", era: "Past Seasons", major: true, description: "Season 1 has passed — it ran before this website existed. The world is closed, but it started everything." },
-  { date: "Concluded", title: "Season 2", era: "Past Seasons", major: true, description: "Season 2 has passed — another world from before the site launched. Its story lives on in the community." },
-  { date: "Concluded", title: "Season 3", era: "Past Seasons", major: true, description: "Season 3 has passed — the server kept growing through it, still before anyone could track it here." },
-  { date: "Concluded", title: "Season 4", era: "Past Seasons", major: true, description: "Season 4 has passed — the final season before the website launched. The site started during Season 5." },
-  { date: "Concluded", title: siteConfig.previousSeason, era: "Past Seasons", major: true, description: `${siteConfig.previousSeason} has wrapped — the first season the website lived through. Its world closes its story here.` },
-  // Derived from site.ts so a season flip or a new season number updates this
-  // entry too — the timeline must never disagree with the hero banner.
-  {
-    date: siteConfig.seasonLive ? "Live" : "Coming soon",
-    title: siteConfig.season,
-    era: "Current Season",
-    major: true,
-    description: siteConfig.seasonLive
-      ? `${siteConfig.season} is live — a fresh world on ${siteConfig.software} ${siteConfig.version} with ${siteConfig.maxPlayers} player slots. New season, new story.`
-      : `${siteConfig.season} is coming soon — a fresh world on ${siteConfig.software} ${siteConfig.version} with ${siteConfig.maxPlayers} player slots. New season, new story.`,
-  },
-];
+export function buildFallbackTimeline(seasonLive: boolean = siteConfig.seasonLive): TimelineEvent[] {
+  return [
+    { date: "Concluded", title: "Season 1", era: "Past Seasons", major: true, description: "Season 1 has passed — it ran before this website existed. The world is closed, but it started everything." },
+    { date: "Concluded", title: "Season 2", era: "Past Seasons", major: true, description: "Season 2 has passed — another world from before the site launched. Its story lives on in the community." },
+    { date: "Concluded", title: "Season 3", era: "Past Seasons", major: true, description: "Season 3 has passed — the server kept growing through it, still before anyone could track it here." },
+    { date: "Concluded", title: "Season 4", era: "Past Seasons", major: true, description: "Season 4 has passed — the final season before the website launched. The site started during Season 5." },
+    { date: "Concluded", title: siteConfig.previousSeason, era: "Past Seasons", major: true, description: `${siteConfig.previousSeason} has wrapped — the first season the website lived through. Its world closes its story here.` },
+    // Derived from site.ts / launch schedule so the timeline never disagrees
+    // with the hero banner.
+    {
+      date: seasonLive ? "Live" : "Coming soon",
+      title: siteConfig.season,
+      era: "Current Season",
+      major: true,
+      description: seasonLive
+        ? `${siteConfig.season} is live — a fresh world on ${siteConfig.software} ${siteConfig.version} with ${siteConfig.maxPlayers} player slots. New season, new story.`
+        : `${siteConfig.season} is coming soon — a fresh world on ${siteConfig.software} ${siteConfig.version} with ${siteConfig.maxPlayers} player slots. New season, new story.`,
+    },
+  ];
+}
+
+export const fallbackTimeline: TimelineEvent[] = buildFallbackTimeline();
 
 export const fallbackRules: RuleSection[] = [
   {

@@ -184,6 +184,12 @@ islands) with a "Season 6 — coming soon" banner while `seasonLive` is false.
 timeline marks Season 6 as Current Season (Coming soon) and Seasons 1–5
 Concluded. The status page is a tabbed dashboard (Overview / Players /
 admin-only Console / permission-gated Manage); rules, history, and join are
-server-rendered. Keep any new copy season-aware. DNS caveat:
-`play.techsteal.space` still CNAMEs to the old Season 5 host until the owner
-flips it — the site shows the exaroton address directly.
+server-rendered. Keep any new copy season-aware. The Season 6 client pack lives
+in the Supabase `modpacks` bucket at `season-6/TECHSTEAL-Season-6.zip`.
+`GET /api/modpack` streams it to any visitor on the site (including guests and
+signed-out users, with light IP rate limiting). The same-site route is in
+`siteConfig.modpackDownloadUrl`. The server has no whitelist (`whitelist: "Disabled"`).
+Keep the pack out of the `gallery` bucket so image orphan cleanup cannot delete it. The public join address is
+`play.techsteal.space`, which CNAMEs to the Season 6 exaroton host. Use that
+branded address in all player-facing copy; keep the direct exaroton hostname
+for internal hosting operations only.

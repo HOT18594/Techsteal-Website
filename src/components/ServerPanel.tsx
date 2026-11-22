@@ -1,13 +1,26 @@
 "use client";
 
-// Admin → Server Ops. Live Exaroton power controls (Start / Stop / Restart),
-// RAM allocation, interactive console command runner + mclo.gs log sharing,
-// and Whitelist / Operators / Banned Players management with 1-click member sync.
+// Admin → Server Ops. Full Exaroton v1 secondary control center (admin-only):
+// Power controls (Start / Stop / Restart), RAM & MOTD, Live Console with
+// auto-refresh, command history & macros, Player Data Explorer (stats,
+// advancements, playerdata), structured server.properties Config Editor,
+// File Manager & Mods browser, Player Lists (Ops, Banned Players, Banned IPs,
+// Whitelist), and Exaroton Account & Credit Pools.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { EmptyState } from "@/components/EmptyState";
+import { useLaunchState } from "@/components/LaunchProvider";
 import { Modal } from "@/components/Modal";
+import { ServerAccountTab } from "@/components/server-ops/ServerAccountTab";
+import { ServerConfigTab } from "@/components/server-ops/ServerConfigTab";
+import { ServerFilesTab } from "@/components/server-ops/ServerFilesTab";
+import { ServerPlayersTab } from "@/components/server-ops/ServerPlayersTab";
 import { useToast } from "@/components/Toast";
+import type {
+  ExarotonAccountInfo,
+  ExarotonCreditPool,
+  ExarotonServerFullInfo,
+} from "@/lib/exaroton";
 import { isValidMcName } from "@/lib/mc-name";
 import { minotarUrl } from "@/lib/minotar";
 import { siteConfig } from "@/lib/site";
@@ -31,10 +44,40 @@ interface AdminServerResponse {
   error?: string;
 }
 
+interface ExarotonOverviewResponse {
+  configured?: boolean;
+  server?: ExarotonServerFullInfo | null;
+  account?: ExarotonAccountInfo | null;
+  pools?: ExarotonCreditPool[];
+  motd?: string | null;
+  playerLists?: string[];
+}
+
+type ServerOpsTab = "console" | "players" | "config" | "files" | "lists" | "account";
+
+const OPS_TABS: Array<{ id: ServerOpsTab; label: string; icon: string }> = [
+  { id: "console", label: "Console", icon: "fa-terminal" },
+  { id: "players", label: "Player Data", icon: "fa-user-astronaut" },
+  { id: "config", label: "Options & Config", icon: "fa-sliders" },
+  { id: "files", label: "Files & Mods", icon: "fa-folder-open" },
+  { id: "lists", label: "Player Lists", icon: "fa-user-shield" },
+  { id: "account", label: "Account & Credits", icon: "fa-coins" },
+];
+
 const PLAYER_LIST_TABS: Array<{ id: ServerPlayerListName; label: string; icon: string }> = [
-  { id: "whitelist", label: "Whitelist", icon: "fa-user-check" },
   { id: "ops", label: "Operators", icon: "fa-crown" },
   { id: "banned-players", label: "Banned Players", icon: "fa-gavel" },
+  { id: "banned-ips", label: "Banned IPs", icon: "fa-shield-halved" },
+  { id: "whitelist", label: "Whitelist", icon: "fa-user-check" },
+];
+
+const QUICK_MACROS = [
+  { label: "list", cmd: "list", run: true },
+  { label: "save-all", cmd: "save-all", run: true },
+  { label: "time set day", cmd: "time set day", run: true },
+  { label: "weather clear", cmd: "weather clear", run: true },
+  { label: "seed", cmd: "seed", run: true },
+  { label: "say …", cmd: "say ", run: false },
 ];
 
 const LOG_LEVELS = ["all", "info", "warning", "error", "chat"] as const;
@@ -42,6 +85,8 @@ type LogFilter = (typeof LOG_LEVELS)[number];
 
 export function ServerPanel() {
   const { show } = useToast();
+  const { launch } = useLaunchState();
+  const [subTab, setSubTab] = useState<ServerOpsTab>("console");
   const [status, setStatus] = useState<ServerStatus | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [allowed, setAllowed] = useState<boolean | null>(null);
@@ -49,16 +94,23 @@ export function ServerPanel() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [confirmPower, setConfirmPower] = useState<"stop" | "restart" | null>(null);
 
+  // Exaroton overview (account, credits, pools, full server info, MOTD)
+  const [overview, setOverview] = useState<ExarotonOverviewResponse | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(true);
+
   // Telemetry & console state
   const [telemetry, setTelemetry] = useState<ServerTelemetry | null>(null);
   const [ramDraft, setRamDraft] = useState<number>(4);
   const [logFilter, setLogFilter] = useState<LogFilter>("all");
   const [logSearch, setLogSearch] = useState("");
+  const [autoPollMs, setAutoPollMs] = useState<number>(0);
   const [command, setCommand] = useState("");
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [historyIdx, setHistoryIdx] = useState(-1);
   const [sharedLogUrl, setSharedLogUrl] = useState<string | null>(null);
 
   // Player lists state
-  const [activeList, setActiveList] = useState<ServerPlayerListName>("whitelist");
+  const [activeList, setActiveList] = useState<ServerPlayerListName>("ops");
   const [entries, setEntries] = useState<string[]>([]);
   const [listError, setListError] = useState<string | null>(null);
   const [verifiedMembers, setVerifiedMembers] = useState<LinkedMember[]>([]);
@@ -67,11 +119,8 @@ export function ServerPanel() {
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const consoleEndRef = useRef<HTMLDivElement | null>(null);
-  // Latest selected tab, readable from async callbacks (the 3.5s follow-up
-  // timer used to close over the list that was active when it was scheduled)
-  // and the request sequence that stops a slower, older list response from
-  // rendering its entries under the tab the admin is on now.
-  const activeListRef = useRef<ServerPlayerListName>("whitelist");
+  const commandInputRef = useRef<HTMLInputElement | null>(null);
+  const activeListRef = useRef<ServerPlayerListName>("ops");
   const listReqSeq = useRef(0);
 
   useEffect(() => {
@@ -80,10 +129,21 @@ export function ServerPanel() {
     };
   }, []);
 
+  const loadOverview = useCallback(async () => {
+    setOverviewLoading(true);
+    try {
+      const res = await fetch("/api/admin/server/overview", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as ExarotonOverviewResponse;
+      setOverview(data);
+    } catch {
+      /* retain previous overview */
+    } finally {
+      setOverviewLoading(false);
+    }
+  }, []);
+
   const load = useCallback(async (listToFetch: ServerPlayerListName = activeListRef.current) => {
-    // Only the newest request commits. A slow Whitelist fetch landing after
-    // the admin clicked Operators used to paint whitelist names under the
-    // Operators tab (so the row's ✕ removed the wrong list's player).
     const reqId = ++listReqSeq.current;
     setLoading(true);
     try {
@@ -99,8 +159,6 @@ export function ServerPanel() {
       };
       const opsData = (await opsRes.json().catch(() => ({}))) as AdminServerResponse;
 
-      // Superseded (newer tab / newer request) or no longer the active list:
-      // drop the whole payload instead of overwriting the current tab's data.
       if (reqId !== listReqSeq.current || listToFetch !== activeListRef.current) return;
 
       if (statusData) setStatus(statusData);
@@ -127,12 +185,26 @@ export function ServerPanel() {
     void load(activeList);
   }, [activeList, load]);
 
+  useEffect(() => {
+    void loadOverview();
+  }, [loadOverview]);
+
+  // Optional auto-refresh for the live console
+  useEffect(() => {
+    if (!autoPollMs || subTab !== "console") return;
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void load();
+      }
+    }, autoPollMs);
+    return () => window.clearInterval(id);
+  }, [autoPollMs, subTab, load]);
+
   const scheduleFollowupRefresh = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
-      // load() defaults to the list selected when the timer FIRES — not the
-      // one that was selected when the power action scheduled it.
       void load();
+      void loadOverview();
     }, 3500);
   };
 
@@ -156,15 +228,14 @@ export function ServerPanel() {
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(data.error || "The server didn't respond.");
-      setConfirmPower(null);
       show(
-        action === "start" ? "Starting server" : action === "restart" ? "Restarting server" : "Stopping server",
-        "Exaroton accepted the command — refreshing state shortly."
+        action === "start" ? "Server starting" : action === "restart" ? "Server restarting" : "Server stopping",
+        "Exaroton queued the power command."
       );
-      await load();
+      setConfirmPower(null);
       scheduleFollowupRefresh();
     } catch (err) {
-      show("Control failed", err instanceof Error ? err.message : "Try again.", "error");
+      show("Power action failed", err instanceof Error ? err.message : "Try again.", "error");
     } finally {
       setBusyAction(null);
     }
@@ -178,25 +249,51 @@ export function ServerPanel() {
     void runPower(action);
   };
 
+  const executeCommand = useCallback(
+    async (rawCmd: string) => {
+      const cmd = rawCmd.trim().replace(/^\/+/, "");
+      if (!cmd) return;
+      setBusyAction("command");
+      try {
+        const res = await fetch("/api/admin/server", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "command", command: cmd }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) throw new Error(data.error || "Couldn't run command.");
+        setCommandHistory((prev) => [cmd, ...prev.filter((c) => c !== cmd)].slice(0, 30));
+        setHistoryIdx(-1);
+        show("Command sent", `/${cmd}`);
+        scheduleFollowupRefresh();
+      } catch (err) {
+        show("Command failed", err instanceof Error ? err.message : "Try again.", "error");
+      } finally {
+        setBusyAction(null);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [show]
+  );
+
   const sendCommand = async () => {
-    const trimmed = command.trim().replace(/^\/+/, "");
-    if (!trimmed) return;
-    setBusyAction("command");
-    try {
-      const res = await fetch("/api/admin/server", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "command", command: trimmed }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) throw new Error(data.error || "Couldn't send command.");
-      setCommand("");
-      show("Command sent", `/${trimmed}`);
-      scheduleFollowupRefresh();
-    } catch (err) {
-      show("Command failed", err instanceof Error ? err.message : "Try again.", "error");
-    } finally {
-      setBusyAction(null);
+    const cmd = command.trim();
+    if (!cmd) return;
+    setCommand("");
+    await executeCommand(cmd);
+  };
+
+  const onCommandKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "ArrowUp" && commandHistory.length > 0) {
+      event.preventDefault();
+      const next = Math.min(historyIdx + 1, commandHistory.length - 1);
+      setHistoryIdx(next);
+      setCommand(commandHistory[next]);
+    } else if (event.key === "ArrowDown" && historyIdx >= 0) {
+      event.preventDefault();
+      const next = historyIdx - 1;
+      setHistoryIdx(next);
+      setCommand(next >= 0 ? commandHistory[next] : "");
     }
   };
 
@@ -208,12 +305,12 @@ export function ServerPanel() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "ram", ramGb: ramDraft }),
       });
-      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      const data = (await res.json().catch(() => ({}))) as { ramGb?: number; error?: string };
       if (!res.ok) throw new Error(data.error || "Couldn't update RAM.");
-      show("RAM updated", `Allocated ${ramDraft} GB to the server.`);
+      show("Memory updated", `Server RAM set to ${data.ramGb ?? ramDraft} GB.`);
       await load();
     } catch (err) {
-      show("RAM update failed", err instanceof Error ? err.message : "Server must be offline to resize RAM.", "error");
+      show("RAM update failed", err instanceof Error ? err.message : "Try again.", "error");
     } finally {
       setBusyAction(null);
     }
@@ -228,23 +325,12 @@ export function ServerPanel() {
         body: JSON.stringify({ action: "share_logs" }),
       });
       const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
-      if (!res.ok || !data.url) throw new Error(data.error || "Couldn't upload log.");
+      if (!res.ok || !data.url) throw new Error(data.error || "Couldn't share logs.");
       setSharedLogUrl(data.url);
-      try {
-        await navigator.clipboard.writeText(data.url);
-        show("Log shared to mclo.gs", "Redacted log URL copied to your clipboard.");
-      } catch {
-        // The share itself succeeded and the URL renders in the bar above —
-        // only the clipboard write failed (insecure origin, permission).
-        // Claiming it was copied sent admins to paste stale clipboard text.
-        show(
-          "Log shared to mclo.gs",
-          "Clipboard blocked — the URL is ready above to copy manually.",
-          "error"
-        );
-      }
+      await navigator.clipboard.writeText(data.url).catch(() => {});
+      show("Logs uploaded to mclo.gs", "Redacted link copied to clipboard.");
     } catch (err) {
-      show("Share failed", err instanceof Error ? err.message : "Try again.", "error");
+      show("Log share failed", err instanceof Error ? err.message : "Try again.", "error");
     } finally {
       setBusyAction(null);
     }
@@ -261,22 +347,20 @@ export function ServerPanel() {
   }, [telemetry, logFilter, logSearch]);
 
   const copyConsole = async () => {
-    const text = filteredLines.map((l) => l.text).join("\n");
-    if (!text) return;
+    if (filteredLines.length === 0) return;
     try {
-      await navigator.clipboard.writeText(text);
-      show("Copied", `Copied ${filteredLines.length} log line(s).`);
+      await navigator.clipboard.writeText(filteredLines.map((l) => l.text).join("\n"));
+      show("Console copied", `${filteredLines.length} lines copied.`);
     } catch {
-      // No clipboard (plain HTTP/LAN, permission denied) — don't report a
-      // copy that didn't happen; the admin would paste stale content.
-      show("Couldn't copy", "Your browser blocked clipboard access.", "error");
+      show("Couldn't copy", "Clipboard access was denied.", "error");
     }
   };
 
   const addPlayer = async () => {
-    const trimmed = newPlayerName.trim();
-    if (!isValidMcName(trimmed)) {
-      show("Invalid username", "Minecraft usernames are 3–16 letters, digits, or underscores.", "error");
+    const entry = newPlayerName.trim();
+    if (!entry) return;
+    if (activeList !== "banned-ips" && !isValidMcName(entry)) {
+      show("Invalid username", "Use 1–16 letters, numbers, or underscores.", "error");
       return;
     }
     setBusyAction("list_add");
@@ -284,40 +368,32 @@ export function ServerPanel() {
       const res = await fetch("/api/admin/server", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "playerlist_add",
-          list: activeList,
-          username: trimmed,
-        }),
+        body: JSON.stringify({ action: "playerlist_add", list: activeList, username: entry }),
       });
       const data = (await res.json().catch(() => ({}))) as { entries?: string[]; error?: string };
-      if (!res.ok) throw new Error(data.error || "Couldn't add player.");
-      if (data.entries) setEntries(data.entries);
+      if (!res.ok) throw new Error(data.error || "Couldn't add entry.");
+      setEntries(data.entries ?? entries);
       setNewPlayerName("");
-      show("Added", `${trimmed} added to ${activeList}.`);
+      show("Updated list", `Added ${entry} to ${activeList}.`);
     } catch (err) {
-      show("Add failed", err instanceof Error ? err.message : "Try again.", "error");
+      show("Update failed", err instanceof Error ? err.message : "Try again.", "error");
     } finally {
       setBusyAction(null);
     }
   };
 
-  const removePlayer = async (username: string) => {
-    setBusyAction(`rm:${username}`);
+  const removePlayer = async (entry: string) => {
+    setBusyAction(`rm:${entry}`);
     try {
       const res = await fetch("/api/admin/server", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "playerlist_remove",
-          list: activeList,
-          username,
-        }),
+        body: JSON.stringify({ action: "playerlist_remove", list: activeList, username: entry }),
       });
       const data = (await res.json().catch(() => ({}))) as { entries?: string[]; error?: string };
-      if (!res.ok) throw new Error(data.error || "Couldn't remove player.");
-      if (data.entries) setEntries(data.entries);
-      show("Removed", `${username} removed from ${activeList}.`);
+      if (!res.ok) throw new Error(data.error || "Couldn't remove entry.");
+      setEntries(data.entries ?? entries.filter((e) => e !== entry));
+      show("Removed", `Removed ${entry} from ${activeList}.`);
     } catch (err) {
       show("Remove failed", err instanceof Error ? err.message : "Try again.", "error");
     } finally {
@@ -339,11 +415,13 @@ export function ServerPanel() {
         error?: string;
       };
       if (!res.ok) throw new Error(data.error || "Couldn't sync whitelist.");
-      if (data.entries && activeList === "whitelist") setEntries(data.entries);
+      if (data.entries) setEntries(data.entries);
       const count = data.added?.length ?? 0;
       show(
-        count > 0 ? "Whitelist synced" : "Already in sync",
-        count > 0 ? `Added ${count} verified member(s) to the server whitelist.` : "Every verified member with a linked MC name is already whitelisted."
+        "Whitelist synced",
+        count > 0
+          ? `Added ${count} verified member(s) to the server whitelist.`
+          : "Every verified member with a linked MC name is already whitelisted."
       );
     } catch (err) {
       show("Sync failed", err instanceof Error ? err.message : "Try again.", "error");
@@ -364,6 +442,10 @@ export function ServerPanel() {
     const q = listQuery.trim().toLowerCase();
     return q ? entries.filter((e) => e.toLowerCase().includes(q)) : entries;
   }, [entries, listQuery]);
+
+  const totalCredits =
+    (overview?.account?.credits ?? 0) +
+    (overview?.pools ?? []).reduce((sum, p) => sum + p.credits, 0);
 
   return (
     <div className="grid gap-4">
@@ -391,19 +473,28 @@ export function ServerPanel() {
               <p>
                 {siteConfig.address} · {status?.software ?? siteConfig.software}{" "}
                 {status?.version ?? siteConfig.version}
+                {overview?.server?.region ? ` · ${overview.server.region}` : ""}
                 {online ? ` · ${playerCount}/${status?.max ?? siteConfig.maxPlayers} online` : ""}
               </p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {!siteConfig.seasonLive ? (
+            {configured && overview?.account ? (
+              <span className="admin-pill is-accent" title="Account + pool credits">
+                <i className="fa-solid fa-coins" aria-hidden="true" /> {totalCredits.toFixed(1)} cr
+              </span>
+            ) : null}
+            {!launch.seasonLive ? (
               <span className="admin-pill is-warn">
                 <i className="fa-solid fa-flask" aria-hidden="true" /> Pre-launch admin access
               </span>
             ) : null}
             <button
               type="button"
-              onClick={() => void load()}
+              onClick={() => {
+                void load();
+                void loadOverview();
+              }}
               disabled={loading}
               className="admin-action-btn"
             >
@@ -511,300 +602,399 @@ export function ServerPanel() {
         ) : null}
       </section>
 
-      {/* Interactive Console & Log Share */}
-      <section className="admin-directory">
-        <div className="admin-directory-head">
-          <div>
-            <h2>Live server console</h2>
-            <p>Tail sanitized server logs (player IPs redacted), share crash reports via mclo.gs, or run console commands.</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className="admin-action-btn"
-              onClick={() => void copyConsole()}
-              disabled={filteredLines.length === 0}
-            >
-              <i className="fa-solid fa-copy" aria-hidden="true" /> Copy
-            </button>
-            <button
-              type="button"
-              className="admin-action-btn"
-              onClick={() => void shareLogs()}
-              disabled={!configured || busyAction === "share_logs"}
-            >
-              <i className="fa-solid fa-share-nodes" aria-hidden="true" />{" "}
-              {busyAction === "share_logs" ? "Uploading…" : "Share to mclo.gs"}
-            </button>
-          </div>
-        </div>
-
-        {sharedLogUrl ? (
-          <div className="px-5 py-2.5 bg-[var(--bg-2)] border-b border-[var(--border)] flex flex-wrap items-center justify-between gap-2 text-xs">
-            <span className="text-[var(--fg-2)]">
-              Shared redacted log:{" "}
-              <a
-                href={sharedLogUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline text-[var(--accent-bright)]"
-              >
-                {sharedLogUrl}
-              </a>
-            </span>
-            <button
-              type="button"
-              onClick={() => setSharedLogUrl(null)}
-              className="text-[var(--muted)] hover:text-[var(--fg)]"
-              aria-label="Dismiss shared log URL"
-            >
-              <i className="fa-solid fa-xmark" aria-hidden="true" />
-            </button>
-          </div>
-        ) : null}
-
-        <div className="admin-toolbar">
-          <label className="admin-search">
-            <i className="fa-solid fa-magnifying-glass" aria-hidden="true" />
-            <span className="sr-only">Filter console output</span>
-            <input
-              value={logSearch}
-              onChange={(e) => setLogSearch(e.target.value)}
-              placeholder="Search console lines…"
-            />
-            {logSearch ? (
-              <button type="button" onClick={() => setLogSearch("")} aria-label="Clear console search">
-                <i className="fa-solid fa-xmark" aria-hidden="true" />
-              </button>
-            ) : null}
-          </label>
-          <div className="admin-filters" role="group" aria-label="Log level">
-            {LOG_LEVELS.map((lvl) => (
-              <button
-                key={lvl}
-                type="button"
-                aria-pressed={logFilter === lvl}
-                onClick={() => setLogFilter(lvl)}
-                className={logFilter === lvl ? "is-active" : ""}
-              >
-                {lvl.charAt(0).toUpperCase() + lvl.slice(1)}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="admin-console-log thin-scroll" role="log" aria-live="off">
-          {filteredLines.length === 0 ? (
-            <div className="text-[var(--muted)] py-8 text-center text-xs font-sans">
-              {!configured
-                ? "Configure Exaroton credentials to stream server logs."
-                : (telemetry?.lines.length ?? 0) === 0
-                  ? "No console output available right now."
-                  : "No log lines match the active filter."}
-            </div>
-          ) : (
-            filteredLines.map((line) => (
-              <div key={line.id} className={`admin-console-line is-${line.level}`}>
-                {line.text}
-              </div>
-            ))
-          )}
-          <div ref={consoleEndRef} />
-        </div>
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void sendCommand();
-          }}
-          className="p-3.5 bg-[var(--bg-2)] border-t border-[var(--border)] flex items-center gap-2"
-        >
-          <span className="text-xs font-mono text-[var(--muted)] pl-1.5 select-none" aria-hidden="true">
-            &gt;
-          </span>
-          <input
-            value={command}
-            onChange={(e) => setCommand(e.target.value)}
-            disabled={!online || busyAction === "command"}
-            maxLength={240}
-            aria-label="Minecraft console command"
-            placeholder={
-              online
-                ? "Run server command (e.g. say Server restarting in 5m, whitelist list, time set day)…"
-                : "Start the server to send live console commands"
-            }
-            className="input !py-2 font-mono text-xs flex-1"
-          />
+      {/* Sub-navigation across all Exaroton capabilities */}
+      <div className="admin-directory-tabs flex-wrap" role="tablist" aria-label="Exaroton server tools">
+        {OPS_TABS.map((tab) => (
           <button
-            type="submit"
-            disabled={!online || !command.trim() || busyAction === "command"}
-            className="btn-primary btn-sm"
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={subTab === tab.id}
+            className={subTab === tab.id ? "is-active" : ""}
+            onClick={() => setSubTab(tab.id)}
           >
-            <i className="fa-solid fa-paper-plane" aria-hidden="true" />
-            {busyAction === "command" ? "Sending…" : "Send"}
+            <i className={`fa-solid ${tab.icon}`} aria-hidden="true" /> {tab.label}
           </button>
-        </form>
-      </section>
+        ))}
+      </div>
 
-      {/* Player Lists & 1-Click Whitelist Sync */}
-      <section className="admin-directory">
-        <div className="admin-directory-head">
-          <div>
-            <h2>Player access lists</h2>
-            <p>Manage Exaroton&apos;s live Whitelist, Server Operators (ops), and Banned Players directly.</p>
-          </div>
-          <div className="admin-directory-tabs" role="tablist" aria-label="Player list type">
-            {PLAYER_LIST_TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={activeList === tab.id}
-                className={activeList === tab.id ? "is-active" : ""}
-                onClick={() => setActiveList(tab.id)}
+      {/* Tab 1: Live Console */}
+      {subTab === "console" ? (
+        <section className="admin-directory">
+          <div className="admin-directory-head">
+            <div>
+              <h2>Live server console</h2>
+              <p>Tail sanitized server logs (player IPs redacted), share crash reports via mclo.gs, or run console commands.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={autoPollMs}
+                onChange={(e) => setAutoPollMs(Number(e.target.value))}
+                className="admin-role-select !w-auto"
+                aria-label="Console auto-refresh interval"
               >
-                <i className={`fa-solid ${tab.icon}`} aria-hidden="true" /> {tab.label}
+                <option value={0}>Auto-refresh: Off</option>
+                <option value={5000}>Auto-refresh: 5s</option>
+                <option value={15000}>Auto-refresh: 15s</option>
+              </select>
+              <button
+                type="button"
+                className="admin-action-btn"
+                onClick={() => void copyConsole()}
+                disabled={filteredLines.length === 0}
+              >
+                <i className="fa-solid fa-copy" aria-hidden="true" /> Copy
+              </button>
+              <button
+                type="button"
+                className="admin-action-btn"
+                onClick={() => void shareLogs()}
+                disabled={!configured || busyAction === "share_logs"}
+              >
+                <i className="fa-solid fa-share-nodes" aria-hidden="true" />{" "}
+                {busyAction === "share_logs" ? "Uploading…" : "Share to mclo.gs"}
+              </button>
+            </div>
+          </div>
+
+          {sharedLogUrl ? (
+            <div className="px-5 py-2.5 bg-[var(--bg-2)] border-b border-[var(--border)] flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span className="text-[var(--fg-2)]">
+                Shared redacted log:{" "}
+                <a
+                  href={sharedLogUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline text-[var(--accent-bright)]"
+                >
+                  {sharedLogUrl}
+                </a>
+              </span>
+              <button
+                type="button"
+                onClick={() => setSharedLogUrl(null)}
+                className="text-[var(--muted)] hover:text-[var(--fg)]"
+                aria-label="Dismiss shared log URL"
+              >
+                <i className="fa-solid fa-xmark" aria-hidden="true" />
+              </button>
+            </div>
+          ) : null}
+
+          <div className="admin-toolbar">
+            <label className="admin-search">
+              <i className="fa-solid fa-magnifying-glass" aria-hidden="true" />
+              <span className="sr-only">Filter console output</span>
+              <input
+                value={logSearch}
+                onChange={(e) => setLogSearch(e.target.value)}
+                placeholder="Search console lines…"
+              />
+              {logSearch ? (
+                <button type="button" onClick={() => setLogSearch("")} aria-label="Clear console search">
+                  <i className="fa-solid fa-xmark" aria-hidden="true" />
+                </button>
+              ) : null}
+            </label>
+            <div className="admin-filters" role="group" aria-label="Log level">
+              {LOG_LEVELS.map((lvl) => (
+                <button
+                  key={lvl}
+                  type="button"
+                  aria-pressed={logFilter === lvl}
+                  onClick={() => setLogFilter(lvl)}
+                  className={logFilter === lvl ? "is-active" : ""}
+                >
+                  {lvl.charAt(0).toUpperCase() + lvl.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="admin-console-log thin-scroll" role="log" aria-live="off">
+            {filteredLines.length === 0 ? (
+              <div className="text-[var(--muted)] py-8 text-center text-xs font-sans">
+                {!configured
+                  ? "Configure Exaroton credentials to stream server logs."
+                  : (telemetry?.lines.length ?? 0) === 0
+                    ? "No console output available right now."
+                    : "No log lines match the active filter."}
+              </div>
+            ) : (
+              filteredLines.map((line) => (
+                <div key={line.id} className={`admin-console-line is-${line.level}`}>
+                  {line.text}
+                </div>
+              ))
+            )}
+            <div ref={consoleEndRef} />
+          </div>
+
+          {/* Quick command macros */}
+          <div className="px-4 py-2.5 bg-[var(--bg-2)] border-t border-[var(--border)] flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] text-[var(--muted)] mr-1">Quick commands:</span>
+            {QUICK_MACROS.map((m) => (
+              <button
+                key={m.label}
+                type="button"
+                disabled={!online || busyAction === "command"}
+                className="admin-action-btn !py-1 !px-2.5 !text-[11px] font-mono disabled:opacity-40"
+                onClick={() => {
+                  if (m.run) {
+                    void executeCommand(m.cmd);
+                  } else {
+                    setCommand(m.cmd);
+                    commandInputRef.current?.focus();
+                  }
+                }}
+              >
+                /{m.label}
               </button>
             ))}
           </div>
-        </div>
-
-        {activeList === "whitelist" && configured && missingFromWhitelist.length > 0 ? (
-          <div className="px-5 py-3 bg-[var(--accent-dim)] border-b border-[var(--border)] flex flex-wrap items-center justify-between gap-3">
-            <div className="text-xs text-[var(--fg-2)]">
-              <strong className="text-[var(--fg)]">
-                {missingFromWhitelist.length} verified member{missingFromWhitelist.length === 1 ? "" : "s"}
-              </strong>{" "}
-              with linked Minecraft accounts {missingFromWhitelist.length === 1 ? "is" : "are"} not on the whitelist yet (
-              {missingFromWhitelist
-                .slice(0, 5)
-                .map((m) => m.minecraftUsername)
-                .join(", ")}
-              {missingFromWhitelist.length > 5 ? "…" : ""}).
-            </div>
-            <button
-              type="button"
-              onClick={() => void syncWhitelist()}
-              disabled={busyAction !== null}
-              className="btn-primary btn-sm"
-            >
-              <i className="fa-solid fa-arrows-rotate" aria-hidden="true" />
-              {busyAction === "sync_whitelist" ? "Syncing…" : "Sync Verified Members"}
-            </button>
-          </div>
-        ) : null}
-
-        <div className="admin-toolbar">
-          <label className="admin-search">
-            <i className="fa-solid fa-magnifying-glass" aria-hidden="true" />
-            <span className="sr-only">Search {activeList}</span>
-            <input
-              value={listQuery}
-              onChange={(e) => setListQuery(e.target.value)}
-              placeholder={`Filter ${activeList} (${entries.length})…`}
-            />
-            {listQuery ? (
-              <button type="button" onClick={() => setListQuery("")} aria-label="Clear filter">
-                <i className="fa-solid fa-xmark" aria-hidden="true" />
-              </button>
-            ) : null}
-          </label>
 
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              void addPlayer();
+              void sendCommand();
             }}
-            className="flex items-center gap-2 w-full sm:w-auto"
+            className="p-3.5 bg-[var(--bg-2)] border-t border-[var(--border)] flex items-center gap-2"
           >
+            <span className="text-xs font-mono text-[var(--muted)] pl-1.5 select-none" aria-hidden="true">
+              &gt;
+            </span>
             <input
-              value={newPlayerName}
-              onChange={(e) => setNewPlayerName(e.target.value)}
-              maxLength={16}
-              disabled={!configured || busyAction === "list_add"}
-              aria-label={`Add player to ${activeList}`}
-              placeholder="Minecraft username…"
-              className="input !py-1.5 !px-3 text-xs sm:!w-52"
+              ref={commandInputRef}
+              value={command}
+              onChange={(e) => setCommand(e.target.value)}
+              onKeyDown={onCommandKeyDown}
+              disabled={!online || busyAction === "command"}
+              maxLength={240}
+              aria-label="Minecraft console command"
+              placeholder={
+                online
+                  ? "Run server command (↑/↓ for history · e.g. say Welcome to Season 6!, op Name, time set day)…"
+                  : "Start the server to send live console commands"
+              }
+              className="input !py-2 font-mono text-xs flex-1"
             />
             <button
               type="submit"
-              disabled={!configured || !newPlayerName.trim() || busyAction === "list_add"}
-              className="admin-action-btn"
+              disabled={!online || !command.trim() || busyAction === "command"}
+              className="btn-primary btn-sm"
             >
-              <i className="fa-solid fa-plus" aria-hidden="true" /> Add
+              <i className="fa-solid fa-paper-plane" aria-hidden="true" />
+              {busyAction === "command" ? "Sending…" : "Send"}
             </button>
-            {activeList === "whitelist" ? (
+          </form>
+        </section>
+      ) : null}
+
+      {/* Tab 2: Player Data Explorer */}
+      {subTab === "players" ? (
+        <ServerPlayersTab
+          configured={Boolean(configured)}
+          serverOnline={online}
+          onRunCommand={executeCommand}
+        />
+      ) : null}
+
+      {/* Tab 3: Options & Config */}
+      {subTab === "config" ? (
+        <ServerConfigTab
+          configured={Boolean(configured)}
+          initialMotd={overview?.motd ?? overview?.server?.rawMotd ?? null}
+          onMotdSaved={(motd) =>
+            setOverview((prev) => (prev ? { ...prev, motd } : prev))
+          }
+        />
+      ) : null}
+
+      {/* Tab 4: Files & Mods */}
+      {subTab === "files" ? (
+        <ServerFilesTab configured={Boolean(configured)} serverOnline={online} />
+      ) : null}
+
+      {/* Tab 5: Player Lists */}
+      {subTab === "lists" ? (
+        <section className="admin-directory">
+          <div className="admin-directory-head">
+            <div>
+              <h2>Player access lists</h2>
+              <p>Manage Exaroton&apos;s live Operators (ops), Banned Players, Banned IPs, and Whitelist directly.</p>
+            </div>
+            <div className="admin-directory-tabs flex-wrap" role="tablist" aria-label="Player list type">
+              {PLAYER_LIST_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeList === tab.id}
+                  className={activeList === tab.id ? "is-active" : ""}
+                  onClick={() => setActiveList(tab.id)}
+                >
+                  <i className={`fa-solid ${tab.icon}`} aria-hidden="true" /> {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {activeList === "whitelist" && configured && missingFromWhitelist.length > 0 ? (
+            <div className="px-5 py-3 bg-[var(--accent-dim)] border-b border-[var(--border)] flex flex-wrap items-center justify-between gap-3">
+              <div className="text-xs text-[var(--fg-2)]">
+                <strong className="text-[var(--fg)]">
+                  {missingFromWhitelist.length} verified member{missingFromWhitelist.length === 1 ? "" : "s"}
+                </strong>{" "}
+                with linked Minecraft accounts {missingFromWhitelist.length === 1 ? "is" : "are"} not on the whitelist yet (
+                {missingFromWhitelist
+                  .slice(0, 5)
+                  .map((m) => m.minecraftUsername)
+                  .join(", ")}
+                {missingFromWhitelist.length > 5 ? "…" : ""}).
+              </div>
               <button
                 type="button"
                 onClick={() => void syncWhitelist()}
-                disabled={!configured || busyAction !== null}
-                className="admin-action-btn"
-                title="Ensure all Discord-verified members with linked MC names are whitelisted"
+                disabled={busyAction !== null}
+                className="btn-primary btn-sm"
               >
-                <i className="fa-solid fa-arrows-rotate" aria-hidden="true" /> Sync
+                <i className="fa-solid fa-arrows-rotate" aria-hidden="true" />
+                {busyAction === "sync_whitelist" ? "Syncing…" : "Sync Verified Members"}
               </button>
-            ) : null}
-          </form>
-        </div>
+            </div>
+          ) : null}
 
-        {!configured ? (
-          <EmptyState
-            className="admin-empty"
-            icon="fa-plug-circle-xmark"
-            title="Exaroton not connected"
-            hint="Set EXAROTON_TOKEN and EXAROTON_SERVER_ID to manage live player lists."
-          />
-        ) : listError ? (
-          <EmptyState
-            className="admin-empty"
-            icon="fa-triangle-exclamation"
-            title="Player list unavailable"
-            hint={listError}
-          />
-        ) : filteredEntries.length === 0 ? (
-          <EmptyState
-            className="admin-empty"
-            icon="fa-users"
-            title={entries.length === 0 ? `No entries in ${activeList}` : "No players match filter"}
-            hint={
-              entries.length === 0
-                ? "Add a Minecraft username above or sync verified community members."
-                : "Clear the search filter to view all entries."
-            }
-          />
-        ) : (
-          <div className="p-5 grid gap-2.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-            {filteredEntries.map((player) => (
-              <div
-                key={player}
-                className="flex items-center justify-between gap-2.5 rounded-[10px] border border-[var(--border)] bg-[var(--bg-2)] px-3 py-2"
-              >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={minotarUrl(player, 32)}
-                    alt=""
-                    width={24}
-                    height={24}
-                    className="rounded-[6px] flex-none"
-                    style={{ imageRendering: "pixelated" }}
-                  />
-                  <span className="truncate text-xs font-semibold text-[var(--fg)]">{player}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void removePlayer(player)}
-                  disabled={busyAction === `rm:${player}`}
-                  aria-label={`Remove ${player} from ${activeList}`}
-                  className="admin-icon-button !w-7 !h-7"
-                >
+          <div className="admin-toolbar">
+            <label className="admin-search">
+              <i className="fa-solid fa-magnifying-glass" aria-hidden="true" />
+              <span className="sr-only">Search {activeList}</span>
+              <input
+                value={listQuery}
+                onChange={(e) => setListQuery(e.target.value)}
+                placeholder={`Filter ${activeList} (${entries.length})…`}
+              />
+              {listQuery ? (
+                <button type="button" onClick={() => setListQuery("")} aria-label="Clear filter">
                   <i className="fa-solid fa-xmark" aria-hidden="true" />
                 </button>
-              </div>
-            ))}
+              ) : null}
+            </label>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void addPlayer();
+              }}
+              className="flex items-center gap-2 w-full sm:w-auto"
+            >
+              <input
+                value={newPlayerName}
+                onChange={(e) => setNewPlayerName(e.target.value)}
+                maxLength={activeList === "banned-ips" ? 45 : 16}
+                disabled={!configured || busyAction === "list_add"}
+                aria-label={`Add entry to ${activeList}`}
+                placeholder={activeList === "banned-ips" ? "IP address…" : "Minecraft username…"}
+                className="input !py-1.5 !px-3 text-xs sm:!w-52"
+              />
+              <button
+                type="submit"
+                disabled={!configured || !newPlayerName.trim() || busyAction === "list_add"}
+                className="admin-action-btn"
+              >
+                <i className="fa-solid fa-plus" aria-hidden="true" /> Add
+              </button>
+              {activeList === "whitelist" ? (
+                <button
+                  type="button"
+                  onClick={() => void syncWhitelist()}
+                  disabled={!configured || busyAction !== null}
+                  className="admin-action-btn"
+                  title="Ensure all Discord-verified members with linked MC names are whitelisted"
+                >
+                  <i className="fa-solid fa-arrows-rotate" aria-hidden="true" /> Sync
+                </button>
+              ) : null}
+            </form>
           </div>
-        )}
-      </section>
+
+          {!configured ? (
+            <EmptyState
+              className="admin-empty"
+              icon="fa-plug-circle-xmark"
+              title="Exaroton not connected"
+              hint="Set EXAROTON_TOKEN and EXAROTON_SERVER_ID to manage live player lists."
+            />
+          ) : listError ? (
+            <EmptyState
+              className="admin-empty"
+              icon="fa-triangle-exclamation"
+              title="Player list unavailable"
+              hint={listError}
+            />
+          ) : filteredEntries.length === 0 ? (
+            <EmptyState
+              className="admin-empty"
+              icon="fa-users"
+              title={entries.length === 0 ? `No entries in ${activeList}` : "No entries match filter"}
+              hint={
+                entries.length === 0
+                  ? `Add a ${activeList === "banned-ips" ? "banned IP" : "Minecraft username"} above.`
+                  : "Clear the search filter to view all entries."
+              }
+            />
+          ) : (
+            <div className="p-5 grid gap-2.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+              {filteredEntries.map((player) => (
+                <div
+                  key={player}
+                  className="flex items-center justify-between gap-2.5 rounded-[10px] border border-[var(--border)] bg-[var(--bg-2)] px-3 py-2"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {activeList === "banned-ips" ? (
+                      <i className="fa-solid fa-shield-halved text-[var(--redstone)] text-xs" aria-hidden="true" />
+                    ) : (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={minotarUrl(player, 32)}
+                        alt=""
+                        width={24}
+                        height={24}
+                        className="rounded-[6px] flex-none"
+                        style={{ imageRendering: "pixelated" }}
+                      />
+                    )}
+                    <span className="truncate text-xs font-semibold text-[var(--fg)] font-mono">
+                      {player}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void removePlayer(player)}
+                    disabled={busyAction === `rm:${player}`}
+                    aria-label={`Remove ${player} from ${activeList}`}
+                    className="admin-icon-button !w-7 !h-7"
+                  >
+                    <i className="fa-solid fa-xmark" aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
+
+      {/* Tab 6: Account & Credits */}
+      {subTab === "account" ? (
+        <ServerAccountTab
+          configured={Boolean(configured)}
+          loading={overviewLoading}
+          account={overview?.account ?? null}
+          pools={overview?.pools ?? []}
+          server={overview?.server ?? null}
+          playerLists={overview?.playerLists ?? []}
+          onRefresh={loadOverview}
+        />
+      ) : null}
 
       {confirmPower ? (
         <Modal

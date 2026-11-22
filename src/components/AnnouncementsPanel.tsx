@@ -1,20 +1,199 @@
 "use client";
 
-// Admin → Announcements. Publish a sitewide bar, preview how it renders under
-// the navbar, edit its text/tone in place, toggle visibility, or delete it.
+// Admin → Announcements. Publish a vibrant sitewide bar with custom color
+// themes, background patterns, icons, and optional CTA links, preview how it
+// renders under the navbar, edit it in place, toggle visibility, or delete it.
 
 import { useCallback, useEffect, useState } from "react";
+import { AnnouncementBannerContent } from "@/components/AnnouncementBar";
 import { EmptyState } from "@/components/EmptyState";
 import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
+import {
+  ANNOUNCEMENT_ICONS,
+  ANNOUNCEMENT_PATTERNS,
+  ANNOUNCEMENT_THEMES,
+  announcementCssVars,
+  getAnnouncementTheme,
+  resolveAnnouncementPattern,
+  type AnnouncementPattern,
+  type AnnouncementTone,
+} from "@/lib/announcements";
 import { timeAgo } from "@/lib/time";
 import type { Announcement } from "@/types";
 
-const TONES = [
-  { value: "info", label: "Info", icon: "fa-bullhorn" },
-  { value: "warning", label: "Warning", icon: "fa-triangle-exclamation" },
-  { value: "critical", label: "Critical", icon: "fa-circle-exclamation" },
-] as const;
+interface StyleDraft {
+  tone: AnnouncementTone;
+  pattern: AnnouncementPattern;
+  accentColor: string;
+  icon: string;
+  vibrant: boolean;
+  linkLabel: string;
+  linkHref: string;
+}
+
+const DEFAULT_DRAFT: StyleDraft = {
+  tone: "emerald",
+  pattern: "pixels",
+  accentColor: "",
+  icon: "",
+  vibrant: true,
+  linkLabel: "",
+  linkHref: "",
+};
+
+function StyleCustomizer({
+  draft,
+  onChange,
+  idPrefix,
+}: {
+  draft: StyleDraft;
+  onChange: (patch: Partial<StyleDraft>) => void;
+  idPrefix: string;
+}) {
+  const theme = getAnnouncementTheme(draft.tone);
+  const pickerValue = draft.accentColor || theme.color;
+
+  return (
+    <div className="grid gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-semibold text-[var(--fg-2)]">Color theme</span>
+        <label className="flex items-center gap-2 text-xs text-[var(--fg-2)] cursor-pointer">
+          <input
+            type="checkbox"
+            checked={draft.vibrant}
+            onChange={(event) => onChange({ vibrant: event.target.checked })}
+          />
+          Vibrant surface
+        </label>
+      </div>
+
+      <div className="announce-swatch-grid" role="group" aria-label="Color theme">
+        {ANNOUNCEMENT_THEMES.map((option) => {
+          const active = draft.tone === option.id && !draft.accentColor;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onChange({ tone: option.id, accentColor: "" })}
+              className={`announce-swatch-btn ${active ? "is-active" : ""}`}
+            >
+              <span
+                className="announce-swatch-dot"
+                style={{ background: option.color }}
+                aria-hidden="true"
+              />
+              <span>{option.label}</span>
+            </button>
+          );
+        })}
+        <label className={`announce-swatch-btn announce-color-picker ${draft.accentColor ? "is-active" : ""}`}>
+          <input
+            type="color"
+            value={pickerValue}
+            onChange={(event) => onChange({ accentColor: event.target.value })}
+            aria-label="Pick custom hex color"
+          />
+          <span
+            className="announce-swatch-dot"
+            style={{ background: pickerValue }}
+            aria-hidden="true"
+          />
+          <span>{draft.accentColor ? draft.accentColor : "Custom"}</span>
+        </label>
+        {draft.accentColor ? (
+          <button
+            type="button"
+            className="announce-swatch-btn"
+            onClick={() => onChange({ accentColor: "" })}
+          >
+            <i className="fa-solid fa-xmark" aria-hidden="true" /> Reset
+          </button>
+        ) : null}
+      </div>
+
+      <div>
+        <span className="block text-xs font-semibold text-[var(--fg-2)] mb-2">Color pattern</span>
+        <div className="announce-pattern-grid" role="group" aria-label="Background pattern">
+          {ANNOUNCEMENT_PATTERNS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              aria-pressed={draft.pattern === option.id}
+              onClick={() => onChange({ pattern: option.id })}
+              className={`announce-pattern-btn ${draft.pattern === option.id ? "is-active" : ""}`}
+            >
+              <span
+                className={`announce-pattern-swatch pattern-${option.id} ${draft.vibrant ? "is-vibrant" : ""}`}
+                style={announcementCssVars({ tone: draft.tone, accentColor: draft.accentColor })}
+                aria-hidden="true"
+              />
+              <span>{option.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <span className="block text-xs font-semibold text-[var(--fg-2)] mb-2">Icon</span>
+        <div className="announce-icon-grid" role="group" aria-label="Announcement icon">
+          <button
+            type="button"
+            aria-pressed={draft.icon === ""}
+            onClick={() => onChange({ icon: "" })}
+            className={`announce-icon-btn ${draft.icon === "" ? "is-active" : ""}`}
+            title="Default icon for theme"
+          >
+            Auto
+          </button>
+          {ANNOUNCEMENT_ICONS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              aria-pressed={draft.icon === option.id}
+              onClick={() => onChange({ icon: option.id })}
+              className={`announce-icon-btn ${draft.icon === option.id ? "is-active" : ""}`}
+              title={option.label}
+              aria-label={option.label}
+            >
+              <i className={`fa-solid ${option.id}`} aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label htmlFor={`${idPrefix}-link-label`} className="block text-xs font-semibold text-[var(--fg-2)] mb-1.5">
+            Button text <span className="text-[var(--muted-2)] font-normal">(optional)</span>
+          </label>
+          <input
+            id={`${idPrefix}-link-label`}
+            value={draft.linkLabel}
+            onChange={(event) => onChange({ linkLabel: event.target.value })}
+            maxLength={32}
+            placeholder="e.g. How to join"
+            className="input"
+          />
+        </div>
+        <div>
+          <label htmlFor={`${idPrefix}-link-href`} className="block text-xs font-semibold text-[var(--fg-2)] mb-1.5">
+            Button link <span className="text-[var(--muted-2)] font-normal">(/page or https://)</span>
+          </label>
+          <input
+            id={`${idPrefix}-link-href`}
+            value={draft.linkHref}
+            onChange={(event) => onChange({ linkHref: event.target.value })}
+            maxLength={200}
+            placeholder="e.g. /join"
+            className="input"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function AnnouncementsPanel() {
   const { show } = useToast();
@@ -25,13 +204,13 @@ export function AnnouncementsPanel() {
   // Composer state
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [tone, setTone] = useState<string>("info");
+  const [draft, setDraft] = useState<StyleDraft>(DEFAULT_DRAFT);
 
   // Edit & delete modals
   const [editing, setEditing] = useState<Announcement | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
-  const [editTone, setEditTone] = useState<string>("info");
+  const [editDraft, setEditDraft] = useState<StyleDraft>(DEFAULT_DRAFT);
   const [confirmDelete, setConfirmDelete] = useState<Announcement | null>(null);
 
   const load = useCallback(async () => {
@@ -65,13 +244,17 @@ export function AnnouncementsPanel() {
       const res = await fetch("/api/announcements", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, body, tone }),
+        body: JSON.stringify({
+          title,
+          body,
+          ...draft,
+        }),
       });
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(data.error || "Couldn't publish.");
       setTitle("");
       setBody("");
-      setTone("info");
+      setDraft(DEFAULT_DRAFT);
       show("Published", "The announcement bar is live on the site.");
       await load();
     } catch (err) {
@@ -105,7 +288,15 @@ export function AnnouncementsPanel() {
     setEditing(row);
     setEditTitle(row.title);
     setEditBody(row.body ?? "");
-    setEditTone(row.tone || "info");
+    setEditDraft({
+      tone: getAnnouncementTheme(row.tone).id,
+      pattern: resolveAnnouncementPattern(row.pattern),
+      accentColor: row.accentColor ?? "",
+      icon: row.icon ?? "",
+      vibrant: row.vibrant !== false,
+      linkLabel: row.linkLabel ?? "",
+      linkHref: row.linkHref ?? "",
+    });
   };
 
   const saveEdit = async () => {
@@ -122,7 +313,7 @@ export function AnnouncementsPanel() {
         body: JSON.stringify({
           title: editTitle.trim(),
           body: editBody.trim(),
-          tone: editTone,
+          ...editDraft,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
@@ -159,12 +350,6 @@ export function AnnouncementsPanel() {
   };
 
   const primaryActiveId = rows.find((r) => r.active)?.id ?? null;
-  const previewToneIcon =
-    tone === "critical"
-      ? "fa-circle-exclamation"
-      : tone === "warning"
-        ? "fa-triangle-exclamation"
-        : "fa-bullhorn";
 
   return (
     <div className="grid gap-4">
@@ -172,7 +357,7 @@ export function AnnouncementsPanel() {
         <div className="admin-directory-head">
           <div>
             <h2>Publish announcement</h2>
-            <p>The newest active announcement renders as a dismissible bar directly below the navbar.</p>
+            <p>Customize colors, patterns, icons, and links for the live banner under the navbar.</p>
           </div>
           <button
             type="button"
@@ -184,80 +369,72 @@ export function AnnouncementsPanel() {
           </button>
         </div>
 
-        <div className="p-5 grid gap-3.5">
+        <div className="p-5 grid gap-4">
           <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label htmlFor="announce-title" className="text-xs font-semibold text-[var(--fg-2)]">
-                Headline
-              </label>
-              <span className="text-[11px] text-[var(--muted-2)] tabular-nums">{title.length}/120</span>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted-2)] mb-1.5">
+              Live banner preview
             </div>
-            <input
-              id="announce-title"
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              maxLength={120}
-              placeholder="e.g. Maintenance window tonight at 9 PM EST"
-              className="input"
+            <AnnouncementBannerContent
+              preview
+              item={{
+                title: title.trim() || "Season 6 launches tomorrow at 1:00 PM EST!",
+                body: body.trim() || (title.trim() ? "" : "Download the modpack now so you're ready when the world opens."),
+                ...draft,
+              }}
             />
           </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label htmlFor="announce-body" className="text-xs font-semibold text-[var(--fg-2)]">
-                Details <span className="text-[var(--muted-2)] font-normal">(optional, plain text)</span>
-              </label>
-              <span className="text-[11px] text-[var(--muted-2)] tabular-nums">{body.length}/400</span>
-            </div>
-            <textarea
-              id="announce-body"
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
-              maxLength={400}
-              rows={2}
-              placeholder="Extra context shown alongside the headline on desktop screens…"
-              className="input resize-y"
-            />
-          </div>
-
-          {title.trim().length > 0 ? (
+          <div className="grid gap-3.5 sm:grid-cols-2">
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted-2)] mb-1.5">
-                Live banner preview
+              <div className="flex items-center justify-between mb-1.5">
+                <label htmlFor="announce-title" className="text-xs font-semibold text-[var(--fg-2)]">
+                  Headline
+                </label>
+                <span className="text-[11px] text-[var(--muted-2)] tabular-nums">{title.length}/120</span>
               </div>
-              <div className={`announce-bar is-preview tone-${tone}`}>
-                <div className="announce-inner">
-                  <i className={`fa-solid ${previewToneIcon}`} aria-hidden="true" />
-                  <strong>{title.trim()}</strong>
-                  {body.trim() ? <span className="announce-text">{body.trim()}</span> : null}
-                </div>
-              </div>
+              <input
+                id="announce-title"
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                maxLength={120}
+                placeholder="e.g. Season 6 opens tomorrow at 1 PM EST!"
+                className="input"
+              />
             </div>
-          ) : null}
 
-          <div className="flex flex-wrap items-center gap-3 pt-1">
-            <div className="admin-filters" role="group" aria-label="Announcement tone">
-              {TONES.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  aria-pressed={tone === option.value}
-                  onClick={() => setTone(option.value)}
-                  className={tone === option.value ? "is-active" : ""}
-                >
-                  <i className={`fa-solid ${option.icon}`} aria-hidden="true" />
-                  {option.label}
-                </button>
-              ))}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label htmlFor="announce-body" className="text-xs font-semibold text-[var(--fg-2)]">
+                  Details <span className="text-[var(--muted-2)] font-normal">(optional)</span>
+                </label>
+                <span className="text-[11px] text-[var(--muted-2)] tabular-nums">{body.length}/400</span>
+              </div>
+              <input
+                id="announce-body"
+                value={body}
+                onChange={(event) => setBody(event.target.value)}
+                maxLength={400}
+                placeholder="Extra context shown alongside the headline…"
+                className="input"
+              />
             </div>
+          </div>
+
+          <StyleCustomizer
+            draft={draft}
+            onChange={(patch) => setDraft((prev) => ({ ...prev, ...patch }))}
+            idPrefix="new-announce"
+          />
+
+          <div className="flex justify-end pt-2 border-t border-[var(--border)]">
             <button
               type="button"
               onClick={() => void publish()}
               disabled={busy === "new" || title.trim().length < 3}
-              className="btn-primary btn-sm ml-auto"
+              className="btn-primary btn-sm"
             >
               <i className="fa-solid fa-bullhorn" aria-hidden="true" />
-              {busy === "new" ? "Publishing…" : "Publish"}
+              {busy === "new" ? "Publishing…" : "Publish announcement"}
             </button>
           </div>
         </div>
@@ -267,7 +444,7 @@ export function AnnouncementsPanel() {
         <div className="admin-directory-head">
           <div>
             <h2>Announcement history</h2>
-            <p>Hide an announcement to take it down while keeping it in history, or edit it in place.</p>
+            <p>Hide an announcement to take it down while keeping it in history, or edit its colors and pattern in place.</p>
           </div>
           <span className="admin-pill is-accent">{rows.filter((r) => r.active).length} active</span>
         </div>
@@ -289,12 +466,12 @@ export function AnnouncementsPanel() {
           <div className="divide-y divide-[var(--border)]">
             {rows.map((row) => {
               const isPrimary = row.id === primaryActiveId;
+              const swatchColor = row.accentColor || getAnnouncementTheme(row.tone).color;
               return (
                 <div key={row.id} className="flex flex-wrap items-center gap-3 px-5 py-3.5">
                   <span
-                    className={`h-2 w-2 flex-none rounded-full ${
-                      row.active ? "bg-[var(--emerald)]" : "bg-[var(--muted-2)]"
-                    }`}
+                    className="h-3 w-3 flex-none rounded-full border border-white/20"
+                    style={{ background: row.active ? swatchColor : "var(--muted-2)" }}
                     aria-hidden="true"
                   />
                   <div className="min-w-0 flex-1">
@@ -309,17 +486,12 @@ export function AnnouncementsPanel() {
                       ) : (
                         <span className="admin-pill">Hidden</span>
                       )}
-                      <span
-                        className={`admin-pill ${
-                          row.tone === "critical"
-                            ? "is-bad"
-                            : row.tone === "warning"
-                              ? "is-warn"
-                              : "is-accent"
-                        }`}
-                      >
-                        {row.tone}
+                      <span className="admin-pill">
+                        {row.accentColor ? row.accentColor : getAnnouncementTheme(row.tone).label}
                       </span>
+                      {row.pattern && row.pattern !== "none" ? (
+                        <span className="admin-pill">{row.pattern}</span>
+                      ) : null}
                     </div>
                     {row.body ? (
                       <p className="mt-0.5 text-xs text-[var(--muted)] line-clamp-2">{row.body}</p>
@@ -386,6 +558,14 @@ export function AnnouncementsPanel() {
             </button>
           </div>
           <div className="grid gap-3.5">
+            <AnnouncementBannerContent
+              preview
+              item={{
+                title: editTitle.trim() || "Preview",
+                body: editBody.trim(),
+                ...editDraft,
+              }}
+            />
             <div>
               <label htmlFor="edit-announce-title" className="block text-xs font-semibold text-[var(--fg-2)] mb-1.5">
                 Headline ({editTitle.length}/120)
@@ -407,26 +587,15 @@ export function AnnouncementsPanel() {
                 value={editBody}
                 onChange={(e) => setEditBody(e.target.value)}
                 maxLength={400}
-                rows={3}
+                rows={2}
                 className="input resize-y"
               />
             </div>
-            <div>
-              <span className="block text-xs font-semibold text-[var(--fg-2)] mb-1.5">Tone</span>
-              <div className="admin-filters" role="group" aria-label="Edit tone">
-                {TONES.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    aria-pressed={editTone === option.value}
-                    onClick={() => setEditTone(option.value)}
-                    className={editTone === option.value ? "is-active" : ""}
-                  >
-                    <i className={`fa-solid ${option.icon}`} aria-hidden="true" /> {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <StyleCustomizer
+              draft={editDraft}
+              onChange={(patch) => setEditDraft((prev) => ({ ...prev, ...patch }))}
+              idPrefix="edit-announce"
+            />
             <div className="flex justify-end gap-2 pt-3 border-t border-[var(--border)]">
               <button
                 type="button"

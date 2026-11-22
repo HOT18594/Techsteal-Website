@@ -3,12 +3,17 @@ import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { announcements } from "@/lib/schema";
 import { ACCOUNT_DB_ERROR_MESSAGE, requireAdminAccount } from "@/lib/accounts";
+import {
+  isAnnouncementIcon,
+  isAnnouncementPattern,
+  isAnnouncementTone,
+  sanitizeAnnouncementHref,
+  sanitizeHexColor,
+} from "@/lib/announcements";
 import { logAudit } from "@/lib/audit";
 import { isRateLimited } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
-
-const TONES = new Set(["info", "warning", "critical"]);
 
 /** Shapes a row for the public bar — never the author id. */
 function publicAnnouncement(row: typeof announcements.$inferSelect) {
@@ -17,6 +22,12 @@ function publicAnnouncement(row: typeof announcements.$inferSelect) {
     title: row.title,
     body: row.body,
     tone: row.tone,
+    pattern: row.pattern,
+    accentColor: row.accentColor,
+    icon: row.icon,
+    vibrant: row.vibrant,
+    linkLabel: row.linkLabel,
+    linkHref: row.linkHref,
     authorName: row.authorName,
     createdAt: row.createdAt,
   };
@@ -77,7 +88,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       { status: 400 }
     );
   }
-  const tone = typeof raw.tone === "string" && TONES.has(raw.tone) ? raw.tone : "info";
+  const tone = isAnnouncementTone(raw.tone) ? raw.tone : "info";
+  const pattern = isAnnouncementPattern(raw.pattern) ? raw.pattern : "none";
+  const accentColor = sanitizeHexColor(raw.accentColor);
+  const icon = isAnnouncementIcon(raw.icon) ? raw.icon : "";
+  const vibrant = typeof raw.vibrant === "boolean" ? raw.vibrant : true;
+  const linkLabel = typeof raw.linkLabel === "string" ? raw.linkLabel.trim().slice(0, 32) : "";
+  const linkHref = sanitizeAnnouncementHref(raw.linkHref);
+  if (raw.linkHref && typeof raw.linkHref === "string" && raw.linkHref.trim() && !linkHref) {
+    return NextResponse.json(
+      { error: "Link must be a relative path (like /join) or an http(s) URL." },
+      { status: 400 }
+    );
+  }
 
   const db = getDb();
   if (!db) {
@@ -91,6 +114,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         title: rawTitle,
         body: rawBody,
         tone,
+        pattern,
+        accentColor,
+        icon,
+        vibrant,
+        linkLabel: linkHref ? linkLabel || "Learn more" : "",
+        linkHref,
         active: true,
         authorId: admin.id,
         authorName: admin.username,
@@ -103,7 +132,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       action: "announcement_create",
       targetId: String(created.id),
       targetName: rawTitle,
-      detail: tone,
+      detail: `${tone}${pattern !== "none" ? ` · ${pattern}` : ""}`,
     });
 
     return NextResponse.json({

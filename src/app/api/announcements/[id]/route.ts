@@ -3,13 +3,18 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { announcements } from "@/lib/schema";
 import { ACCOUNT_DB_ERROR_MESSAGE, requireAdminAccount } from "@/lib/accounts";
+import {
+  isAnnouncementIcon,
+  isAnnouncementPattern,
+  isAnnouncementTone,
+  sanitizeAnnouncementHref,
+  sanitizeHexColor,
+} from "@/lib/announcements";
 import { logAudit } from "@/lib/audit";
 import { parseRouteId } from "@/lib/route-ids";
 import type { Account } from "@/types";
 
 export const dynamic = "force-dynamic";
-
-const TONES = new Set(["info", "warning", "critical"]);
 
 async function requireAdmin(): Promise<{ error: NextResponse } | { admin: Account }> {
   const gate = await requireAdminAccount();
@@ -28,13 +33,19 @@ function serializeAnnouncement(row: typeof announcements.$inferSelect) {
     title: row.title,
     body: row.body,
     tone: row.tone,
+    pattern: row.pattern,
+    accentColor: row.accentColor,
+    icon: row.icon,
+    vibrant: row.vibrant,
+    linkLabel: row.linkLabel,
+    linkHref: row.linkHref,
     active: row.active,
     authorName: row.authorName,
     createdAt: row.createdAt,
   };
 }
 
-// Admin: edit title/body/tone and/or toggle active visibility.
+// Admin: edit title/body/style and/or toggle active visibility.
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -51,7 +62,12 @@ export async function PATCH(
   }
   const raw = body as Record<string, unknown>;
 
-  const updates: Partial<Pick<typeof announcements.$inferInsert, "active" | "title" | "body" | "tone">> = {};
+  const updates: Partial<
+    Pick<
+      typeof announcements.$inferInsert,
+      "active" | "title" | "body" | "tone" | "pattern" | "accentColor" | "icon" | "vibrant" | "linkLabel" | "linkHref"
+    >
+  > = {};
 
   if (raw.active !== undefined) {
     if (typeof raw.active !== "boolean") {
@@ -89,13 +105,70 @@ export async function PATCH(
   }
 
   if (raw.tone !== undefined) {
-    if (typeof raw.tone !== "string" || !TONES.has(raw.tone)) {
+    if (!isAnnouncementTone(raw.tone)) {
+      return NextResponse.json({ error: "Choose a valid announcement color theme." }, { status: 400 });
+    }
+    updates.tone = raw.tone;
+  }
+
+  if (raw.pattern !== undefined) {
+    if (!isAnnouncementPattern(raw.pattern)) {
+      return NextResponse.json({ error: "Choose a valid background pattern." }, { status: 400 });
+    }
+    updates.pattern = raw.pattern;
+  }
+
+  if (raw.accentColor !== undefined) {
+    if (typeof raw.accentColor !== "string") {
+      return NextResponse.json({ error: "Invalid accent color." }, { status: 400 });
+    }
+    const trimmed = raw.accentColor.trim();
+    const cleaned = sanitizeHexColor(trimmed);
+    if (trimmed && !cleaned) {
+      return NextResponse.json({ error: "Custom color must be a 6-digit hex like #22c55e." }, { status: 400 });
+    }
+    updates.accentColor = cleaned;
+  }
+
+  if (raw.icon !== undefined) {
+    if (typeof raw.icon !== "string") {
+      return NextResponse.json({ error: "Invalid icon." }, { status: 400 });
+    }
+    const trimmed = raw.icon.trim();
+    if (trimmed && !isAnnouncementIcon(trimmed)) {
+      return NextResponse.json({ error: "Choose an icon from the list." }, { status: 400 });
+    }
+    updates.icon = trimmed;
+  }
+
+  if (raw.vibrant !== undefined) {
+    if (typeof raw.vibrant !== "boolean") {
+      return NextResponse.json({ error: "Invalid vibrant flag." }, { status: 400 });
+    }
+    updates.vibrant = raw.vibrant;
+  }
+
+  if (raw.linkHref !== undefined) {
+    if (typeof raw.linkHref !== "string") {
+      return NextResponse.json({ error: "Invalid link URL." }, { status: 400 });
+    }
+    const trimmed = raw.linkHref.trim();
+    const cleaned = sanitizeAnnouncementHref(trimmed);
+    if (trimmed && !cleaned) {
       return NextResponse.json(
-        { error: "Tone must be info, warning, or critical." },
+        { error: "Link must be a relative path (like /join) or an http(s) URL." },
         { status: 400 }
       );
     }
-    updates.tone = raw.tone;
+    updates.linkHref = cleaned;
+    if (!cleaned) updates.linkLabel = "";
+  }
+
+  if (raw.linkLabel !== undefined) {
+    if (typeof raw.linkLabel !== "string") {
+      return NextResponse.json({ error: "Invalid link label." }, { status: 400 });
+    }
+    updates.linkLabel = raw.linkLabel.trim().slice(0, 32);
   }
 
   if (Object.keys(updates).length === 0) {
@@ -123,7 +196,13 @@ export async function PATCH(
     const contentChanged =
       (updates.title !== undefined && updates.title !== existing.title) ||
       (updates.body !== undefined && updates.body !== existing.body) ||
-      (updates.tone !== undefined && updates.tone !== existing.tone);
+      (updates.tone !== undefined && updates.tone !== existing.tone) ||
+      (updates.pattern !== undefined && updates.pattern !== existing.pattern) ||
+      (updates.accentColor !== undefined && updates.accentColor !== existing.accentColor) ||
+      (updates.icon !== undefined && updates.icon !== existing.icon) ||
+      (updates.vibrant !== undefined && updates.vibrant !== existing.vibrant) ||
+      (updates.linkLabel !== undefined && updates.linkLabel !== existing.linkLabel) ||
+      (updates.linkHref !== undefined && updates.linkHref !== existing.linkHref);
     const activeChanged = updates.active !== undefined && updates.active !== existing.active;
 
     if (contentChanged) {
@@ -133,7 +212,7 @@ export async function PATCH(
         action: "announcement_edit",
         targetId: String(updated.id),
         targetName: updated.title,
-        detail: updated.tone,
+        detail: `${updated.tone}${updated.pattern !== "none" ? ` · ${updated.pattern}` : ""}`,
       });
     }
 

@@ -5,11 +5,13 @@
 
 export const siteConfig = {
   name: "TECHSTEAL",
-  address: "techstealseason6.exaroton.me:19457",
+  address: "play.techsteal.space",
   version: "1.21.11",
   software: "Fabric",
+  // Same-site route; streams the client pack to any visitor (including guests).
+  modpackDownloadUrl: "/api/modpack",
   difficulty: "Hard",
-  whitelist: "Enabled",
+  whitelist: "Disabled" as "Enabled" | "Disabled",
   location: "FRA · EU",
   maxPlayers: 10,
   stats: {
@@ -27,7 +29,7 @@ export const siteConfig = {
   // Launch date of the current season — the home stats tile counts "days
   // live" from here once seasonLive is true. Adjust if the world opens on a
   // different day.
-  seasonStart: "2026-11-13",
+  seasonStart: "2026-11-22",
   assistant: {
     name: "Chatty Jr.",
     initial: "C",

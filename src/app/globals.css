@@ -2455,17 +2455,79 @@ a.activity-author:hover { color: var(--accent); }
   border-bottom: 1px solid var(--border);
   background: var(--card);
   --announce-tone: var(--accent);
+  --announce-tone-2: var(--accent-bright);
+  position: relative;
+  overflow: hidden;
 }
 .noscript-banner ~ .announce-bar,
 .announce-bar.is-preview {
   margin-top: 0;
 }
 .announce-bar.is-preview {
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
 }
-.announce-bar.tone-warning { --announce-tone: #ffd166; }
-.announce-bar.tone-critical { --announce-tone: #e88373; }
+.announce-bar.is-vibrant {
+  background-color: color-mix(in srgb, var(--announce-tone) 22%, var(--bg));
+  border-bottom: 2px solid color-mix(in srgb, var(--announce-tone) 68%, transparent);
+}
+.announce-bar.is-preview.is-vibrant {
+  border: 1px solid color-mix(in srgb, var(--announce-tone) 60%, var(--border-strong));
+}
+.announce-bar.tone-warning { --announce-tone: #ffd166; --announce-tone-2: #f59e0b; }
+.announce-bar.tone-critical { --announce-tone: #f43f5e; --announce-tone-2: #fb7185; }
+.announce-bar.tone-emerald { --announce-tone: #22c55e; --announce-tone-2: #4ade80; }
+.announce-bar.tone-diamond { --announce-tone: #38bdf8; --announce-tone-2: #818cf8; }
+.announce-bar.tone-gold { --announce-tone: #facc15; --announce-tone-2: #fb923c; }
+.announce-bar.tone-amethyst { --announce-tone: #c084fc; --announce-tone-2: #f472b6; }
+.announce-bar.tone-sunset { --announce-tone: #fb923c; --announce-tone-2: #f43f5e; }
+
+/* Announcement background color patterns (flat, high-contrast, crisp) */
+.announce-bar.pattern-stripes,
+.announce-pattern-swatch.pattern-stripes {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--announce-tone) 18%, transparent) 0 12px,
+    transparent 12px 24px
+  );
+}
+.announce-bar.pattern-pixels,
+.announce-pattern-swatch.pattern-pixels {
+  background-image:
+    linear-gradient(45deg, color-mix(in srgb, var(--announce-tone) 16%, transparent) 25%, transparent 25%),
+    linear-gradient(-45deg, color-mix(in srgb, var(--announce-tone) 16%, transparent) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--announce-tone-2) 14%, transparent) 75%),
+    linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--announce-tone-2) 14%, transparent) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+.announce-bar.pattern-grid,
+.announce-pattern-swatch.pattern-grid {
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--announce-tone) 22%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--announce-tone) 22%, transparent) 1px, transparent 1px);
+  background-size: 14px 14px;
+}
+.announce-bar.pattern-chevron,
+.announce-pattern-swatch.pattern-chevron {
+  background-image: repeating-linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--announce-tone) 26%, transparent) 0 6px,
+    transparent 6px 18px,
+    color-mix(in srgb, var(--announce-tone-2) 16%, transparent) 18px 22px,
+    transparent 22px 34px
+  );
+}
+.announce-bar.pattern-aurora,
+.announce-pattern-swatch.pattern-aurora {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--announce-tone) 34%, var(--bg)) 0%,
+    color-mix(in srgb, var(--announce-tone-2) 28%, var(--bg)) 50%,
+    color-mix(in srgb, var(--announce-tone) 22%, var(--bg)) 100%
+  );
+}
+
 .announce-inner {
   max-width: 1540px;
   margin: 0 auto;
@@ -2476,24 +2538,48 @@ a.activity-author:hover { color: var(--accent); }
   font-size: 13px;
   color: var(--fg-2);
 }
-.announce-inner > i {
-  color: var(--announce-tone);
-  font-size: 12px;
+.announce-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
   flex: 0 0 auto;
+  background: color-mix(in srgb, var(--announce-tone) 22%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--announce-tone) 55%, transparent);
+  color: var(--announce-tone);
+  font-size: 11px;
 }
 .announce-inner strong {
   color: var(--fg);
-  font-weight: 550;
+  font-weight: 650;
   flex: 0 0 auto;
 }
 .announce-text {
-  color: var(--muted);
+  color: var(--fg-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
 }
-.announce-inner button {
+.announce-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: var(--announce-tone);
+  color: #0d0f0e;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  transition: opacity 0.15s;
+}
+.announce-cta:hover { opacity: 0.9; }
+.announce-cta i { font-size: 10px; }
+.announce-dismiss {
   margin-left: auto;
   width: 26px;
   height: 26px;
@@ -2502,11 +2588,118 @@ a.activity-author:hover { color: var(--accent); }
   border: 0;
   border-radius: 10px;
   background: transparent;
-  color: var(--muted);
+  color: var(--fg-2);
   cursor: pointer;
   flex: 0 0 auto;
 }
-.announce-inner button:hover { background: var(--accent-dim); color: var(--fg); }
+.announce-cta + .announce-dismiss { margin-left: 4px; }
+.announce-dismiss:hover { background: color-mix(in srgb, var(--announce-tone) 20%, transparent); color: var(--fg); }
+
+/* Admin announcement customizer controls */
+.announce-swatch-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.announce-swatch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--fg-2);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.announce-swatch-btn:hover { border-color: var(--border-strong); color: var(--fg); }
+.announce-swatch-btn.is-active {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--fg);
+}
+.announce-swatch-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  flex-shrink: 0;
+}
+.announce-color-picker {
+  position: relative;
+}
+.announce-color-picker input[type="color"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+.announce-pattern-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(126px, 1fr));
+  gap: 8px;
+}
+.announce-pattern-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 7px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--fg-2);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.announce-pattern-btn:hover { border-color: var(--border-strong); color: var(--fg); }
+.announce-pattern-btn.is-active { border-color: var(--accent); color: var(--fg); }
+.announce-pattern-swatch {
+  display: block;
+  width: 100%;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background-color: var(--card);
+}
+.announce-pattern-swatch.is-vibrant {
+  background-color: color-mix(in srgb, var(--announce-tone) 22%, var(--bg));
+  border-color: color-mix(in srgb, var(--announce-tone) 55%, transparent);
+}
+.announce-icon-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.announce-icon-btn {
+  min-width: 34px;
+  height: 32px;
+  padding: 0 9px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.announce-icon-btn:hover { border-color: var(--border-strong); color: var(--fg); }
+.announce-icon-btn.is-active {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  color: var(--accent-bright);
+}
 @media (max-width: 640px) {
   .announce-inner { padding: 9px 14px; gap: 9px; font-size: 12px; }
   .announce-text { display: none; }

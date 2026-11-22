@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { ACCOUNT_DB_ERROR_MESSAGE, accountGate, canControlServer } from "@/lib/accounts";
 import { logAudit } from "@/lib/audit";
 import { exarotonAction, getExarotonConfig } from "@/lib/exaroton";
+import { getLaunchState } from "@/lib/launch";
 import { invalidateLiveStatus } from "@/lib/live-status";
 import { isRateLimited } from "@/lib/rate-limit";
 import { invalidateServerTelemetry } from "@/lib/server-telemetry";
@@ -58,7 +59,7 @@ export async function GET() {
 
   // Single live DB lookup handles both pre-launch admin check and permission
   // resolution, surfacing 503 on transient DB outages even before launch.
-  const gate = await accountGate(user.id);
+  const [gate, launch] = await Promise.all([accountGate(user.id), getLaunchState()]);
   if (gate.status === "db_error") {
     return NextResponse.json(
       { configured, allowed: false, error: ACCOUNT_DB_ERROR_MESSAGE },
@@ -70,7 +71,7 @@ export async function GET() {
   }
 
   const account = gate.status === "ok" ? gate.account : sessionFallbackAccount(user);
-  if (!siteConfig.seasonLive && account.role !== "admin") {
+  if (!launch.seasonLive && account.role !== "admin") {
     return NextResponse.json({ configured, allowed: false });
   }
 
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest) {
 
   // Single live DB lookup: surfaces 503 on DB blips (never a false pre-launch
   // 403 for admins) and checks ban/role/permissions in one round-trip.
-  const gate = await accountGate(user.id);
+  const [gate, launch] = await Promise.all([accountGate(user.id), getLaunchState()]);
   if (gate.status === "db_error") {
     return NextResponse.json({ error: ACCOUNT_DB_ERROR_MESSAGE }, { status: 503 });
   }
@@ -102,7 +103,7 @@ export async function POST(request: NextRequest) {
   // Fail closed before launch — except for admins, who need the controls to
   // prepare the season. Everyone else is refused even on a hand-crafted
   // request, not just by the hidden UI.
-  if (!siteConfig.seasonLive && account.role !== "admin") {
+  if (!launch.seasonLive && account.role !== "admin") {
     return NextResponse.json(
       { error: `Server control opens when ${siteConfig.season} launches.` },
       { status: 403 }

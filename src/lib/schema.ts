@@ -219,17 +219,40 @@ export const auditLog = pgTable(
   (t) => [index("audit_log_created_idx").on(t.createdAt)]
 );
 
+export const launchSettings = pgTable("launch_settings", {
+  id: integer("id").primaryKey().default(1),
+  launchAt: timestamp("launch_at", { withTimezone: true })
+    .notNull()
+    .default(sql`'2026-11-22 18:00:00+00'::timestamptz`),
+  enabled: boolean("enabled").notNull().default(true),
+  autoStart: boolean("auto_start").notNull().default(true),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+  startError: text("start_error"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Sitewide announcements written from the admin panel. The newest active row
-// renders as a bar under the navbar; older or inactive rows are ignored. Kept
-// deliberately small — a title, optional body, a tone, and an on/off switch.
+// renders as a bar under the navbar; older or inactive rows are ignored.
 export const announcements = pgTable(
   "announcements",
   {
     id: serial("id").primaryKey(),
     title: text("title").notNull(),
     body: text("body").notNull().default(""),
-    // "info" | "warning" | "critical" — drives the bar's accent only.
+    // Preset theme id ("info" | "emerald" | "diamond" | "gold" | "amethyst" | "sunset" | "warning" | "critical").
     tone: text("tone").notNull().default("info"),
+    // Visual background pattern ("none" | "stripes" | "pixels" | "grid" | "chevron" | "aurora").
+    pattern: text("pattern").notNull().default("none"),
+    // Optional custom #rrggbb hex color overriding the preset tone color.
+    accentColor: text("accent_color").notNull().default(""),
+    // Optional allow-listed Font Awesome icon class (e.g. "fa-rocket").
+    icon: text("icon").notNull().default(""),
+    // Vibrant tinted surface vs quiet subtle bar.
+    vibrant: boolean("vibrant").notNull().default(true),
+    // Optional plain-text CTA button label + safe relative/http(s) URL.
+    linkLabel: text("link_label").notNull().default(""),
+    linkHref: text("link_href").notNull().default(""),
     active: boolean("active").notNull().default(true),
     authorId: text("author_id").notNull().default(""),
     authorName: text("author_name").notNull().default(""),

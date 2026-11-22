@@ -9,6 +9,7 @@
 import { and, asc, count, desc, eq, ilike, or } from "drizzle-orm";
 import { getDb } from "./db";
 import { announcements, forumReplies, forumThreads, galleryItems, profiles, ruleSections, timelineEvents } from "./schema";
+import { getLaunchState } from "./launch";
 import { getLiveStatus } from "./live-status";
 import { formatSearchResults, webSearch } from "./web-search";
 import { formatModrinthResults, searchModrinth } from "./modrinth";
@@ -239,18 +240,18 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Cha
   switch (name) {
     case "get_server_status": {
       try {
-        const status = await getLiveStatus();
+        const [status, launch] = await Promise.all([getLiveStatus(), getLaunchState()]);
         if (status.source !== "live") {
           return { ok: true, label, content: "Live status is unavailable right now (the status API is unreachable). Say so honestly." };
         }
         if (!status.online) {
-          const prepNote = !siteConfig.seasonLive
+          const prepNote = !launch.seasonLive
             ? ` (${siteConfig.season} is coming soon and has not opened to players yet.)`
             : "";
           return { ok: true, label, content: `The server is currently ${status.stateLabel ?? "OFFLINE"}.${prepNote}` };
         }
         const names = (status.playerList ?? []).filter(Boolean);
-        const prepNote = !siteConfig.seasonLive
+        const prepNote = !launch.seasonLive
           ? ` (${siteConfig.season} is in pre-launch prep and not open to players yet.)`
           : "";
         return {

@@ -8,10 +8,12 @@ import {
   exarotonCommand,
   exarotonGetPlayerList,
   exarotonRemovePlayerListEntries,
+  exarotonSetMotd,
   exarotonSetRam,
   exarotonShareLogs,
   getExarotonConfig,
 } from "@/lib/exaroton";
+import { invalidateLiveStatus } from "@/lib/live-status";
 import { isValidMcName } from "@/lib/mc-name";
 import { isRateLimited } from "@/lib/rate-limit";
 import { profiles } from "@/lib/schema";
@@ -24,6 +26,7 @@ const VALID_LISTS = new Set<ServerPlayerListName>([
   "whitelist",
   "ops",
   "banned-players",
+  "banned-ips",
 ]);
 
 function parsePlayerList(raw: unknown): ServerPlayerListName | null {
@@ -39,6 +42,7 @@ function listAuditAction(
 ): AuditAction {
   if (list === "whitelist") return op === "add" ? "whitelist_add" : "whitelist_remove";
   if (list === "ops") return op === "add" ? "ops_add" : "ops_remove";
+  if (list === "banned-ips") return op === "add" ? "banip_add" : "banip_remove";
   return op === "add" ? "banlist_add" : "banlist_remove";
 }
 
@@ -155,6 +159,7 @@ export async function POST(request: NextRequest) {
   if (
     action !== "command" &&
     action !== "ram" &&
+    action !== "motd" &&
     action !== "share_logs" &&
     action !== "playerlist_add" &&
     action !== "playerlist_remove" &&
@@ -260,6 +265,36 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  if (action === "motd") {
+    if (typeof raw.motd !== "string") {
+      return NextResponse.json({ error: "Enter a server MOTD." }, { status: 400 });
+    }
+    const motd = raw.motd.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").slice(0, 200);
+    if (!getExarotonConfig()) {
+      return NextResponse.json(
+        { error: "Exaroton server control isn't configured." },
+        { status: 503 }
+      );
+    }
+    try {
+      const saved = await exarotonSetMotd(motd);
+      invalidateLiveStatus();
+      await logAudit({
+        actorId: admin.id,
+        actorName: admin.username,
+        action: "server_motd",
+        detail: saved.slice(0, 140),
+      });
+      return NextResponse.json({ ok: true, motd: saved });
+    } catch (err) {
+      console.error("api/admin/server POST motd: failed", err);
+      return NextResponse.json(
+        { error: "Couldn't update the server MOTD on Exaroton right now." },
+        { status: 502 }
+      );
+    }
+  }
+
   if (action === "share_logs") {
     if (!getExarotonConfig()) {
       return NextResponse.json(
@@ -299,12 +334,22 @@ export async function POST(request: NextRequest) {
     const list = parsePlayerList(raw.list);
     if (!list) {
       return NextResponse.json(
-        { error: "Invalid player list. Use whitelist, ops, or banned-players." },
+        { error: "Invalid player list. Use whitelist, ops, banned-players, or banned-ips." },
         { status: 400 }
       );
     }
-    const username = typeof raw.username === "string" ? raw.username.trim() : "";
-    if (!isValidMcName(username)) {
+    const entry = typeof raw.username === "string" ? raw.username.trim() : "";
+    if (list === "banned-ips") {
+      const validIp =
+        /^(?:\d{1,3}\.){3}\d{1,3}$/.test(entry) ||
+        /^[0-9a-fA-F:]{2,45}$/.test(entry);
+      if (!validIp) {
+        return NextResponse.json(
+          { error: "Enter a valid IPv4 or IPv6 address." },
+          { status: 400 }
+        );
+      }
+    } else if (!isValidMcName(entry)) {
       return NextResponse.json(
         {
           error:
@@ -323,13 +368,13 @@ export async function POST(request: NextRequest) {
     try {
       const entries =
         action === "playerlist_add"
-          ? await exarotonAddPlayerListEntries(list, [username])
-          : await exarotonRemovePlayerListEntries(list, [username]);
+          ? await exarotonAddPlayerListEntries(list, [entry])
+          : await exarotonRemovePlayerListEntries(list, [entry]);
       await logAudit({
         actorId: admin.id,
         actorName: admin.username,
         action: listAuditAction(list, action === "playerlist_add" ? "add" : "remove"),
-        targetName: username,
+        targetName: list === "banned-ips" ? "[ip]" : entry,
       });
       return NextResponse.json({ ok: true, entries });
     } catch (err) {

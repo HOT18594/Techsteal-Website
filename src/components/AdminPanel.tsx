@@ -152,7 +152,13 @@ function AccountStatus({ account }: { account: Account }) {
   );
 }
 
-export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
+export function AdminPanel({
+  currentUser,
+  initialTab = "overview",
+}: {
+  currentUser: SessionUser;
+  initialTab?: AdminSectionId;
+}) {
   const { show } = useToast();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [banned, setBanned] = useState<Account[]>([]);
@@ -161,7 +167,7 @@ export function AdminPanel({ currentUser }: { currentUser: SessionUser }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const [panel, setPanel] = useState<AdminSectionId>("overview");
+  const [panel, setPanel] = useState<AdminSectionId>(initialTab);
   const [view, setView] = useState<DirectoryView>("members");
   const [filter, setFilter] = useState<MemberFilter>("all");
   const [query, setQuery] = useState("");

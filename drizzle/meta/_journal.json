@@ -29,6 +29,20 @@
       "when": 1795210188467,
       "tag": "0003_cute_sunset_bain",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795317549885,
+      "tag": "0004_secret_king_cobra",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795319230145,
+      "tag": "0005_magenta_domino",
+      "breakpoints": true
     }
   ]
 }

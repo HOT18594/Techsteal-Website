@@ -330,3 +330,352 @@ export async function getExarotonSnapshot(): Promise<ExarotonSnapshot> {
     version: d.software?.version ?? null,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Extended Admin API — Account, Credit Pools, MOTD, Configs, Files, Playerdata
+// ---------------------------------------------------------------------------
+
+export interface ExarotonAccountInfo {
+  name: string;
+  credits: number;
+  verified: boolean;
+  maxServers: number;
+}
+
+export interface ExarotonCreditPool {
+  id: string;
+  name: string;
+  credits: number;
+  servers: number;
+  isOwner: boolean;
+  members: number;
+  ownShare: number;
+  ownCredits: number;
+}
+
+export interface ExarotonServerFullInfo extends ExarotonSnapshot {
+  id: string;
+  address: string | null;
+  host: string | null;
+  port: number | null;
+  region: string | null;
+  shared: boolean;
+  rawMotd: string | null;
+}
+
+export interface ExarotonFileInfo {
+  path: string;
+  name: string;
+  isTextFile: boolean;
+  isConfigFile: boolean;
+  isDirectory: boolean;
+  isLog: boolean;
+  isReadable: boolean;
+  isWritable: boolean;
+  size: number;
+  children?: ExarotonFileInfo[];
+}
+
+export interface ExarotonConfigOption {
+  key: string;
+  label: string;
+  type: "string" | "integer" | "float" | "boolean" | "select" | "multiselect" | (string & {});
+  value: string | number | boolean | string[] | null;
+  options: string[] | null;
+  min?: number | null;
+  max?: number | null;
+  step?: number | null;
+}
+
+/**
+ * Strictly sanitize a relative path for Exaroton's Files API.
+ * Returns normalized path without leading/trailing slashes (`""` for root),
+ * or `null` if the path contains traversal, backslashes, or control characters.
+ */
+export function sanitizeExarotonPath(raw: string): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim().replace(/^\/+|\/+$/g, "");
+  if (trimmed === "") return "";
+  if (trimmed.length > 300) return null;
+  if (/[\u0000-\u001f\u007f\\]/.test(trimmed)) return null;
+  const segments = trimmed.split("/");
+  for (const seg of segments) {
+    if (!seg || seg === "." || seg === "..") return null;
+  }
+  return segments.join("/");
+}
+
+function encodeExarotonPath(path: string): string {
+  if (!path) return "";
+  return path.split("/").map(encodeURIComponent).join("/");
+}
+
+async function exarotonJson<T>(
+  path: string,
+  init: RequestInit = {},
+  timeoutMs = 10_000
+): Promise<T> {
+  const config = getExarotonConfig();
+  if (!config) throw new Error("Exaroton is not configured.");
+  const res = await fetch(`${EXAROTON_API}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${config.token}`,
+      ...(init.headers ?? {}),
+    },
+    cache: "no-store",
+    signal: AbortSignal.timeout(timeoutMs),
+  }).catch((err: unknown) => {
+    if (err instanceof Error && err.name === "TimeoutError") {
+      throw new Error("Exaroton didn't respond — try again in a moment.");
+    }
+    throw err;
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null) as { error?: string } | null;
+    throw new Error(body?.error || `exaroton request failed (${res.status})`);
+  }
+  const json = (await res.json()) as { success?: boolean; error?: string | null; data?: T };
+  if (json.success === false) {
+    throw new Error(json.error || "exaroton rejected the request");
+  }
+  return json.data as T;
+}
+
+/** Account overview (excludes email for privacy). */
+export async function exarotonGetAccount(): Promise<ExarotonAccountInfo> {
+  const data = await exarotonJson<{
+    name?: string;
+    credits?: number;
+    verified?: boolean;
+    maxServers?: number;
+  }>("/account/");
+  return {
+    name: data?.name ?? "Unknown",
+    credits: typeof data?.credits === "number" ? data.credits : 0,
+    verified: Boolean(data?.verified),
+    maxServers: typeof data?.maxServers === "number" ? data.maxServers : 0,
+  };
+}
+
+/** Shared billing credit pools associated with the account. */
+export async function exarotonGetCreditPools(): Promise<ExarotonCreditPool[]> {
+  const data = await exarotonJson<Array<Partial<ExarotonCreditPool>>>("/billing/pools/");
+  if (!Array.isArray(data)) return [];
+  return data.map((p) => ({
+    id: String(p.id ?? ""),
+    name: String(p.name ?? "Unnamed pool"),
+    credits: typeof p.credits === "number" ? p.credits : 0,
+    servers: typeof p.servers === "number" ? p.servers : 0,
+    isOwner: Boolean(p.isOwner),
+    members: typeof p.members === "number" ? p.members : 0,
+    ownShare: typeof p.ownShare === "number" ? p.ownShare : 0,
+    ownCredits: typeof p.ownCredits === "number" ? p.ownCredits : 0,
+  }));
+}
+
+/** Full server metadata for the admin panel. */
+export async function exarotonGetServerInfo(): Promise<ExarotonServerFullInfo> {
+  const config = getExarotonConfig();
+  if (!config) throw new Error("Exaroton is not configured.");
+  const d = await exarotonJson<
+    NonNullable<ExarotonServerResponse["data"]> & { shared?: boolean; region?: string | null }
+  >(`/servers/${encodeURIComponent(config.serverId)}/`);
+  const mapped = d?.status !== undefined ? STATE_BY_CODE[d.status] : undefined;
+  return {
+    id: d?.id ?? config.serverId,
+    serverName: d?.name ?? null,
+    address: d?.address ?? null,
+    host: d?.host ?? null,
+    port: typeof d?.port === "number" ? d.port : null,
+    region: d?.region ?? null,
+    shared: Boolean(d?.shared),
+    rawMotd: d?.motd ?? null,
+    motd: d?.motd ? stripFormattingCodes(d.motd) : null,
+    statusCode: d?.status ?? null,
+    state: mapped?.state ?? "unknown",
+    stateLabel: mapped?.label ?? "Unknown",
+    online: (mapped?.state ?? "unknown") === "online",
+    players: d?.players?.count ?? 0,
+    max: d?.players?.max ?? 10,
+    playerList: Array.isArray(d?.players?.list) ? d.players.list : [],
+    software: d?.software?.name ?? null,
+    version: d?.software?.version ?? null,
+  };
+}
+
+/** Read current server MOTD. */
+export async function exarotonGetMotd(): Promise<string> {
+  const config = getExarotonConfig();
+  if (!config) throw new Error("Exaroton is not configured.");
+  const data = await exarotonJson<{ motd?: string }>(
+    `/servers/${encodeURIComponent(config.serverId)}/options/motd/`
+  );
+  return data?.motd ?? "";
+}
+
+/** Update server MOTD. */
+export async function exarotonSetMotd(motd: string): Promise<string> {
+  const config = getExarotonConfig();
+  if (!config) throw new Error("Exaroton is not configured.");
+  const data = await exarotonJson<{ motd?: string }>(
+    `/servers/${encodeURIComponent(config.serverId)}/options/motd/`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ motd }),
+    }
+  );
+  return data?.motd ?? motd;
+}
+
+/** List available player lists on this server. */
+export async function exarotonGetAvailablePlayerLists(): Promise<string[]> {
+  const config = getExarotonConfig();
+  if (!config) throw new Error("Exaroton is not configured.");
+  const data = await exarotonJson<string[]>(
+    `/servers/${encodeURIComponent(config.serverId)}/playerlists/`
+  );
+  return Array.isArray(data) ? data.filter((x): x is string => typeof x === "string") : [];
+}
+
+/** Read file or directory metadata (and directory children). */
+export async function exarotonGetFileInfo(rawPath: string): Promise<ExarotonFileInfo> {
+  const config = getExarotonConfig();
+  if (!config) throw new Error("Exaroton is not configured.");
+  const clean = sanitizeExarotonPath(rawPath);
+  if (clean === null) throw new Error("Invalid file path.");
+  const encoded = encodeExarotonPath(clean);
+  return exarotonJson<ExarotonFileInfo>(
+    `/servers/${encodeURIComponent(config.serverId)}/files/info/${encoded}`
+  );
+}
+
+/** Read raw text content of a server file (capped to prevent OOM on binary/large files). */
+export async function exarotonReadFileText(rawPath: string, maxBytes = 512_000): Promise<string> {
+  const config = getExarotonConfig();
+  if (!config) throw new Error("Exaroton is not configured.");
+  const clean = sanitizeExarotonPath(rawPath);
+  if (!clean) throw new Error("Invalid file path.");
+  const encoded = encodeExarotonPath(clean);
+  const res = await fetch(
+    `${EXAROTON_API}/servers/${encodeURIComponent(config.serverId)}/files/data/${encoded}`,
+    {
+      headers: { Authorization: `Bearer ${config.token}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(12_000),
+    }
+  );
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => {});
+    throw new Error(`Could not read file (${res.status})`);
+  }
+  const lenHeader = Number(res.headers.get("content-length") ?? "0");
+  if (lenHeader > maxBytes) {
+    await res.body?.cancel().catch(() => {});
+    throw new Error(`File is too large to open in the editor (limit ${Math.round(maxBytes / 1024)} KB).`);
+  }
+  const buf = await res.arrayBuffer();
+  if (buf.byteLength > maxBytes) {
+    throw new Error(`File is too large to open in the editor (limit ${Math.round(maxBytes / 1024)} KB).`);
+  }
+  return new TextDecoder("utf-8", { fatal: false }).decode(buf);
+}
+
+/** Write UTF-8 text content to a server file. */
+export async function exarotonWriteFileText(rawPath: string, content: string): Promise<void> {
+  const config = getExarotonConfig();
+  if (!config) throw new Error("Exaroton is not configured.");
+  const clean = sanitizeExarotonPath(rawPath);
+  if (!clean) throw new Error("Invalid file path.");
+  const encoded = encodeExarotonPath(clean);
+  const res = await fetch(
+    `${EXAROTON_API}/servers/${encodeURIComponent(config.serverId)}/files/data/${encoded}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${config.token}`,
+        "Content-Type": "text/plain; charset=utf-8",
+      },
+      body: content,
+      signal: AbortSignal.timeout(12_000),
+    }
+  );
+  await res.body?.cancel().catch(() => {});
+  if (!res.ok) throw new Error(`Could not save file (${res.status})`);
+}
+
+/** Create a directory on the server. */
+export async function exarotonCreateDirectory(rawPath: string): Promise<void> {
+  const config = getExarotonConfig();
+  if (!config) throw new Error("Exaroton is not configured.");
+  const clean = sanitizeExarotonPath(rawPath);
+  if (!clean) throw new Error("Invalid folder path.");
+  const encoded = encodeExarotonPath(clean);
+  const res = await fetch(
+    `${EXAROTON_API}/servers/${encodeURIComponent(config.serverId)}/files/data/${encoded}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${config.token}`,
+        "Content-Type": "inode/directory",
+      },
+      signal: AbortSignal.timeout(10_000),
+    }
+  );
+  await res.body?.cancel().catch(() => {});
+  if (!res.ok) throw new Error(`Could not create folder (${res.status})`);
+}
+
+/** Delete a file or directory on the server. */
+export async function exarotonDeleteFile(rawPath: string): Promise<void> {
+  const config = getExarotonConfig();
+  if (!config) throw new Error("Exaroton is not configured.");
+  const clean = sanitizeExarotonPath(rawPath);
+  if (!clean) throw new Error("Cannot delete server root.");
+  const encoded = encodeExarotonPath(clean);
+  const res = await fetch(
+    `${EXAROTON_API}/servers/${encodeURIComponent(config.serverId)}/files/data/${encoded}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${config.token}` },
+      signal: AbortSignal.timeout(10_000),
+    }
+  );
+  await res.body?.cancel().catch(() => {});
+  if (!res.ok) throw new Error(`Could not delete file (${res.status})`);
+}
+
+/** Fetch structured options for a config file (e.g. `server.properties`). */
+export async function exarotonGetConfigOptions(rawPath: string): Promise<ExarotonConfigOption[]> {
+  const config = getExarotonConfig();
+  if (!config) throw new Error("Exaroton is not configured.");
+  const clean = sanitizeExarotonPath(rawPath);
+  if (!clean) throw new Error("Invalid config path.");
+  const encoded = encodeExarotonPath(clean);
+  const data = await exarotonJson<ExarotonConfigOption[]>(
+    `/servers/${encodeURIComponent(config.serverId)}/files/config/${encoded}`
+  );
+  return Array.isArray(data) ? data : [];
+}
+
+/** Update structured options on a config file (e.g. `server.properties`). */
+export async function exarotonSetConfigOptions(
+  rawPath: string,
+  values: Record<string, string | number | boolean | string[]>
+): Promise<ExarotonConfigOption[]> {
+  const config = getExarotonConfig();
+  if (!config) throw new Error("Exaroton is not configured.");
+  const clean = sanitizeExarotonPath(rawPath);
+  if (!clean) throw new Error("Invalid config path.");
+  const encoded = encodeExarotonPath(clean);
+  const data = await exarotonJson<ExarotonConfigOption[]>(
+    `/servers/${encodeURIComponent(config.serverId)}/files/config/${encoded}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(values),
+    }
+  );
+  return Array.isArray(data) ? data : [];
+}

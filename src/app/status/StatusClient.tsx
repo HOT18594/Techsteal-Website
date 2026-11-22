@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { CSSProperties, FormEvent, KeyboardEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SubPage } from "@/components/SubPage";
+import { useLaunchState } from "@/components/LaunchProvider";
 import { useToast } from "@/components/Toast";
 import { useCopyAddress } from "@/components/CopyIpButton";
 import { fallbackStatus } from "@/lib/fallback-data";
@@ -324,6 +325,9 @@ function ConsolePanel({
           />{" "}
           {sharingLog ? "Sharing…" : "Share Log"}
         </button>
+        <Link href="/admin?tab=server" className="ops-console-copy">
+          <i className="fa-solid fa-sliders" aria-hidden="true" /> Full Exaroton Panel
+        </Link>
         {sharedLogUrl ? (
           <a
             href={sharedLogUrl}
@@ -409,6 +413,9 @@ function ConsolePanel({
 
 export function StatusClient() {
   const { show } = useToast();
+  const { launch } = useLaunchState();
+  const seasonLive = launch.seasonLive;
+  const prevSeasonLive = useRef(seasonLive);
   const { user, loading: sessionLoading } = useSession();
   const isAdmin = user?.role === "admin";
   const {
@@ -439,7 +446,7 @@ export function StatusClient() {
   const transitional =
     statusLive && ["loading", "starting", "stopping", "restarting"].includes(status.state ?? "");
   const rawOnline = statusLive && Boolean(status.online);
-  const online = siteConfig.seasonLive ? rawOnline : isAdmin && rawOnline;
+  const online = seasonLive ? rawOnline : isAdmin && rawOnline;
   const players = online ? (status.players ?? 0) : 0;
   const max = status.max ?? siteConfig.maxPlayers;
   const freeSlots = Math.max(max - players, 0);
@@ -448,7 +455,7 @@ export function StatusClient() {
   const version = status.version ?? siteConfig.version;
 
   const baseStyle = styleFor(status, statusLive);
-  const stateColor = !siteConfig.seasonLive && !isAdmin
+  const stateColor = !seasonLive && !isAdmin
     ? rawOnline || transitional
       ? "#e0c38b"
       : "#a2a79b"
@@ -458,7 +465,7 @@ export function StatusClient() {
     ? statusLoading
       ? "Checking"
       : "Signal lost"
-    : !siteConfig.seasonLive && !isAdmin
+    : !seasonLive && !isAdmin
       ? rawOnline || transitional
         ? "Pre-launch prep"
         : "Coming soon"
@@ -466,7 +473,7 @@ export function StatusClient() {
 
   const heroDescription = !statusLive
     ? baseStyle.message
-    : !siteConfig.seasonLive
+    : !seasonLive
       ? isAdmin
         ? rawOnline
           ? `${siteConfig.season} is online for pre-launch preparation (public launch flag is off).`
@@ -484,9 +491,9 @@ export function StatusClient() {
   const tabs = useMemo(() => {
     const list: TabId[] = ["overview", "players"];
     if (isAdmin) list.push("console");
-    if (control?.allowed && siteConfig.seasonLive) list.push("manage");
+    if (control?.allowed && seasonLive) list.push("manage");
     return list;
-  }, [isAdmin, control]);
+  }, [isAdmin, control, seasonLive]);
 
   useEffect(() => {
     if (!tabs.includes(tab)) setTab("overview");
@@ -507,7 +514,7 @@ export function StatusClient() {
   };
 
   const refreshControl = useCallback(() => {
-    if (!siteConfig.seasonLive || sessionLoading) return;
+    if (!seasonLive || sessionLoading) return;
     const seq = ++controlSeq.current;
     setControlError(false);
     fetch("/api/server/control")
@@ -523,7 +530,14 @@ export function StatusClient() {
       .catch(() => {
         if (controlSeq.current === seq) setControlError(true);
       });
-  }, [sessionLoading]);
+  }, [seasonLive, sessionLoading]);
+
+  useEffect(() => {
+    if (!prevSeasonLive.current && seasonLive) {
+      void refetch();
+    }
+    prevSeasonLive.current = seasonLive;
+  }, [seasonLive, refetch]);
 
   useEffect(() => {
     refreshControl();
@@ -603,7 +617,7 @@ export function StatusClient() {
   }, []);
 
   useEffect(() => {
-    if (!statusLive || (!siteConfig.seasonLive && !isAdmin)) return;
+    if (!statusLive || (!seasonLive && !isAdmin)) return;
     const nowTs = Date.now();
     const cutoff = nowTs - MAX_ACTIVITY_AGE_MS;
     const nextPoint = { at: nowTs, players, max };
@@ -625,7 +639,7 @@ export function StatusClient() {
         [...current.filter((p) => p.at >= cutoff), nextPoint].slice(-36)
       );
     }
-  }, [statusLive, isAdmin, players, max, status]);
+  }, [statusLive, seasonLive, isAdmin, players, max, status]);
 
   const freshness = useMemo(() => {
     if (statusError) return "Check failed";
@@ -672,7 +686,7 @@ export function StatusClient() {
   const canStop =
     statusLive && (status.state === undefined ? rawOnline : status.state === "online");
 
-  const rosterMessage = !siteConfig.seasonLive && !isAdmin
+  const rosterMessage = !seasonLive && !isAdmin
     ? `${siteConfig.season} hasn’t opened yet — player activity appears here once the season launches.`
     : !statusLive
       ? "Player data is unavailable until the live signal returns."
@@ -683,7 +697,7 @@ export function StatusClient() {
           : "The realm is online and quiet right now.";
 
   const tabBadge = (id: TabId): number | null => {
-    if (id === "players" && statusLive && (siteConfig.seasonLive || isAdmin)) return players;
+    if (id === "players" && statusLive && (seasonLive || isAdmin)) return players;
     if (id === "console" && telemetry.source === "live") return telemetry.lines.length;
     return null;
   };
@@ -720,17 +734,17 @@ export function StatusClient() {
               {statusLoading && !statusLive
                 ? "Checking connection"
                 : statusLive
-                  ? siteConfig.seasonLive || isAdmin
+                  ? seasonLive || isAdmin
                     ? "Live server status"
                     : `${siteConfig.season} status`
                   : "Connection unavailable"}
             </span>
             <h2 id="current-state-title">{heroLabel}</h2>
             <p>{heroDescription}</p>
-            {status.serverName && (siteConfig.seasonLive || isAdmin) ? (
+            {status.serverName && (seasonLive || isAdmin) ? (
               <span className="ops-server-name">{status.serverName}</span>
             ) : null}
-            {transitional && (siteConfig.seasonLive || isAdmin) ? (
+            {transitional && (seasonLive || isAdmin) ? (
               <span className="ops-transition">
                 <i className="fa-solid fa-spinner fa-spin" aria-hidden="true" /> Checking every 12 seconds
               </span>
@@ -781,11 +795,11 @@ export function StatusClient() {
               <div>
                 <span>Players online</span>
                 <strong>
-                  {statusLive && (siteConfig.seasonLive || isAdmin) ? players : "—"}
+                  {statusLive && (seasonLive || isAdmin) ? players : "—"}
                   <small> / {max}</small>
                 </strong>
                 <span>
-                  {!siteConfig.seasonLive && !isAdmin
+                  {!seasonLive && !isAdmin
                     ? `${siteConfig.season} coming soon`
                     : statusLive
                       ? `${freeSlots} slots available`
@@ -806,7 +820,7 @@ export function StatusClient() {
                   <span>Current season</span>
                   <strong className="ops-metric-text">{siteConfig.season}</strong>
                   <span>
-                    {siteConfig.seasonLive ? "Live now" : "Coming soon"} · {siteConfig.previousSeason} concluded
+                    {seasonLive ? "Live now" : "Coming soon"} · {siteConfig.previousSeason} concluded
                   </span>
                 </div>
               )}
@@ -820,8 +834,10 @@ export function StatusClient() {
               </div>
               <div>
                 <span>Access</span>
-                <strong className="ops-metric-text">Whitelist</strong>
-                <span>Members only</span>
+                <strong className="ops-metric-text">
+                  {siteConfig.whitelist === "Enabled" ? "Whitelist" : "Open"}
+                </strong>
+                <span>{siteConfig.whitelist === "Enabled" ? "Members only" : "No whitelist"}</span>
               </div>
             </section>
 
@@ -869,11 +885,11 @@ export function StatusClient() {
               <div className="ops-panel-head">
                 <h2 id="roster-title">Online players</h2>
                 <span className="ops-label">
-                  {statusLive && (siteConfig.seasonLive || isAdmin) ? `${players} / ${max}` : "Unavailable"}
+                  {statusLive && (seasonLive || isAdmin) ? `${players} / ${max}` : "Unavailable"}
                 </span>
               </div>
               <div className="ops-roster-body">
-                {statusLive && (siteConfig.seasonLive || isAdmin) ? (
+                {statusLive && (seasonLive || isAdmin) ? (
                   <>
                     <div
                       className="ops-capacity-track"
@@ -933,7 +949,7 @@ export function StatusClient() {
           </div>
         ) : null}
 
-        {tab === "manage" && control?.allowed && siteConfig.seasonLive ? (
+        {tab === "manage" && control?.allowed && seasonLive ? (
           <div id="ops-panel-manage" role="tabpanel" aria-labelledby="ops-tab-manage" className="ops-tabpanel">
             <div className="ops-content-grid">
               <div className="ops-main">
@@ -1009,7 +1025,7 @@ export function StatusClient() {
           </div>
         ) : null}
 
-        {siteConfig.seasonLive && control !== null && control.configured && !control.allowed ? (
+        {seasonLive && control !== null && control.configured && !control.allowed ? (
           <div className="ops-access-cta">
             <i className="fa-solid fa-lock" aria-hidden="true" />
             <p>
@@ -1023,7 +1039,7 @@ export function StatusClient() {
             </Link>
           </div>
         ) : null}
-        {siteConfig.seasonLive && control === null && controlError ? (
+        {seasonLive && control === null && controlError ? (
           <div className="ops-access-cta">
             <i className="fa-solid fa-circle-info" aria-hidden="true" />
             <p>Couldn’t check your control access.</p>

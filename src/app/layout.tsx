@@ -6,6 +6,7 @@ import { Footer } from "@/components/Footer";
 import { Navbar } from "@/components/Navbar";
 import { AnnouncementBar } from "@/components/AnnouncementBar";
 import { OnboardingReminder } from "@/components/OnboardingReminder";
+import { LaunchProvider } from "@/components/LaunchProvider";
 import { PageEnter } from "@/components/PageEnter";
 import { PollAnnouncement } from "@/components/PollAnnouncement";
 import { RevealObserver } from "@/components/RevealObserver";
@@ -40,7 +41,7 @@ export const metadata: Metadata = {
     default: "Techsteal",
     template: "%s · Techsteal",
   },
-  description: `Official website for the ${siteConfig.name} private Minecraft server — ${siteConfig.season} is ${siteConfig.seasonLive ? "live" : "coming soon"}. Status, forum, members, gallery, and rules.`,
+  description: `Official website for the ${siteConfig.name} private Minecraft server (${siteConfig.season}). Status, forum, members, gallery, and rules.`,
   openGraph: {
     title: "Techsteal",
     siteName: siteConfig.name,
@@ -76,7 +77,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             Enable JavaScript for the full experience.
           </div>
         </noscript>
-        <PaletteProvider><ToastProvider>
+        <PaletteProvider><LaunchProvider><ToastProvider>
           <a
             href="#main-content"
             className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[100] focus:px-4 focus:py-2.5 focus:rounded-[10px] focus:bg-[var(--accent)] focus:text-[var(--bg)] focus:text-xs focus:font-bold"
@@ -93,7 +94,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           </main>
           <Footer />
           <BackToTop />
-        </ToastProvider></PaletteProvider>
+        </ToastProvider></LaunchProvider></PaletteProvider>
       </body>
     </html>
   );

@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AnnouncementsPanel } from "@/components/AnnouncementsPanel";
 import { EmptyState } from "@/components/EmptyState";
+import { useLaunchState } from "@/components/LaunchProvider";
 import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
 import { siteConfig } from "@/lib/site";
@@ -500,6 +501,7 @@ function RulesEditor() {
 
 function TimelineEditor() {
   const { show } = useToast();
+  const { launch } = useLaunchState();
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -535,7 +537,7 @@ function TimelineEditor() {
 
   const openNew = () => {
     setModalMode("new");
-    setDate(siteConfig.seasonLive ? siteConfig.seasonStart : "Coming soon");
+    setDate(launch.seasonLive ? (launch.enabled ? launch.launchAt.slice(0, 10) : siteConfig.seasonStart) : "Coming soon");
     setTitle("");
     setEra("Current Season");
     setMajor(true);

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { count, eq, isNotNull, ne, and } from "drizzle-orm";
 import { getDb } from "@/lib/db";
+import { getLaunchState } from "@/lib/launch";
 import { forumReplies, forumThreads, galleryItems, profiles } from "@/lib/schema";
 import { getLiveStatus } from "@/lib/live-status";
 import { siteConfig } from "@/lib/site";
@@ -10,12 +11,19 @@ export const dynamic = "force-dynamic";
 
 // Aggregated community counters for the home stats tile. Everything here is
 // already public (roster size, build/thread/reply counts). The live player
-// count and "days live" are gated on seasonLive so the dev/test server never
-// leaks its activity before the season publicly opens.
+// count and "days live" are gated on launch.seasonLive so the dev/test server
+// never leaks its activity before the season publicly opens.
 export async function GET() {
+  const launch = await getLaunchState();
+  const effectiveStart = siteConfig.seasonLive
+    ? siteConfig.seasonStart
+    : launch.enabled
+      ? launch.launchAt
+      : siteConfig.seasonStart;
+
   const base: SeasonStats = {
     season: siteConfig.season,
-    seasonStart: siteConfig.seasonStart,
+    seasonStart: effectiveStart.slice(0, 10),
     daysLive: 0,
     members: 0,
     online: 0,
@@ -36,7 +44,7 @@ export async function GET() {
       db.select({ value: count() }).from(galleryItems),
       db.select({ value: count() }).from(forumThreads),
       db.select({ value: count() }).from(forumReplies),
-      siteConfig.seasonLive ? getLiveStatus().catch(() => null) : Promise.resolve(null),
+      launch.seasonLive ? getLiveStatus().catch(() => null) : Promise.resolve(null),
     ]);
 
     const online =
@@ -49,7 +57,7 @@ export async function GET() {
       discussions: discussions[0]?.value ?? 0,
       replies: replies[0]?.value ?? 0,
       online,
-      daysLive: siteConfig.seasonLive ? daysSince(siteConfig.seasonStart) : 0,
+      daysLive: launch.seasonLive ? daysSince(effectiveStart) : 0,
     };
     return NextResponse.json(stats);
   } catch (err) {

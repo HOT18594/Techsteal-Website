@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+import { useLaunchState } from "@/components/LaunchProvider";
 import { useApi } from "@/lib/use-api";
 import { siteConfig } from "@/lib/site";
 import type { SeasonStats as Stats } from "@/types";
@@ -17,9 +19,18 @@ const INITIAL: Stats = {
 
 // Flat counter band under the hero. Only public community totals; the live
 // player count and "days live" appear once the season actually opens.
-export function SeasonStats() {
-  const { data, loading } = useApi<Stats>("/api/stats", INITIAL);
-  const live = siteConfig.seasonLive;
+export function SeasonStats({ initialLive }: { initialLive?: boolean }) {
+  const { data, loading, refetch } = useApi<Stats>("/api/stats", INITIAL);
+  const { launch } = useLaunchState();
+  const live = launch.configured ? launch.seasonLive : (initialLive ?? launch.seasonLive);
+  const prevLive = useRef(live);
+
+  useEffect(() => {
+    if (!prevLive.current && live) {
+      void refetch();
+    }
+    prevLive.current = live;
+  }, [live, refetch]);
 
   const cells = [
     { icon: "fa-users", label: "Members", value: data.members },

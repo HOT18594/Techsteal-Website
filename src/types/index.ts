@@ -338,11 +338,17 @@ export interface Announcement {
   id: number;
   title: string;
   body: string;
-  tone: "info" | "warning" | "critical" | (string & {});
+  tone: string;
+  pattern?: string;
+  accentColor?: string;
+  icon?: string;
+  vibrant?: boolean;
+  linkLabel?: string;
+  linkHref?: string;
   active?: boolean;
   authorName: string;
   createdAt: string | null;
 }
 
 /** Exaroton player list identifiers manageable from the admin panel. */
-export type ServerPlayerListName = "whitelist" | "ops" | "banned-players";
+export type ServerPlayerListName = "whitelist" | "ops" | "banned-players" | "banned-ips";

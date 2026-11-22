@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { AUDIT_ACTION_META } from "@/components/AuditLog";
+import { AdminLaunchPanel } from "@/components/AdminLaunchPanel";
 import { EmptyState } from "@/components/EmptyState";
+import { useLaunchState } from "@/components/LaunchProvider";
 import { useToast } from "@/components/Toast";
 import { siteConfig } from "@/lib/site";
 import { timeAgo } from "@/lib/time";
@@ -54,6 +56,10 @@ interface OverviewResponse {
     aiConfigured: boolean;
     status?: ServerStatus | null;
   };
+  config?: {
+    seasonLive?: boolean;
+    seasonStart?: string;
+  };
   auditEntries?: AuditEntry[];
   error?: string;
 }
@@ -64,6 +70,7 @@ export function AdminOverview({
   onNavigate: (tab: AdminSectionId) => void;
 }) {
   const { show } = useToast();
+  const { launch } = useLaunchState();
   const [data, setData] = useState<OverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -111,13 +118,16 @@ export function AdminOverview({
   const quickSyncSeasonTimeline = async (mode: "prep" | "launch") => {
     setBusyAction("timeline");
     try {
+      const effectiveStart = launch.enabled
+        ? launch.launchAt.slice(0, 10)
+        : (data?.config?.seasonStart ?? siteConfig.seasonStart);
       const res = await fetch("/api/admin/timeline", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "season_transition",
           mode,
-          launchDate: siteConfig.seasonStart,
+          launchDate: effectiveStart,
         }),
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string };
@@ -160,10 +170,11 @@ export function AdminOverview({
   const status = h?.status;
   const serverLabel = status?.stateLabel ?? (status?.online ? "Online" : "Offline");
 
+  const seasonLive = launch.configured ? launch.seasonLive : (data?.config?.seasonLive ?? siteConfig.seasonLive);
   const rulesReady = (c?.ruleSections ?? 0) > 0;
   const seasonTimeline = c?.seasonTimeline;
   const seasonEventExists = Boolean(seasonTimeline?.exists);
-  const timelineReady = siteConfig.seasonLive
+  const timelineReady = seasonLive
     ? Boolean(seasonEventExists && seasonTimeline?.date && !/coming soon/i.test(seasonTimeline.date))
     : seasonEventExists;
 
@@ -209,7 +220,7 @@ export function AdminOverview({
           </span>
           <div>
             <span>
-              {siteConfig.season} · {siteConfig.seasonLive ? "Publicly live" : "Pre-launch prep"}
+              {siteConfig.season} · {seasonLive ? "Publicly live" : "Pre-launch prep"}
             </span>
             <strong>
               {loading
@@ -222,6 +233,8 @@ export function AdminOverview({
         </div>
       </section>
 
+      <AdminLaunchPanel />
+
       <div className="grid gap-4 lg:grid-cols-12">
         <section className="admin-directory lg:col-span-7">
           <div className="admin-directory-head">
@@ -230,7 +243,7 @@ export function AdminOverview({
               <p>
                 Current mode:{" "}
                 <strong className="text-[var(--fg)]">
-                  {siteConfig.seasonLive ? "Live Season" : "Preparing for Launch (seasonLive: false)"}
+                  {seasonLive ? "Live Season" : "Preparing for Launch"}
                 </strong>{" "}
                 · Target {siteConfig.software} {siteConfig.version} ({siteConfig.address})
               </p>
@@ -259,7 +272,7 @@ export function AdminOverview({
                 </div>
                 <p className="text-xs text-[var(--muted)] mt-0.5">
                   {h?.exarotonConfigured
-                    ? `Connected (${serverLabel}). Admins can boot, run console commands, and sync whitelist pre-launch.`
+                    ? `Connected (${serverLabel}). Admins can boot, run console commands, and manage player lists.`
                     : "EXAROTON_TOKEN / EXAROTON_SERVER_ID not detected — falling back to public pings."}
                 </p>
               </div>
@@ -324,11 +337,11 @@ export function AdminOverview({
                   type="button"
                   className="admin-action-btn"
                   disabled={busyAction === "timeline"}
-                  onClick={() => void quickSyncSeasonTimeline(siteConfig.seasonLive ? "launch" : "prep")}
+                  onClick={() => void quickSyncSeasonTimeline(seasonLive ? "launch" : "prep")}
                   title="Update season timeline rows without SQL"
                 >
                   <i className="fa-solid fa-bolt" aria-hidden="true" />{" "}
-                  {siteConfig.seasonLive ? "Mark Launched" : "Sync Prep Row"}
+                  {seasonLive ? "Mark Launched" : "Sync Prep Row"}
                 </button>
                 <button type="button" className="admin-action-btn" onClick={() => onNavigate("content")}>
                   Timeline CMS
@@ -345,19 +358,24 @@ export function AdminOverview({
                     }`}
                     aria-hidden="true"
                   />
-                  Member Roster &amp; Whitelist Readiness
+                  {siteConfig.whitelist === "Enabled"
+                    ? "Member Roster & Whitelist Readiness"
+                    : "Member Roster (No Whitelist)"}
                 </div>
                 <p className="text-xs text-[var(--muted)] mt-0.5">
-                  {m?.mcLinked ?? 0} member(s) linked a Minecraft IGN · {m?.pendingSetup ?? 0} account(s) still pending setup.
+                  {m?.mcLinked ?? 0} member(s) linked a Minecraft IGN · {m?.pendingSetup ?? 0} account(s) still pending setup
+                  {siteConfig.whitelist === "Disabled" ? " · Whitelist disabled" : ""}.
                 </p>
               </div>
               <div className="flex items-center gap-2">
                 <button type="button" className="admin-action-btn" onClick={() => onNavigate("members")}>
                   Members
                 </button>
-                <button type="button" className="admin-action-btn" onClick={() => onNavigate("server")}>
-                  Sync Whitelist
-                </button>
+                {siteConfig.whitelist === "Enabled" ? (
+                  <button type="button" className="admin-action-btn" onClick={() => onNavigate("server")}>
+                    Sync Whitelist
+                  </button>
+                ) : null}
               </div>
             </div>
 
