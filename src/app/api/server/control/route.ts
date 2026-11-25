@@ -6,6 +6,7 @@ import { exarotonAction, getExarotonConfig } from "@/lib/exaroton";
 import { getLaunchState } from "@/lib/launch";
 import { invalidateLiveStatus } from "@/lib/live-status";
 import { isRateLimited } from "@/lib/rate-limit";
+import { syncServerCommands } from "@/lib/server-commands";
 import { invalidateServerTelemetry } from "@/lib/server-telemetry";
 import { siteConfig } from "@/lib/site";
 import type { Account, SessionUser } from "@/types";
@@ -131,6 +132,15 @@ export async function POST(request: NextRequest) {
       { error: "Too many control requests — wait a minute." },
       { status: 429 }
     );
+  }
+
+  // Snapshot the live Exaroton log right before stopping or restarting so zero
+  // commands are ever lost when the host rotates the log on shutdown.
+  if (action === "stop" || action === "restart") {
+    await Promise.race([
+      syncServerCommands({ force: true }),
+      new Promise((resolve) => setTimeout(resolve, 4000)),
+    ]).catch(() => {});
   }
 
   try {

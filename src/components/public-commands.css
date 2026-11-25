@@ -1,0 +1,466 @@
+/* ============================================================
+   Public Anti-Cheat Command Ledger
+   Flat neutral-dark surfaces, 1px hairline borders, palette-aware
+   ============================================================ */
+
+.cmd-board {
+  display: grid;
+  gap: 1.15rem;
+}
+
+.cmd-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.cmd-banner-copy {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.cmd-banner-icon {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--accent-dim);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--accent-bright);
+  font-size: 0.95rem;
+}
+
+.cmd-banner-copy h2 {
+  margin: 0;
+  color: var(--fg);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.cmd-banner-copy p {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.cmd-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.cmd-sync-meta {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.cmd-sync-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 38px;
+  padding: 0.45rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-3);
+  color: var(--fg);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.cmd-sync-btn:hover:not(:disabled) {
+  background: var(--card-hover);
+  border-color: var(--accent);
+}
+
+.cmd-sync-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+/* KPI strip */
+.cmd-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.cmd-kpi {
+  padding: 0.95rem 1.1rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.cmd-kpi span {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.cmd-kpi strong {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--fg);
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.cmd-kpi strong.is-alert {
+  color: var(--redstone);
+}
+
+.cmd-kpi small {
+  font-size: 0.68rem;
+  color: var(--muted-2);
+}
+
+/* Main ledger panel */
+.cmd-panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.cmd-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem 1.2rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+.cmd-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.cmd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.38rem 0.78rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.cmd-chip:hover {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+
+.cmd-chip.is-active {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.cmd-chip.is-alert.is-active {
+  color: #fff;
+  background: var(--redstone);
+  border-color: var(--redstone);
+}
+
+.cmd-chip-count {
+  font-size: 0.66rem;
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+}
+
+.cmd-search-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.cmd-search {
+  flex: 1 1 240px;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.cmd-search:focus-within {
+  border-color: var(--accent);
+}
+
+.cmd-search i {
+  color: var(--muted-2);
+  font-size: 0.78rem;
+}
+
+.cmd-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  outline: none;
+  color: var(--fg);
+  font-size: 0.82rem;
+}
+
+.cmd-search input::placeholder {
+  color: var(--muted-2);
+}
+
+.cmd-actor-select {
+  min-height: 38px;
+  padding: 0.45rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* Command entries list */
+.cmd-list {
+  display: block;
+}
+
+.cmd-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 210px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.85rem 1rem;
+  padding: 0.85rem 1.2rem;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.12s;
+}
+
+.cmd-row:last-child {
+  border-bottom: 0;
+}
+
+.cmd-row:hover {
+  background: var(--bg-2);
+}
+
+.cmd-row.is-critical {
+  border-left: 3px solid var(--redstone);
+  padding-left: calc(1.2rem - 3px);
+}
+
+.cmd-row.is-high {
+  border-left: 3px solid #f59e0b;
+  padding-left: calc(1.2rem - 3px);
+}
+
+.cmd-actor {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.cmd-actor-head {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  image-rendering: pixelated;
+  flex-shrink: 0;
+}
+
+.cmd-actor-sys {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-3);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  font-size: 0.72rem;
+  flex-shrink: 0;
+}
+
+.cmd-actor-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cmd-actor-name {
+  color: var(--fg);
+  font-size: 0.82rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmd-actor-src {
+  color: var(--muted-2);
+  font-size: 0.67rem;
+}
+
+.cmd-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.32rem;
+  min-width: 0;
+}
+
+.cmd-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.cmd-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.14rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--fg-2);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cmd-pill.is-critical {
+  border-color: rgba(244, 63, 94, 0.35);
+  background: rgba(244, 63, 94, 0.12);
+  color: #fda4af;
+}
+
+.cmd-pill.is-high {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.12);
+  color: #fde68a;
+}
+
+.cmd-pill.is-normal {
+  border-color: var(--border);
+  background: var(--bg-3);
+  color: var(--muted);
+}
+
+.cmd-text {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.8rem;
+  color: var(--fg);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.cmd-time {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.cmd-time strong {
+  color: var(--fg-2);
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.cmd-time span {
+  color: var(--muted-2);
+  font-size: 0.67rem;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.cmd-empty {
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+.cmd-empty i {
+  font-size: 1.6rem;
+  color: var(--muted-2);
+  margin-bottom: 0.75rem;
+  display: block;
+}
+
+.cmd-empty strong {
+  display: block;
+  color: var(--fg);
+  font-size: 0.92rem;
+  margin-bottom: 0.3rem;
+}
+
+.cmd-empty p {
+  margin: 0 auto;
+  max-width: 440px;
+  font-size: 0.78rem;
+}
+
+.cmd-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.85rem 1.2rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg-2);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.cmd-page-btns {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+@media (max-width: 860px) {
+  .cmd-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cmd-row {
+    grid-template-columns: 1fr;
+    gap: 0.55rem;
+  }
+  .cmd-time {
+    align-items: flex-start;
+    text-align: left;
+    flex-direction: row;
+    gap: 0.6rem;
+  }
+}

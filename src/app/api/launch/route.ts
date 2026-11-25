@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getLaunchState, runScheduledLaunch } from "@/lib/launch";
 import { isRateLimited, rateLimitIp } from "@/lib/rate-limit";
+import { syncServerCommands } from "@/lib/server-commands";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -16,7 +17,10 @@ function isAuthorizedCron(request: NextRequest): boolean {
 
 export async function GET(request: NextRequest) {
   if (isAuthorizedCron(request)) {
-    const run = await runScheduledLaunch();
+    const [run] = await Promise.all([
+      runScheduledLaunch(),
+      syncServerCommands({ force: true }).catch(() => null),
+    ]);
     return NextResponse.json(run, { headers: { "Cache-Control": "no-store" } });
   }
   const state = await getLaunchState();

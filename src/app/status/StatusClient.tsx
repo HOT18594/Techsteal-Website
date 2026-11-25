@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { CSSProperties, FormEvent, KeyboardEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SubPage } from "@/components/SubPage";
+import { PublicCommandsBoard } from "@/components/PublicCommandsBoard";
 import { useLaunchState } from "@/components/LaunchProvider";
 import { useToast } from "@/components/Toast";
 import { useCopyAddress } from "@/components/CopyIpButton";
@@ -40,11 +41,12 @@ const MAX_ACTIVITY_AGE_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 type ActivityPoint = { at: number; players: number; max: number };
 type ConsoleFilter = "all" | ServerTelemetryLine["level"];
-type TabId = "overview" | "players" | "console" | "manage";
+type TabId = "overview" | "players" | "commands" | "console" | "manage";
 
 const TAB_META: Record<TabId, { label: string; icon: string }> = {
   overview: { label: "Overview", icon: "fa-gauge-high" },
   players: { label: "Players", icon: "fa-user-group" },
+  commands: { label: "Commands", icon: "fa-shield-halved" },
   console: { label: "Console", icon: "fa-terminal" },
   manage: { label: "Manage", icon: "fa-sliders" },
 };
@@ -489,11 +491,18 @@ export function StatusClient() {
   );
 
   const tabs = useMemo(() => {
-    const list: TabId[] = ["overview", "players"];
+    const list: TabId[] = ["overview", "players", "commands"];
     if (isAdmin) list.push("console");
     if (control?.allowed && seasonLive) list.push("manage");
     return list;
   }, [isAdmin, control, seasonLive]);
+
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("tab");
+    if (q === "commands" || q === "players" || q === "overview") {
+      setTab(q);
+    }
+  }, []);
 
   useEffect(() => {
     if (!tabs.includes(tab)) setTab("overview");
@@ -935,6 +944,12 @@ export function StatusClient() {
                 </p>
               </div>
             </section>
+          </div>
+        ) : null}
+
+        {tab === "commands" ? (
+          <div id="ops-panel-commands" role="tabpanel" aria-labelledby="ops-tab-commands" className="ops-tabpanel">
+            <PublicCommandsBoard />
           </div>
         ) : null}
 

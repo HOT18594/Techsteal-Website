@@ -352,3 +352,50 @@ export interface Announcement {
 
 /** Exaroton player list identifiers manageable from the admin panel. */
 export type ServerPlayerListName = "whitelist" | "ops" | "banned-players" | "banned-ips";
+
+export type ServerCommandType =
+  | "gamemode"
+  | "give"
+  | "effect"
+  | "teleport"
+  | "operator"
+  | "world"
+  | "trigger"
+  | "other";
+
+export type ServerCommandSeverity = "critical" | "high" | "normal";
+export type ServerCommandSource = "ingame" | "server_console" | "web_console" | "playerlist";
+
+export interface PublicServerCommand {
+  id: number;
+  actor: string;
+  actorSource: ServerCommandSource;
+  commandType: ServerCommandType;
+  severity: ServerCommandSeverity;
+  summary: string;
+  logTime: string;
+  occurredAt: string;
+}
+
+export interface PublicCommandsResponse {
+  entries: PublicServerCommand[];
+  stats: {
+    total: number;
+    flagged: number;
+    gamemode: number;
+    give: number;
+    effect: number;
+    teleport: number;
+    operator: number;
+    uniqueActors: number;
+  };
+  actors: string[];
+  lastSyncedAt: string | null;
+  dbConnected: boolean;
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    hasMore: boolean;
+  };
+}

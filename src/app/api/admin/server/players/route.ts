@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { ACCOUNT_DB_ERROR_MESSAGE, requireAdminAccount } from "@/lib/accounts";
 import {
   exarotonGetFileInfo,
+  exarotonReadFileBuffer,
   exarotonReadFileText,
   getExarotonConfig,
   getExarotonSnapshot,
 } from "@/lib/exaroton";
+import { decodePlayerDataNbt, type DecodedPlayerData } from "@/lib/mc-playerdata";
 
 export const dynamic = "force-dynamic";
 
@@ -104,12 +106,24 @@ export async function GET(request: NextRequest) {
 
   const rawUuid = request.nextUrl.searchParams.get("uuid")?.trim().toLowerCase() ?? "";
 
-  // Detail mode: return parsed stats + advancements for a specific player UUID
+  // Detail mode: return decoded playerdata NBT (inventory, armor, ender chest, vitals) + stats + advancements
   if (rawUuid) {
     if (!UUID_RE.test(rawUuid)) {
       return NextResponse.json({ error: "Invalid player UUID." }, { status: 400 });
     }
-    const [statsJson, advJson] = await Promise.all([
+    const [playerDataRes, statsJson, advJson] = await Promise.all([
+      exarotonReadFileBuffer(`world/playerdata/${rawUuid}.dat`, 1_048_576)
+        .then((buf): { data: DecodedPlayerData | null; error: string | null } => ({
+          data: decodePlayerDataNbt(buf),
+          error: null,
+        }))
+        .catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : "";
+          // 404 simply means the player hasn't joined this world yet
+          if (/\(404\)/.test(msg)) return { data: null, error: null };
+          console.error("api/admin/server/players: NBT decode failed", rawUuid, err);
+          return { data: null, error: "Couldn't decode this player's .dat inventory file." };
+        }),
       readJsonSafe<{ stats?: Record<string, Record<string, number>> }>(`world/stats/${rawUuid}.json`),
       readJsonSafe<Record<string, { done?: boolean; criteria?: Record<string, string> }>>(
         `world/advancements/${rawUuid}.json`
@@ -151,6 +165,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         uuid: rawUuid,
+        hasPlayerData: Boolean(playerDataRes.data),
+        playerDataError: playerDataRes.error,
+        playerData: playerDataRes.data,
         hasStats: Boolean(statsJson?.stats),
         hasAdvancements: Boolean(advJson),
         summary: {

@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/EmptyState";
+import { PlayerInventoryView } from "@/components/PlayerInventoryView";
 import { useToast } from "@/components/Toast";
+import type { DecodedPlayerData } from "@/lib/mc-playerdata";
 import { minotarUrl } from "@/lib/minotar";
 
 interface ServerPlayerRecord {
@@ -22,6 +24,9 @@ interface ServerPlayerRecord {
 
 interface PlayerDetail {
   uuid: string;
+  hasPlayerData: boolean;
+  playerDataError?: string | null;
+  playerData: DecodedPlayerData | null;
   hasStats: boolean;
   hasAdvancements: boolean;
   summary: {
@@ -82,6 +87,7 @@ export function ServerPlayersTab({
   const [selected, setSelected] = useState<ServerPlayerRecord | null>(null);
   const [detail, setDetail] = useState<PlayerDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailTab, setDetailTab] = useState<"items" | "stats">("items");
   const [actionBusy, setActionBusy] = useState<string | null>(null);
 
   const loadRoster = useCallback(async () => {
@@ -288,24 +294,46 @@ export function ServerPlayersTab({
       <section className="admin-directory lg:col-span-7">
         <div className="admin-directory-head">
           <div>
-            <h2>{selected ? `${selected.name} — Player Inspector` : "Player stats & advancements"}</h2>
+            <h2>{selected ? `${selected.name} — Player Inspector` : "Player items, stats & advancements"}</h2>
             <p>
               {selected
                 ? `UUID: ${selected.uuid}`
-                : "Select any player from the roster to inspect Minecraft stats, advancements, and run quick actions."}
+                : "Select any player from the roster to inspect their Exaroton inventory, Ender Chest, armor, stats, and advancements."}
             </p>
           </div>
           {selected ? (
-            <button
-              type="button"
-              className="admin-action-btn"
-              onClick={() => {
-                void navigator.clipboard.writeText(selected.uuid);
-                show("UUID copied", selected.uuid);
-              }}
-            >
-              <i className="fa-regular fa-copy" aria-hidden="true" /> Copy UUID
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="admin-filters" role="tablist" aria-label="Player inspector view">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={detailTab === "items"}
+                  className={detailTab === "items" ? "is-active" : ""}
+                  onClick={() => setDetailTab("items")}
+                >
+                  <i className="fa-solid fa-box-open" aria-hidden="true" /> Inventory &amp; Items
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={detailTab === "stats"}
+                  className={detailTab === "stats" ? "is-active" : ""}
+                  onClick={() => setDetailTab("stats")}
+                >
+                  <i className="fa-solid fa-chart-simple" aria-hidden="true" /> Stats &amp; Advancements
+                </button>
+              </div>
+              <button
+                type="button"
+                className="admin-action-btn"
+                onClick={() => {
+                  void navigator.clipboard.writeText(selected.uuid);
+                  show("UUID copied", selected.uuid);
+                }}
+              >
+                <i className="fa-regular fa-copy" aria-hidden="true" /> UUID
+              </button>
+            </div>
           ) : null}
         </div>
 
@@ -314,10 +342,10 @@ export function ServerPlayersTab({
             className="admin-empty"
             icon="fa-user-astronaut"
             title="Select a player"
-            hint="Inspect play time, kills, deaths, blocks mined, travel distance, and completed advancements directly from Exaroton."
+            hint="Inspect full Minecraft 1.21.11 inventories, armor, Ender Chest, shulker boxes, vitals, stats, and completed advancements directly from Exaroton."
           />
         ) : detailLoading ? (
-          <div className="admin-loading" aria-label="Loading player stats">
+          <div className="admin-loading" aria-label="Loading player data">
             {[0, 1, 2, 3].map((i) => (
               <div key={i} />
             ))}
@@ -383,96 +411,121 @@ export function ServerPlayersTab({
               ) : null}
             </div>
 
-            {detail?.hasStats ? (
+            {detailTab === "items" ? (
+              detail?.playerData ? (
+                <PlayerInventoryView
+                  playerName={selected.name}
+                  data={detail.playerData}
+                  serverOnline={serverOnline}
+                  onSaveAndRefresh={async () => {
+                    if (serverOnline) {
+                      await onRunCommand("save-all");
+                      await new Promise((r) => setTimeout(r, 1400));
+                    }
+                    await inspectPlayer(selected);
+                  }}
+                />
+              ) : (
+                <div className="rounded-[10px] border border-[var(--border)] bg-[var(--bg-2)] p-4 text-xs text-[var(--muted)]">
+                  {detail?.playerDataError
+                    ? detail.playerDataError
+                    : `No world/playerdata/${selected.uuid}.dat file exists for this player yet.`}
+                </div>
+              )
+            ) : (
               <>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {[
-                    { label: "Play time", value: formatDuration(detail.summary.playTimeMinutes), icon: "fa-clock" },
-                    { label: "Deaths", value: detail.summary.deaths.toLocaleString("en-US"), icon: "fa-skull" },
-                    { label: "Mob kills", value: detail.summary.mobKills.toLocaleString("en-US"), icon: "fa-khanda" },
-                    { label: "Player kills", value: detail.summary.playerKills.toLocaleString("en-US"), icon: "fa-crosshairs" },
-                    { label: "Blocks mined", value: detail.summary.totalMined.toLocaleString("en-US"), icon: "fa-cubes" },
-                    { label: "Items crafted", value: detail.summary.totalCrafted.toLocaleString("en-US"), icon: "fa-hammer" },
-                    { label: "Walk + sprint", value: formatDistance(detail.summary.distanceWalkedMeters + detail.summary.distanceSprintedMeters), icon: "fa-person-running" },
-                    { label: "Advancements", value: `${detail.summary.advancementsCompleted}/${detail.summary.advancementsTotal}`, icon: "fa-trophy" },
-                  ].map((stat) => (
-                    <div
-                      key={stat.label}
-                      className="rounded-[10px] border border-[var(--border)] bg-[var(--bg-2)] p-3"
-                    >
-                      <div className="text-[10px] uppercase tracking-wider text-[var(--muted)] flex items-center gap-1.5">
-                        <i className={`fa-solid ${stat.icon} text-[var(--accent)]`} aria-hidden="true" />
-                        {stat.label}
+                {detail?.hasStats ? (
+                  <>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                      {[
+                        { label: "Play time", value: formatDuration(detail.summary.playTimeMinutes), icon: "fa-clock" },
+                        { label: "Deaths", value: detail.summary.deaths.toLocaleString("en-US"), icon: "fa-skull" },
+                        { label: "Mob kills", value: detail.summary.mobKills.toLocaleString("en-US"), icon: "fa-khanda" },
+                        { label: "Player kills", value: detail.summary.playerKills.toLocaleString("en-US"), icon: "fa-crosshairs" },
+                        { label: "Blocks mined", value: detail.summary.totalMined.toLocaleString("en-US"), icon: "fa-cubes" },
+                        { label: "Items crafted", value: detail.summary.totalCrafted.toLocaleString("en-US"), icon: "fa-hammer" },
+                        { label: "Walk + sprint", value: formatDistance(detail.summary.distanceWalkedMeters + detail.summary.distanceSprintedMeters), icon: "fa-person-running" },
+                        { label: "Advancements", value: `${detail.summary.advancementsCompleted}/${detail.summary.advancementsTotal}`, icon: "fa-trophy" },
+                      ].map((stat) => (
+                        <div
+                          key={stat.label}
+                          className="rounded-[10px] border border-[var(--border)] bg-[var(--bg-2)] p-3"
+                        >
+                          <div className="text-[10px] uppercase tracking-wider text-[var(--muted)] flex items-center gap-1.5">
+                            <i className={`fa-solid ${stat.icon} text-[var(--accent)]`} aria-hidden="true" />
+                            {stat.label}
+                          </div>
+                          <div className="text-lg font-bold text-[var(--fg)] mt-1 tabular-nums">
+                            {stat.value}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="rounded-[10px] border border-[var(--border)] bg-[var(--bg-2)] p-4">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--fg-2)] mb-2.5">
+                          Top mined blocks
+                        </h3>
+                        {detail.topMined.length === 0 ? (
+                          <p className="text-xs text-[var(--muted)]">No blocks mined recorded.</p>
+                        ) : (
+                          <ul className="space-y-1.5 text-xs">
+                            {detail.topMined.map((item) => (
+                              <li key={item.id} className="flex justify-between gap-2">
+                                <span className="text-[var(--fg-2)] truncate">{item.label}</span>
+                                <span className="font-mono text-[var(--fg)] tabular-nums">
+                                  {item.count.toLocaleString("en-US")}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </div>
-                      <div className="text-lg font-bold text-[var(--fg)] mt-1 tabular-nums">
-                        {stat.value}
+
+                      <div className="rounded-[10px] border border-[var(--border)] bg-[var(--bg-2)] p-4">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--fg-2)] mb-2.5">
+                          Top mobs killed
+                        </h3>
+                        {detail.topKilled.length === 0 ? (
+                          <p className="text-xs text-[var(--muted)]">No mob kills recorded.</p>
+                        ) : (
+                          <ul className="space-y-1.5 text-xs">
+                            {detail.topKilled.map((item) => (
+                              <li key={item.id} className="flex justify-between gap-2">
+                                <span className="text-[var(--fg-2)] truncate">{item.label}</span>
+                                <span className="font-mono text-[var(--fg)] tabular-nums">
+                                  {item.count.toLocaleString("en-US")}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </div>
                     </div>
-                  ))}
-                </div>
+                  </>
+                ) : (
+                  <div className="rounded-[10px] border border-[var(--border)] bg-[var(--bg-2)] p-4 text-xs text-[var(--muted)]">
+                    No <code>world/stats/{selected.uuid}.json</code> file exists for this player yet.
+                  </div>
+                )}
 
-                <div className="grid gap-4 sm:grid-cols-2">
+                {detail && detail.recentAdvancements.length > 0 ? (
                   <div className="rounded-[10px] border border-[var(--border)] bg-[var(--bg-2)] p-4">
                     <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--fg-2)] mb-2.5">
-                      Top mined blocks
+                      Recent advancements ({detail.summary.advancementsCompleted})
                     </h3>
-                    {detail.topMined.length === 0 ? (
-                      <p className="text-xs text-[var(--muted)]">No blocks mined recorded.</p>
-                    ) : (
-                      <ul className="space-y-1.5 text-xs">
-                        {detail.topMined.map((item) => (
-                          <li key={item.id} className="flex justify-between gap-2">
-                            <span className="text-[var(--fg-2)] truncate">{item.label}</span>
-                            <span className="font-mono text-[var(--fg)] tabular-nums">
-                              {item.count.toLocaleString("en-US")}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                    <div className="flex flex-wrap gap-1.5">
+                      {detail.recentAdvancements.map((adv) => (
+                        <span key={adv.id} className="admin-pill is-accent" title={adv.id}>
+                          {adv.label}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-
-                  <div className="rounded-[10px] border border-[var(--border)] bg-[var(--bg-2)] p-4">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--fg-2)] mb-2.5">
-                      Top mobs killed
-                    </h3>
-                    {detail.topKilled.length === 0 ? (
-                      <p className="text-xs text-[var(--muted)]">No mob kills recorded.</p>
-                    ) : (
-                      <ul className="space-y-1.5 text-xs">
-                        {detail.topKilled.map((item) => (
-                          <li key={item.id} className="flex justify-between gap-2">
-                            <span className="text-[var(--fg-2)] truncate">{item.label}</span>
-                            <span className="font-mono text-[var(--fg)] tabular-nums">
-                              {item.count.toLocaleString("en-US")}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </div>
+                ) : null}
               </>
-            ) : (
-              <div className="rounded-[10px] border border-[var(--border)] bg-[var(--bg-2)] p-4 text-xs text-[var(--muted)]">
-                No <code>world/stats/{selected.uuid}.json</code> file exists for this player yet.
-              </div>
             )}
-
-            {detail && detail.recentAdvancements.length > 0 ? (
-              <div className="rounded-[10px] border border-[var(--border)] bg-[var(--bg-2)] p-4">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--fg-2)] mb-2.5">
-                  Recent advancements ({detail.summary.advancementsCompleted})
-                </h3>
-                <div className="flex flex-wrap gap-1.5">
-                  {detail.recentAdvancements.map((adv) => (
-                    <span key={adv.id} className="admin-pill is-accent" title={adv.id}>
-                      {adv.label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
           </div>
         )}
       </section>

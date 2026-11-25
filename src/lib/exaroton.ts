@@ -553,6 +553,12 @@ export async function exarotonGetFileInfo(rawPath: string): Promise<ExarotonFile
 
 /** Read raw text content of a server file (capped to prevent OOM on binary/large files). */
 export async function exarotonReadFileText(rawPath: string, maxBytes = 512_000): Promise<string> {
+  const buf = await exarotonReadFileBuffer(rawPath, maxBytes);
+  return new TextDecoder("utf-8", { fatal: false }).decode(buf);
+}
+
+/** Read raw binary bytes of a server file (e.g. gzipped NBT playerdata `.dat`). */
+export async function exarotonReadFileBuffer(rawPath: string, maxBytes = 1_048_576): Promise<Buffer> {
   const config = getExarotonConfig();
   if (!config) throw new Error("Exaroton is not configured.");
   const clean = sanitizeExarotonPath(rawPath);
@@ -573,13 +579,37 @@ export async function exarotonReadFileText(rawPath: string, maxBytes = 512_000):
   const lenHeader = Number(res.headers.get("content-length") ?? "0");
   if (lenHeader > maxBytes) {
     await res.body?.cancel().catch(() => {});
-    throw new Error(`File is too large to open in the editor (limit ${Math.round(maxBytes / 1024)} KB).`);
+    throw new Error(`File is too large to read (limit ${Math.round(maxBytes / 1024)} KB).`);
   }
-  const buf = await res.arrayBuffer();
+  const buf = Buffer.from(await res.arrayBuffer());
   if (buf.byteLength > maxBytes) {
-    throw new Error(`File is too large to open in the editor (limit ${Math.round(maxBytes / 1024)} KB).`);
+    throw new Error(`File is too large to read (limit ${Math.round(maxBytes / 1024)} KB).`);
   }
-  return new TextDecoder("utf-8", { fatal: false }).decode(buf);
+  return buf;
+}
+
+/** Fetch the current/most recent server log text from Exaroton (null if unavailable). */
+export async function exarotonGetLogs(): Promise<string | null> {
+  const config = getExarotonConfig();
+  if (!config) return null;
+  const res = await fetch(
+    `${EXAROTON_API}/servers/${encodeURIComponent(config.serverId)}/logs/`,
+    {
+      headers: { Authorization: `Bearer ${config.token}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(12_000),
+    }
+  );
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => {});
+    return null;
+  }
+  const json = (await res.json().catch(() => null)) as {
+    success?: boolean;
+    data?: { content?: string | null } | null;
+  } | null;
+  if (!json || json.success === false) return null;
+  return typeof json.data?.content === "string" ? json.data.content : null;
 }
 
 /** Write UTF-8 text content to a server file. */

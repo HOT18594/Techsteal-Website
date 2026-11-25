@@ -1,5 +1,6 @@
 import type { ServerTelemetry, ServerTelemetryLine } from "@/types";
 import { getExarotonConfig } from "./exaroton";
+import { ingestExarotonLogContent } from "./server-commands";
 
 const EXAROTON_API = "https://api.exaroton.com/v1";
 const CACHE_MS = 30_000;
@@ -88,6 +89,11 @@ async function fetchTelemetry(): Promise<ServerTelemetry> {
   const ram = ramResult.status === "fulfilled" ? ramResult.value.data?.ram : undefined;
   const content = logResult.status === "fulfilled" ? logResult.value.data?.content : undefined;
   const hasData = typeof ram === "number" || typeof content === "string";
+
+  if (typeof content === "string" && content.length > 0) {
+    // Archive any commands already present in the fetched log (best-effort, zero extra Exaroton API calls).
+    void ingestExarotonLogContent(content);
+  }
 
   return {
     source: hasData ? "live" : "unavailable",

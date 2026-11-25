@@ -17,6 +17,7 @@ import { invalidateLiveStatus } from "@/lib/live-status";
 import { isValidMcName } from "@/lib/mc-name";
 import { isRateLimited } from "@/lib/rate-limit";
 import { profiles } from "@/lib/schema";
+import { recordWebsiteServerCommand } from "@/lib/server-commands";
 import { getServerTelemetry, invalidateServerTelemetry } from "@/lib/server-telemetry";
 import type { ServerPlayerListName } from "@/types";
 
@@ -197,12 +198,19 @@ export async function POST(request: NextRequest) {
     try {
       await exarotonCommand(cleaned);
       invalidateServerTelemetry();
-      await logAudit({
-        actorId: admin.id,
-        actorName: admin.username,
-        action: "server_command",
-        detail: cleaned.slice(0, 200),
-      });
+      await Promise.all([
+        logAudit({
+          actorId: admin.id,
+          actorName: admin.username,
+          action: "server_command",
+          detail: cleaned.slice(0, 200),
+        }),
+        recordWebsiteServerCommand({
+          actorName: admin.username,
+          command: cleaned,
+          source: "web_console",
+        }),
+      ]);
       return NextResponse.json({ ok: true });
     } catch (err) {
       console.error("api/admin/server POST command: failed", err);
@@ -370,12 +378,21 @@ export async function POST(request: NextRequest) {
         action === "playerlist_add"
           ? await exarotonAddPlayerListEntries(list, [entry])
           : await exarotonRemovePlayerListEntries(list, [entry]);
-      await logAudit({
-        actorId: admin.id,
-        actorName: admin.username,
-        action: listAuditAction(list, action === "playerlist_add" ? "add" : "remove"),
-        targetName: list === "banned-ips" ? "[ip]" : entry,
-      });
+      await Promise.all([
+        logAudit({
+          actorId: admin.id,
+          actorName: admin.username,
+          action: listAuditAction(list, action === "playerlist_add" ? "add" : "remove"),
+          targetName: list === "banned-ips" ? "[ip]" : entry,
+        }),
+        list === "ops"
+          ? recordWebsiteServerCommand({
+              actorName: admin.username,
+              command: `${action === "playerlist_add" ? "op" : "deop"} ${entry}`,
+              source: "playerlist",
+            })
+          : Promise.resolve(),
+      ]);
       return NextResponse.json({ ok: true, entries });
     } catch (err) {
       console.error(`api/admin/server POST ${action}: failed`, err);

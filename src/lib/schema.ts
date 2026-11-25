@@ -261,3 +261,38 @@ export const announcements = pgTable(
   // The public read is "active rows, newest first".
   (t) => [index("announcements_active_created_idx").on(t.active, t.createdAt)]
 );
+
+// Permanent, append-only public anti-cheat command ledger. Captures every
+// gamemode switch, /give, /effect, /tp, /op, and server/console command
+// harvested from Exaroton logs and the website console so nothing can be
+// hidden or erased when server logs rotate.
+export const serverCommandLogs = pgTable(
+  "server_command_logs",
+  {
+    id: serial("id").primaryKey(),
+    // Deterministic SHA-256 hash for idempotent deduplication across log syncs.
+    fingerprint: text("fingerprint").notNull(),
+    // Minecraft username, "Server", "Rcon", or web admin label.
+    actor: text("actor").notNull(),
+    // "ingame" | "server_console" | "web_console" | "playerlist"
+    actorSource: text("actor_source").notNull().default("ingame"),
+    // "gamemode" | "give" | "effect" | "teleport" | "operator" | "world" | "trigger" | "other"
+    commandType: text("command_type").notNull().default("other"),
+    // "critical" | "high" | "normal"
+    severity: text("severity").notNull().default("normal"),
+    // Clean, IP-redacted summary of the command or server execution output.
+    summary: text("summary").notNull(),
+    // Sanitized full log line (IPs & tokens stripped).
+    rawLine: text("raw_line").notNull().default(""),
+    // Original HH:MM:SS timestamp from the Minecraft log (if from log).
+    logTime: text("log_time").notNull().default(""),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("server_command_logs_fingerprint_uq").on(t.fingerprint),
+    index("server_command_logs_occurred_idx").on(t.occurredAt),
+    index("server_command_logs_type_idx").on(t.commandType, t.occurredAt),
+    index("server_command_logs_actor_idx").on(t.actor, t.occurredAt),
+  ]
+);

@@ -17,6 +17,7 @@ import "./navigation.css";
 
 const NAV_LINKS = [
   { href: "/status", label: "Server" },
+  { href: "/commands", label: "Commands" },
   { href: "/assistant", label: "Assistant" },
   { href: "/forum", label: "Forum" },
   { href: "/history", label: "History" },
